@@ -1,0 +1,267 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model ItemType {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  isSystem  Boolean  @default(false) @map("is_system")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items Item[]
+
+  @@map("item_types")
+}
+
+model Item {
+  id            String    @id @default(uuid())
+  typeId        String    @map("type_id")
+  title         String
+  originalTitle String?   @map("original_title")
+  description   String?
+  year          Int?
+  minPlayers    Int?      @map("min_players")
+  maxPlayers    Int?      @map("max_players")
+  minPlayTime   Int?      @map("min_play_time")
+  maxPlayTime   Int?      @map("max_play_time")
+  minAge        Int?      @map("min_age")
+  complexity    Decimal?
+  rating        Decimal?
+  sourceMode    String    @default("manual") @map("source_mode")
+  categories    Json?
+  mechanics     Json?
+  designers     Json?
+  artists       Json?
+  publishers    Json?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  type               ItemType            @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  userItem           UserItem?
+  externalReferences ExternalReference[]
+  playSessions       PlaySession[]
+  purchases          Purchase[]
+  preorders          Preorder[]
+  images             Image[]
+  notes              Note[]
+  links              Link[]
+  tags               Tag[]               @relation("ItemTags")
+  parentRelations    ItemRelation[]      @relation("ParentItemRelations")
+  childRelations     ItemRelation[]      @relation("ChildItemRelations")
+
+  @@index([title])
+  @@index([originalTitle])
+  @@index([typeId])
+  @@map("items")
+}
+
+model UserItem {
+  id             String   @id @default(uuid())
+  itemId         String   @unique @map("item_id")
+  owned          Boolean  @default(false)
+  wishlist       Boolean  @default(false)
+  status         String   @default("wishlist")
+  location       String?
+  personalRating Int?     @map("personal_rating")
+  notes          String?
+  interestLevel  Int?     @map("interest_level")
+  decisionNotes  String?  @map("decision_notes")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([owned])
+  @@index([wishlist])
+  @@index([status])
+  @@map("user_items")
+}
+
+model ExternalReference {
+  id         String    @id @default(uuid())
+  itemId     String    @map("item_id")
+  provider   String
+  externalId String    @map("external_id")
+  url        String?
+  lastSync   DateTime? @map("last_sync")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalId])
+  @@index([itemId])
+  @@index([provider])
+  @@map("external_references")
+}
+
+model PlaySession {
+  id                String    @id @default(uuid())
+  itemId            String    @map("item_id")
+  playedAt          DateTime  @map("played_at")
+  playersCount      Int?      @map("players_count")
+  durationMinutes   Int?      @map("duration_minutes")
+  result            String?
+  score             String?
+  scenario          String?
+  playerNames       Json?     @map("player_names")
+  usedItemIds       Json?     @map("used_item_ids")
+  notes             String?
+  source            String    @default("manual")
+  bggPlayId         String?   @unique @map("bgg_play_id")
+  locallyModifiedAt DateTime? @map("locally_modified_at")
+  importedAt        DateTime? @map("imported_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([playedAt])
+  @@index([bggPlayId])
+  @@map("play_sessions")
+}
+
+model Purchase {
+  id           String    @id @default(uuid())
+  itemId       String    @map("item_id")
+  shop         String
+  price        Decimal
+  currency     String
+  deliveryCost Decimal?  @map("delivery_cost")
+  discount     Decimal?
+  totalPrice   Decimal   @map("total_price")
+  purchaseDate DateTime? @map("purchase_date")
+  comment      String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("purchases")
+}
+
+model Preorder {
+  id             String    @id @default(uuid())
+  itemId         String    @map("item_id")
+  shop           String
+  price          Decimal
+  currency       String
+  orderDate      DateTime? @map("order_date")
+  expectedDate   DateTime? @map("expected_date")
+  receivedDate   DateTime? @map("received_date")
+  trackingNumber String?   @map("tracking_number")
+  status         String
+  comment        String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  item   Item            @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  events PreorderEvent[]
+
+  @@index([itemId])
+  @@index([status])
+  @@index([expectedDate])
+  @@map("preorders")
+}
+
+model PreorderEvent {
+  id         String   @id @default(uuid())
+  preorderId String   @map("preorder_id")
+  type       String
+  oldValue   String?  @map("old_value")
+  newValue   String?  @map("new_value")
+  reason     String?
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  preorder Preorder @relation(fields: [preorderId], references: [id], onDelete: Cascade)
+
+  @@index([preorderId])
+  @@map("preorder_events")
+}
+
+model Image {
+  id        String   @id @default(uuid())
+  itemId    String   @map("item_id")
+  type      String
+  provider  String?
+  url       String?
+  path      String?
+  caption   String?
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("images")
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  itemId    String   @map("item_id")
+  title     String?
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("notes")
+}
+
+model ItemRelation {
+  id           String   @id @default(uuid())
+  parentItemId String   @map("parent_item_id")
+  childItemId  String   @map("child_item_id")
+  relationType String   @map("relation_type")
+  comment      String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  parentItem Item @relation("ParentItemRelations", fields: [parentItemId], references: [id], onDelete: Cascade)
+  childItem  Item @relation("ChildItemRelations", fields: [childItemId], references: [id], onDelete: Cascade)
+
+  @@unique([parentItemId, childItemId, relationType])
+  @@index([parentItemId])
+  @@index([childItemId])
+  @@map("item_relations")
+}
+
+model Link {
+  id        String   @id @default(uuid())
+  itemId    String   @map("item_id")
+  type      String
+  url       String
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("links")
+}
+
+model Tag {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  color     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items Item[] @relation("ItemTags")
+
+  @@map("tags")
+}
