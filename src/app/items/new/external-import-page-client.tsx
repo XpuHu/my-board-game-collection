@@ -50,13 +50,19 @@ const targetOptions = [
   icon: typeof Boxes;
 }[];
 
-export function ExternalImportPageClient() {
+type ExternalImportPageClientProps = {
+  initialTarget?: NonNullable<ImportExternalItemRequest["target"]>;
+};
+
+export function ExternalImportPageClient({
+  initialTarget = "collection",
+}: ExternalImportPageClientProps) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [type, setType] = React.useState(ANY_VALUE);
   const [target, setTarget] =
     React.useState<NonNullable<ImportExternalItemRequest["target"]>>(
-      "collection",
+      initialTarget,
     );
   const [results, setResults] = React.useState<ExternalSearchResultDto[]>([]);
   const [searched, setSearched] = React.useState(false);
@@ -116,7 +122,7 @@ export function ExternalImportPageClient() {
       }
 
       if (target === "wishlist") {
-        router.push("/wishlist");
+        router.push(`/wishlist/${details.item.id}`);
         return;
       }
 
