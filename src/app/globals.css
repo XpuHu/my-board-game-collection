@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f7f4;
-  --foreground: #1f2521;
-  --muted: #ecebe5;
-  --muted-foreground: #686f68;
-  --border: #dbdad2;
-  --input: #dbdad2;
-  --primary: #245c4f;
-  --primary-foreground: #f8fbf7;
-  --secondary: #e6ece8;
-  --secondary-foreground: #24352f;
-  --accent: #dfe8ef;
-  --accent-foreground: #21313a;
-  --destructive: #b42318;
+  --background: #07101d;
+  --foreground: #f5f7fb;
+  --muted: #111c2b;
+  --muted-foreground: #a8b1c3;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.14);
+  --primary: #8174ff;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(255, 255, 255, 0.07);
+  --secondary-foreground: #f5f7fb;
+  --accent: #1c2f47;
+  --accent-foreground: #eef5ff;
+  --destructive: #ff695d;
   --destructive-foreground: #fff7f5;
-  --ring: #2f6f61;
-  --card: #ffffff;
-  --card-foreground: #1f2521;
+  --ring: #8b7cff;
+  --card: rgba(16, 27, 42, 0.82);
+  --card-foreground: #f5f7fb;
 }
 
 @theme inline {
@@ -47,9 +47,24 @@
   border-color: var(--border);
 }
 
+html {
+  background: var(--background);
+}
+
 body {
   min-height: 100vh;
-  background: var(--background);
+  background:
+    radial-gradient(
+      circle at 24% 0%,
+      rgba(129, 116, 255, 0.13),
+      transparent 34rem
+    ),
+    radial-gradient(
+      circle at 82% 20%,
+      rgba(48, 127, 173, 0.13),
+      transparent 36rem
+    ),
+    linear-gradient(135deg, #07101d 0%, #0a1422 48%, #07101d 100%);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -59,4 +74,8 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+img {
+  max-width: 100%;
 }
