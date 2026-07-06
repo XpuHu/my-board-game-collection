@@ -263,7 +263,7 @@ function mapPurchase(purchase: Purchase): PurchaseDto {
   };
 }
 
-function mapPreorder(
+export function mapPreorder(
   preorder: Preorder & { events: PreorderEvent[] },
   itemTitle: string,
 ): PreorderDto {

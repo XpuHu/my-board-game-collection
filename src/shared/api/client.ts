@@ -3,6 +3,7 @@ import type {
   CollectionItemDetailsDto,
   CreatePlaySessionRequest,
   CreatePreorderRequest,
+  CreateTagRequest,
   ExternalSearchResponse,
   ImportExternalItemRequest,
   ItemDetailsDto,
@@ -17,6 +18,7 @@ import type {
   SyncBggPlaysResponse,
   SyncItemRequest,
   SyncItemResponse,
+  TagDto,
   UpdateBggSettingsRequest,
   UpdatePreorderExpectedDateRequest,
   UpdateUserItemRequest,
@@ -177,10 +179,13 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
           `/api/wishlist/${encodeURIComponent(itemId)}`,
         ),
       add: (itemId: string) =>
-        request<UserItemDto>(`/api/items/${encodeURIComponent(itemId)}/wishlist`, {
-          method: "POST",
-          body: JSON.stringify({}),
-        }),
+        request<UserItemDto>(
+          `/api/items/${encodeURIComponent(itemId)}/wishlist`,
+          {
+            method: "POST",
+            body: JSON.stringify({}),
+          },
+        ),
     },
     items: {
       create: (body: CreateItemRequest) =>
@@ -197,19 +202,25 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
           },
         ),
       sync: (itemId: string, body: SyncItemRequest = {}) =>
-        request<SyncItemResponse>(`/api/items/${encodeURIComponent(itemId)}/sync`, {
-          method: "POST",
-          body: JSON.stringify(body),
-        }),
+        request<SyncItemResponse>(
+          `/api/items/${encodeURIComponent(itemId)}/sync`,
+          {
+            method: "POST",
+            body: JSON.stringify(body),
+          },
+        ),
     },
     plays: {
       list: (query?: PlaysQuery) =>
         request<PaginatedResponse<PlaySessionDto>>("/api/plays", { query }),
       create: (itemId: string, body: CreatePlaySessionRequest) =>
-        request<PlaySessionDto>(`/api/items/${encodeURIComponent(itemId)}/plays`, {
-          method: "POST",
-          body: JSON.stringify(body),
-        }),
+        request<PlaySessionDto>(
+          `/api/items/${encodeURIComponent(itemId)}/plays`,
+          {
+            method: "POST",
+            body: JSON.stringify(body),
+          },
+        ),
       update: (playId: string, body: Partial<CreatePlaySessionRequest>) =>
         request<PlaySessionDto>(`/api/plays/${encodeURIComponent(playId)}`, {
           method: "PATCH",
@@ -231,10 +242,13 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
           },
         ),
       update: (preorderId: string, body: Partial<CreatePreorderRequest>) =>
-        request<PreorderDto>(`/api/preorders/${encodeURIComponent(preorderId)}`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        }),
+        request<PreorderDto>(
+          `/api/preorders/${encodeURIComponent(preorderId)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(body),
+          },
+        ),
       updateExpectedDate: (
         preorderId: string,
         body: UpdatePreorderExpectedDateRequest,
@@ -274,6 +288,14 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
     },
     statistics: {
       summary: () => request<StatisticsSummaryDto>("/api/statistics/summary"),
+    },
+    tags: {
+      list: () => request<TagDto[]>("/api/tags"),
+      create: (body: CreateTagRequest) =>
+        request<TagDto>("/api/tags", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
     },
     settings: {
       get: () => request<SettingsDto>("/api/settings"),

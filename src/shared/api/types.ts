@@ -106,6 +106,11 @@ export type TagDto = {
   color?: string | null;
 };
 
+export type CreateTagRequest = {
+  name: string;
+  color?: string | null;
+};
+
 export type ImageDto = {
   id: string;
   itemId: string;
