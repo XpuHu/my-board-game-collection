@@ -7,7 +7,7 @@ export default function SettingsPage() {
       <EmptyState
         icon={Settings}
         title="Настройки"
-        description="Здесь появятся настройки темы, Provider, импорта и экспорта."
+        description="Здесь появятся настройки языка, темы, Provider, BGG sync, импорта и экспорта."
       />
     </main>
   );

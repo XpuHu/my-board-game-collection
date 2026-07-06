@@ -1,13 +1,13 @@
-import { Clock } from "lucide-react";
+import { Package } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 
 export default function PreordersPage() {
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <EmptyState
-        icon={Clock}
+        icon={Package}
         title="Предзаказы"
-        description="Список предзаказов будет подключен после реализации Preorder API."
+        description="Здесь будут активные предзаказы, ожидаемые даты и быстрое изменение даты доставки."
       />
     </main>
   );

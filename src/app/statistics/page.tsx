@@ -7,7 +7,7 @@ export default function StatisticsPage() {
       <EmptyState
         icon={ChartNoAxesColumn}
         title="Статистика"
-        description="Сводка по Item, типам, статусам и стоимости будет подключена через Statistics API."
+        description="Главный фокус раздела - история партий, топ игр, активные месяцы и сводные показатели коллекции."
       />
     </main>
   );

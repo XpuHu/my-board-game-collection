@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PackagePlus, Search } from "lucide-react";
+import { ListPlus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 
@@ -10,13 +10,13 @@ export default function CollectionPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-normal">Коллекция</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Единый список Item появится здесь после подключения локального API.
+            Компактный список owned Item для быстрых ежедневных действий.
           </p>
         </div>
         <Button asChild>
           <Link href="/items/new">
-            <PackagePlus className="h-4 w-4" />
-            Добавить
+            <ListPlus className="h-4 w-4" />
+            Добавить игру
           </Link>
         </Button>
       </div>
@@ -24,7 +24,7 @@ export default function CollectionPage() {
       <EmptyState
         icon={Search}
         title="Коллекция пока пуста"
-        description="Первый вертикальный срез начнется с ручного создания Item и отображения его в этом списке."
+        description="После подключения списка здесь будут название, личная оценка, количество партий и последняя партия без длинных описаний."
       />
     </main>
   );
