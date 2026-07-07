@@ -8,6 +8,7 @@ import type {
   ImportExternalItemRequest,
   ItemDetailsDto,
   ItemListDto,
+  ItemTypeDto,
   JsonBackupDto,
   JsonImportReportDto,
   PaginatedResponse,
@@ -211,6 +212,9 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
             body: JSON.stringify(body),
           },
         ),
+    },
+    itemTypes: {
+      list: () => request<ItemTypeDto[]>("/api/item-types"),
     },
     plays: {
       list: (query?: PlaysQuery) =>
