@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto grid min-h-screen w-full max-w-[1720px] lg:grid-cols-[250px_minmax(0,1fr)]">
+      <div className="mx-auto grid min-h-screen w-full lg:grid-cols-[250px_minmax(0,1fr)]">
         <aside className="hidden border-r border-white/10 bg-[#08111f]/92 px-4 py-8 shadow-[24px_0_80px_rgba(0,0,0,0.22)] lg:flex lg:flex-col">
           <Link href="/" className="flex items-center gap-3 px-2">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#7a6dff] text-white shadow-[0_0_28px_rgba(122,109,255,0.42)]">
@@ -50,26 +50,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <NavLink key={item.href} item={item} pathname={pathname} />
             ))}
           </nav>
-
-          <div className="mt-auto border-t border-white/10 pt-4">
-            <button
-              type="button"
-              className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/5"
-            >
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-200 to-sky-500 text-sm font-semibold text-slate-950">
-                А
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">
-                  Алексей
-                </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  Настольщик
-                </span>
-              </span>
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            </button>
-          </div>
         </aside>
 
         <div className="min-w-0">

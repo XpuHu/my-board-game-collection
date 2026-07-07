@@ -1,6 +1,7 @@
 import type { ProviderCode, SyncItemInput, SyncItemResponse } from "@/shared/api";
 import { prisma } from "@/infrastructure/database/prisma";
 import { boardGameGeekProvider } from "@/infrastructure/providers/boardgamegeek-provider";
+import { teseraProvider } from "@/infrastructure/providers/tesera-provider";
 import type {
   ItemProvider,
   ProviderItem,
@@ -213,6 +214,10 @@ async function getItemSnapshot(itemId: string): Promise<ItemReferenceSnapshot> {
 function getProvider(providerCode: ProviderCode): ItemProvider {
   if (providerCode === "boardgamegeek") {
     return boardGameGeekProvider;
+  }
+
+  if (providerCode === "tesera") {
+    return teseraProvider;
   }
 
   throw ApiError.badRequest(

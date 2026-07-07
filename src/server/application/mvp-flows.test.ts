@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { boardGameGeekProvider } from "@/infrastructure/providers/boardgamegeek-provider";
 import { boardGameGeekPlayProvider } from "@/infrastructure/providers/bgg-play-provider";
+import { teseraProvider } from "@/infrastructure/providers/tesera-provider";
 import { prisma } from "@/infrastructure/database/prisma";
 import { syncBggPlays } from "@/server/application/bgg-sync/bgg-sync-service";
+import {
+  importExternalItem,
+  searchExternalItems,
+} from "@/server/application/search/external-search-service";
 import {
   addItemToCollection,
   addItemToWishlist,
@@ -63,6 +69,142 @@ describe("MVP service flows", () => {
     expect(userItem.owned).toBe(false);
     expect(userItem.wishlist).toBe(true);
     expect(userItem.status).toBe("wishlist");
+  });
+
+  it("falls back to Tesera when BGG search fails", async () => {
+    vi.spyOn(boardGameGeekProvider, "searchItems").mockRejectedValue(
+      new Error("BGG is unavailable"),
+    );
+    vi.spyOn(teseraProvider, "searchItems").mockResolvedValue([
+      {
+        provider: "tesera",
+        externalId: "ark-nova",
+        title: "Ark Nova",
+        originalTitle: "Ark Nova",
+        itemTypeCode: "base_game",
+        year: 2021,
+        url: "https://tesera.ru/game/ark-nova/",
+      },
+    ]);
+
+    const response = await searchExternalItems({
+      q: "Ark Nova",
+      provider: "boardgamegeek",
+    });
+
+    expect(response.data).toHaveLength(1);
+    expect(response.data[0]).toMatchObject({
+      provider: "tesera",
+      externalId: "ark-nova",
+      title: "Ark Nova",
+    });
+    expect(response.warnings?.[0]).toMatchObject({
+      provider: "boardgamegeek",
+      code: "PROVIDER_FALLBACK",
+    });
+  });
+
+  it("falls back to Tesera when BGG returns no search results", async () => {
+    vi.spyOn(boardGameGeekProvider, "searchItems").mockResolvedValue([]);
+    vi.spyOn(teseraProvider, "searchItems").mockResolvedValue([
+      {
+        provider: "tesera",
+        externalId: "paleo",
+        title: "Палео",
+        originalTitle: "Paleo",
+        itemTypeCode: "base_game",
+        year: 2020,
+        url: "https://tesera.ru/game/paleo/",
+      },
+    ]);
+
+    const response = await searchExternalItems({
+      q: "палео",
+      provider: "boardgamegeek",
+    });
+
+    expect(response.data).toHaveLength(1);
+    expect(response.data[0]).toMatchObject({
+      provider: "tesera",
+      externalId: "paleo",
+      title: "Палео",
+    });
+    expect(response.warnings?.[0]).toMatchObject({
+      provider: "boardgamegeek",
+      code: "PROVIDER_EMPTY_FALLBACK",
+    });
+  });
+
+  it("returns warnings instead of failing when all external search providers fail", async () => {
+    vi.spyOn(boardGameGeekProvider, "searchItems").mockRejectedValue(
+      new Error("BGG is unavailable"),
+    );
+    vi.spyOn(teseraProvider, "searchItems").mockRejectedValue(
+      new Error("Tesera request failed"),
+    );
+
+    const response = await searchExternalItems({
+      q: "палео",
+      provider: "boardgamegeek",
+    });
+
+    expect(response.data).toEqual([]);
+    expect(response.warnings).toEqual([
+      expect.objectContaining({
+        provider: "boardgamegeek",
+        code: "PROVIDER_FALLBACK",
+      }),
+      expect.objectContaining({
+        provider: "tesera",
+        code: "PROVIDER_FALLBACK_FAILED",
+      }),
+    ]);
+  });
+
+  it("imports a Tesera item into the collection", async () => {
+    vi.spyOn(teseraProvider, "getItem").mockResolvedValue({
+      provider: "tesera",
+      externalId: "tesera-game",
+      title: "Тесера игра",
+      originalTitle: "Tesera Game",
+      itemTypeCode: "base_game",
+      description: "Русскоязычная карточка",
+      year: 2024,
+      minPlayers: 1,
+      maxPlayers: 4,
+      minPlayTime: 30,
+      maxPlayTime: 60,
+      minAge: 10,
+      complexity: 2.5,
+      rating: 8.1,
+      categories: ["Карточная"],
+      mechanics: ["Драфт"],
+      designers: ["Автор"],
+      artists: [],
+      publishers: ["Издатель"],
+      imageUrl: "https://tesera.ru/images/game.jpg",
+      url: "https://tesera.ru/game/tesera-game/",
+    });
+
+    const details = await importExternalItem({
+      provider: "tesera",
+      externalId: "tesera-game",
+      target: "collection",
+    });
+
+    expect(details.item.title).toBe("Тесера игра");
+    expect(details.userItem.owned).toBe(true);
+    expect(details.externalReferences[0]).toMatchObject({
+      provider: "tesera",
+      externalId: "tesera-game",
+    });
+    expect(details.images[0]).toMatchObject({
+      provider: "tesera",
+      caption: "Tesera",
+    });
+    expect(details.links[0]).toMatchObject({
+      title: "Tesera",
+    });
   });
 
   it("creates a play session linked to the selected Item", async () => {

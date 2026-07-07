@@ -153,7 +153,7 @@ export default function HomePage() {
         </p>
       </div>
 
-      <section className="grid max-w-7xl gap-5 xl:grid-cols-12">
+      <section className="grid gap-5 xl:grid-cols-12">
         <Panel className="xl:col-span-4">
           <PanelHeader title="Последние партии" href="/plays" />
           <div className="mt-5 grid gap-4">
@@ -452,11 +452,10 @@ function RatingStars({
         return (
           <Star
             key={index}
-            className={`h-3.5 w-3.5 ${
-              isActive || isHalf
-                ? `${activeClassName} fill-current`
-                : "text-muted-foreground"
-            }`}
+            className={`h-3.5 w-3.5 ${isActive || isHalf
+              ? `${activeClassName} fill-current`
+              : "text-muted-foreground"
+              }`}
           />
         );
       })}

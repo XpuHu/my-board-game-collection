@@ -1,11 +1,13 @@
 import type {
   ExternalSearchResponse,
+  ProviderWarningDto,
   ImportExternalItemRequest,
   ItemDetailsDto,
   ProviderCode,
 } from "@/shared/api";
 import { prisma } from "@/infrastructure/database/prisma";
 import { boardGameGeekProvider } from "@/infrastructure/providers/boardgamegeek-provider";
+import { teseraProvider } from "@/infrastructure/providers/tesera-provider";
 import type {
   ItemProvider,
   ProviderItem,
@@ -33,11 +35,70 @@ export async function searchExternalItems(
   }
 
   const provider = getProvider(query.provider ?? "boardgamegeek");
-  const data = await provider.searchItems(searchQuery, {
+  const filters = {
     type: query.type,
-  });
+  };
 
-  return { data };
+  try {
+    const data = await provider.searchItems(searchQuery, filters);
+
+    if (provider.code === "boardgamegeek" && data.length === 0) {
+      return searchTeseraFallback(searchQuery, filters, {
+        code: "PROVIDER_EMPTY_FALLBACK",
+        message:
+          "BoardGameGeek returned no results. Tesera results were used instead.",
+      });
+    }
+
+    return { data };
+  } catch (error) {
+    if (provider.code !== "boardgamegeek") {
+      throw error;
+    }
+
+    return searchTeseraFallback(searchQuery, filters, {
+      code: "PROVIDER_FALLBACK",
+      message:
+        "BoardGameGeek is unavailable or returned an error. Tesera results were used instead.",
+    });
+  }
+}
+
+async function searchTeseraFallback(
+  searchQuery: string,
+  filters: { type?: string },
+  warning: { code: string; message: string },
+): Promise<ExternalSearchResponse> {
+  const warnings: ProviderWarningDto[] = [
+    {
+      provider: "boardgamegeek" as const,
+      code: warning.code,
+      message: warning.message,
+    },
+  ];
+
+  try {
+    const data = await teseraProvider.searchItems(searchQuery, filters);
+
+    return {
+      data,
+      warnings,
+    };
+  } catch (error) {
+    warnings.push({
+      provider: "tesera",
+      code: "PROVIDER_FALLBACK_FAILED",
+      message:
+        error instanceof Error
+          ? error.message
+          : "Tesera fallback search failed.",
+    });
+
+    return {
+      data: [],
+      warnings,
+    };
+  }
 }
 
 export async function importExternalItem(
@@ -61,6 +122,10 @@ export async function importExternalItem(
 function getProvider(providerCode: ProviderCode): ItemProvider {
   if (providerCode === "boardgamegeek") {
     return boardGameGeekProvider;
+  }
+
+  if (providerCode === "tesera") {
+    return teseraProvider;
   }
 
   throw ApiError.badRequest(
@@ -121,7 +186,7 @@ async function importOrReuseItem(item: ProviderItem, requestedTypeId?: string) {
               type: "reference",
               provider: item.provider,
               url: item.imageUrl,
-              caption: "BoardGameGeek",
+              caption: providerLabel(item.provider),
               sortOrder: 0,
             },
           }
@@ -131,7 +196,7 @@ async function importOrReuseItem(item: ProviderItem, requestedTypeId?: string) {
             create: {
               type: "other",
               url: item.url,
-              title: "BoardGameGeek",
+              title: providerLabel(item.provider),
             },
           }
         : undefined,
@@ -149,6 +214,18 @@ async function importOrReuseItem(item: ProviderItem, requestedTypeId?: string) {
   });
 
   return created.id;
+}
+
+function providerLabel(provider: ProviderCode) {
+  if (provider === "boardgamegeek") {
+    return "BoardGameGeek";
+  }
+
+  if (provider === "tesera") {
+    return "Tesera";
+  }
+
+  return provider;
 }
 
 async function resolveTypeId(requestedTypeId?: string, itemTypeCode?: string | null) {

@@ -734,6 +734,10 @@ function providerLabel(provider: ExternalSearchResultDto["provider"]) {
     return "BGG";
   }
 
+  if (provider === "tesera") {
+    return "Tesera";
+  }
+
   return provider;
 }
 
