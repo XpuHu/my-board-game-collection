@@ -458,3 +458,87 @@ export type SettingsDto = {
   bggUsername?: string | null;
   lastBggPlaySync?: string | null;
 };
+
+export type BackupItemTypeDto = {
+  id: string;
+  code: ItemTypeCode;
+  name: string;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BackupItemDto = {
+  id: string;
+  typeId: string;
+  title: string;
+  originalTitle?: string | null;
+  description?: string | null;
+  year?: number | null;
+  minPlayers?: number | null;
+  maxPlayers?: number | null;
+  minPlayTime?: number | null;
+  maxPlayTime?: number | null;
+  minAge?: number | null;
+  complexity?: number | null;
+  rating?: number | null;
+  sourceMode: "imported" | "manual";
+  categories: string[];
+  mechanics: string[];
+  designers: string[];
+  artists: string[];
+  publishers: string[];
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+};
+
+export type BackupUserItemDto = Omit<UserItemDto, "tags"> & {
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BackupPlaySessionDto = Omit<PlaySessionDto, "itemTitle"> & {
+  importedAt?: string | null;
+};
+
+export type BackupTagDto = TagDto & {
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BackupItemTagDto = {
+  itemId: string;
+  tagId: string;
+};
+
+export type JsonBackupDto = {
+  schemaVersion: 1;
+  exportedAt: string;
+  data: {
+    itemTypes: BackupItemTypeDto[];
+    items: BackupItemDto[];
+    userItems: BackupUserItemDto[];
+    externalReferences: ExternalReferenceDto[];
+    images: ImageDto[];
+    links: LinkDto[];
+    purchases: PurchaseDto[];
+    preorders: PreorderDto[];
+    playSessions: BackupPlaySessionDto[];
+    notes: NoteDto[];
+    relations: ItemRelationDto[];
+    tags: BackupTagDto[];
+    itemTags: BackupItemTagDto[];
+  };
+};
+
+export type JsonImportReportDto = {
+  importedAt: string;
+  created: Record<string, number>;
+  updated: Record<string, number>;
+  skippedDuplicates: {
+    externalReferences: number;
+    bggPlayIds: number;
+    relations: number;
+  };
+};

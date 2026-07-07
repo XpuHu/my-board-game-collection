@@ -8,6 +8,8 @@ import type {
   ImportExternalItemRequest,
   ItemDetailsDto,
   ItemListDto,
+  JsonBackupDto,
+  JsonImportReportDto,
   PaginatedResponse,
   PlaySessionDto,
   PreorderDto,
@@ -305,7 +307,30 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
           body: JSON.stringify(body),
         }),
     },
+    backup: {
+      exportJson: () => requestBlob("/api/export/json"),
+      importJson: (body: JsonBackupDto) =>
+        request<JsonImportReportDto>("/api/import/json", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+    },
   };
+
+  async function requestBlob(path: string) {
+    const response = await fetch(`${baseUrl}${path}`);
+
+    if (!response.ok) {
+      throw await toApiClientError(response);
+    }
+
+    return {
+      blob: await response.blob(),
+      filename: filenameFromContentDisposition(
+        response.headers.get("Content-Disposition"),
+      ),
+    };
+  }
 }
 
 export const apiClient = createApiClient();
@@ -358,4 +383,13 @@ async function toApiClientError(response: Response) {
       message: fallbackMessage,
     });
   }
+}
+
+function filenameFromContentDisposition(header: string | null) {
+  if (!header) {
+    return null;
+  }
+
+  const match = /filename="([^"]+)"/.exec(header);
+  return match?.[1] ?? null;
 }

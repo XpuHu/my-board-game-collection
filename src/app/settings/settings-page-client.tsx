@@ -7,7 +7,9 @@ import {
   CalendarClock,
   CheckCircle2,
   DatabaseZap,
+  Download,
   ExternalLink,
+  FileUp,
   RotateCcw,
   Save,
   Settings,
@@ -18,7 +20,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiClient, type SyncBggPlaysResponse } from "@/shared/api";
+import {
+  apiClient,
+  type JsonBackupDto,
+  type JsonImportReportDto,
+  type SyncBggPlaysResponse,
+} from "@/shared/api";
 
 const BGG_USERNAME_KEY = "board-game-collection:bgg-username";
 const BGG_LAST_SYNC_KEY = "board-game-collection:bgg-last-sync";
@@ -33,9 +40,14 @@ export function SettingsPageClient() {
     getLocalStorageValue<string | null>(BGG_LAST_SYNC_KEY, null),
   );
   const [syncing, setSyncing] = React.useState(false);
+  const [exporting, setExporting] = React.useState(false);
+  const [importing, setImporting] = React.useState(false);
   const [report, setReport] = React.useState<SyncBggPlaysResponse | null>(
     null,
   );
+  const [importReport, setImportReport] =
+    React.useState<JsonImportReportDto | null>(null);
+  const importInputRef = React.useRef<HTMLInputElement | null>(null);
 
   function saveLocalSettings() {
     const trimmedUsername = username.trim();
@@ -100,6 +112,75 @@ export function SettingsPageClient() {
   function useLastSyncAsSince() {
     if (lastSync) {
       setSince(lastSync.slice(0, 10));
+    }
+  }
+
+  async function exportJson() {
+    setExporting(true);
+
+    try {
+      const response = await apiClient.backup.exportJson();
+      const url = window.URL.createObjectURL(response.blob);
+      const anchor = document.createElement("a");
+
+      anchor.href = url;
+      anchor.download =
+        response.filename ?? `board-game-collection-${Date.now()}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Экспорт готов",
+        description: "JSON-файл коллекции сохранен.",
+        variant: "success",
+      });
+    } catch (exportError) {
+      toast({
+        title: "Экспорт не выполнен",
+        description:
+          exportError instanceof Error
+            ? exportError.message
+            : "Не удалось сформировать JSON-файл.",
+        variant: "error",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function importJson(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    setImporting(true);
+
+    try {
+      const backup = JSON.parse(await file.text()) as JsonBackupDto;
+      const response = await apiClient.backup.importJson(backup);
+
+      setImportReport(response);
+      toast({
+        title: "Импорт завершен",
+        description: "JSON-файл обработан, дубли пропущены.",
+        variant: "success",
+      });
+    } catch (importError) {
+      toast({
+        title: "Импорт не выполнен",
+        description:
+          importError instanceof Error
+            ? importError.message
+            : "Проверьте формат JSON-файла.",
+        variant: "error",
+      });
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -187,6 +268,52 @@ export function SettingsPageClient() {
       </section>
 
       {report ? <SyncReport report={report} /> : null}
+
+      <section className="rounded-lg border bg-card">
+        <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">JSON backup</h2>
+            <p className="text-sm text-muted-foreground">
+              Полный снимок коллекции, wishlist, партий и предзаказов.
+            </p>
+          </div>
+          <Badge variant="secondary">schema v1</Badge>
+        </div>
+
+        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-muted-foreground">
+            Импорт не создает дубли внешних идентификаторов и BGG партий.
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={exportJson}
+              disabled={exporting}
+            >
+              <Download className="h-4 w-4" />
+              {exporting ? "Экспорт" : "Скачать JSON"}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={importing}
+            >
+              <FileUp className="h-4 w-4" />
+              {importing ? "Импорт" : "Импорт JSON"}
+            </Button>
+          </div>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={importJson}
+          />
+        </div>
+      </section>
+
+      {importReport ? <ImportReport report={importReport} /> : null}
     </main>
   );
 }
@@ -281,6 +408,98 @@ function ReportMetric({ label, value }: { label: string; value: number }) {
       <div className="mt-1 text-2xl font-semibold">{value}</div>
     </div>
   );
+}
+
+function ImportReport({ report }: { report: JsonImportReportDto }) {
+  const createdTotal = sumRecord(report.created);
+  const updatedTotal = sumRecord(report.updated);
+  const duplicatesTotal =
+    report.skippedDuplicates.externalReferences +
+    report.skippedDuplicates.bggPlayIds +
+    report.skippedDuplicates.relations;
+
+  return (
+    <section className="rounded-lg border bg-card">
+      <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+        <div>
+          <h2 className="text-base font-semibold">Отчет JSON import</h2>
+          <p className="text-sm text-muted-foreground">
+            {formatDateTime(report.importedAt)}
+          </p>
+        </div>
+        <CheckCircle2 className="h-5 w-5 text-primary" />
+      </div>
+
+      <div className="grid gap-3 p-4 sm:grid-cols-3">
+        <ReportMetric label="Создано" value={createdTotal} />
+        <ReportMetric label="Обновлено" value={updatedTotal} />
+        <ReportMetric label="Дубли" value={duplicatesTotal} />
+      </div>
+
+      <div className="grid gap-3 border-t p-4 md:grid-cols-2">
+        <ReportRecord title="Создано" values={report.created} />
+        <ReportRecord title="Обновлено" values={report.updated} />
+      </div>
+
+      <div className="grid gap-2 border-t px-4 py-3 text-sm sm:grid-cols-3">
+        <DuplicateMetric
+          label="ExternalReference"
+          value={report.skippedDuplicates.externalReferences}
+        />
+        <DuplicateMetric
+          label="BGG play"
+          value={report.skippedDuplicates.bggPlayIds}
+        />
+        <DuplicateMetric
+          label="Relation"
+          value={report.skippedDuplicates.relations}
+        />
+      </div>
+    </section>
+  );
+}
+
+function ReportRecord({
+  title,
+  values,
+}: {
+  title: string;
+  values: Record<string, number>;
+}) {
+  const entries = Object.entries(values).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="mb-2 text-sm font-medium">{title}</div>
+      {entries.length > 0 ? (
+        <div className="grid gap-1 text-sm text-muted-foreground">
+          {entries.map(([key, value]) => (
+            <div key={key} className="flex items-center justify-between gap-3">
+              <span>{key}</span>
+              <span className="font-medium text-foreground">{value}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm text-muted-foreground">Нет записей</div>
+      )}
+    </div>
+  );
+}
+
+function DuplicateMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium">{value}</span>
+    </div>
+  );
+}
+
+function sumRecord(record: Record<string, number>) {
+  return Object.values(record).reduce((total, value) => total + value, 0);
 }
 
 function formatDateTime(value?: string | null) {
