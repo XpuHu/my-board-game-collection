@@ -254,6 +254,13 @@ export async function importJsonBackup(
       externalReferences: 0,
       bggPlayIds: 0,
       relations: 0,
+      itemTags: 0,
+    },
+    skippedMissingReferences: {
+      itemTypes: 0,
+      items: 0,
+      tags: 0,
+      preorders: 0,
     },
   };
 
@@ -274,7 +281,7 @@ export async function importJsonBackup(
     await importPlaySessions(tx, backup, itemIdMap, report);
     await importNotes(tx, backup, itemIdMap, report);
     await importRelations(tx, backup, itemIdMap, report);
-    await importItemTags(tx, backup, itemIdMap, tagIdMap);
+    await importItemTags(tx, backup, itemIdMap, tagIdMap, report);
   });
 
   return report;
@@ -380,12 +387,19 @@ async function importItems(
 ) {
   for (const item of backup.data.items) {
     const itemId = itemIdMap.get(item.id) ?? item.id;
+    const typeId = typeIdMap.get(item.typeId);
+
+    if (!typeId) {
+      report.skippedMissingReferences.itemTypes += 1;
+      continue;
+    }
+
     const existing = await tx.item.findUnique({
       where: { id: itemId },
       select: { id: true },
     });
     const data = {
-      typeId: typeIdMap.get(item.typeId) ?? item.typeId,
+      typeId,
       title: item.title,
       originalTitle: item.originalTitle,
       description: item.description,
@@ -478,6 +492,7 @@ async function importUserItems(
     const itemId = itemIdMap.get(userItem.itemId);
 
     if (!itemId) {
+      report.skippedMissingReferences.items += 1;
       continue;
     }
 
@@ -528,6 +543,7 @@ async function importExternalReferences(
     const itemId = itemIdMap.get(reference.itemId);
 
     if (!itemId) {
+      report.skippedMissingReferences.items += 1;
       continue;
     }
 
@@ -542,7 +558,7 @@ async function importExternalReferences(
     });
 
     if (existing) {
-      if (existing.itemId !== itemId) {
+      if (existing.itemId !== itemId || existing.id !== reference.id) {
         report.skippedDuplicates.externalReferences += 1;
         continue;
       }
@@ -582,6 +598,7 @@ async function importImages(
     const itemId = itemIdMap.get(image.itemId);
 
     if (!itemId) {
+      report.skippedMissingReferences.items += 1;
       continue;
     }
 
@@ -627,6 +644,7 @@ async function importLinks(
     const itemId = itemIdMap.get(link.itemId);
 
     if (!itemId) {
+      report.skippedMissingReferences.items += 1;
       continue;
     }
 
@@ -665,6 +683,7 @@ async function importPurchases(
     const itemId = itemIdMap.get(purchase.itemId);
 
     if (!itemId) {
+      report.skippedMissingReferences.items += 1;
       continue;
     }
 
@@ -718,6 +737,7 @@ async function importPreorders(
     const itemId = itemIdMap.get(preorder.itemId);
 
     if (!itemId) {
+      report.skippedMissingReferences.items += 1;
       continue;
     }
 
@@ -775,6 +795,7 @@ async function importPreorderEvents(
       const preorderId = preorderIdMap.get(event.preorderId);
 
       if (!preorderId) {
+        report.skippedMissingReferences.preorders += 1;
         continue;
       }
 
@@ -822,6 +843,7 @@ async function importPlaySessions(
     const itemId = itemIdMap.get(playSession.itemId);
 
     if (!itemId) {
+      report.skippedMissingReferences.items += 1;
       continue;
     }
 
@@ -899,6 +921,7 @@ async function importNotes(
     const itemId = itemIdMap.get(note.itemId);
 
     if (!itemId) {
+      report.skippedMissingReferences.items += 1;
       continue;
     }
 
@@ -938,7 +961,12 @@ async function importRelations(
     const parentItemId = itemIdMap.get(relation.parentItemId);
     const childItemId = itemIdMap.get(relation.childItemId);
 
-    if (!parentItemId || !childItemId || parentItemId === childItemId) {
+    if (!parentItemId || !childItemId) {
+      report.skippedMissingReferences.items += 1;
+      continue;
+    }
+
+    if (parentItemId === childItemId) {
       report.skippedDuplicates.relations += 1;
       continue;
     }
@@ -955,25 +983,21 @@ async function importRelations(
       select: { id: true },
     });
 
-    await tx.itemRelation.upsert({
-      where: {
-        parentItemId_childItemId_relationType: uniqueRelation,
-      },
-      update: {
-        comment: relation.comment,
-        updatedAt: toDate(relation.updatedAt),
-      },
-      create: {
+    if (existing) {
+      report.skippedDuplicates.relations += 1;
+      continue;
+    }
+
+    await tx.itemRelation.create({
+      data: {
         id: relation.id,
-        parentItemId,
-        childItemId,
-        relationType: relation.relationType,
+        ...uniqueRelation,
         comment: relation.comment,
         createdAt: toDate(relation.createdAt),
         updatedAt: toDate(relation.updatedAt),
       },
     });
-    increment(existing ? report.updated : report.created, "relations");
+    increment(report.created, "relations");
   }
 }
 
@@ -982,18 +1006,33 @@ async function importItemTags(
   backup: JsonBackupInput,
   itemIdMap: Map<string, string>,
   tagIdMap: Map<string, string>,
+  report: JsonImportReportDto,
 ) {
-  const tagIdsByItemId = new Map<string, string[]>();
+  const tagIdsByItemId = new Map<string, Set<string>>();
 
   for (const itemTag of backup.data.itemTags) {
     const itemId = itemIdMap.get(itemTag.itemId);
     const tagId = tagIdMap.get(itemTag.tagId);
 
-    if (!itemId || !tagId) {
+    if (!itemId) {
+      report.skippedMissingReferences.items += 1;
       continue;
     }
 
-    tagIdsByItemId.set(itemId, [...(tagIdsByItemId.get(itemId) ?? []), tagId]);
+    if (!tagId) {
+      report.skippedMissingReferences.tags += 1;
+      continue;
+    }
+
+    const tagIds = tagIdsByItemId.get(itemId) ?? new Set<string>();
+
+    if (tagIds.has(tagId)) {
+      report.skippedDuplicates.itemTags += 1;
+      continue;
+    }
+
+    tagIds.add(tagId);
+    tagIdsByItemId.set(itemId, tagIds);
   }
 
   for (const [itemId, tagIds] of tagIdsByItemId.entries()) {
@@ -1001,7 +1040,7 @@ async function importItemTags(
       where: { id: itemId },
       data: {
         tags: {
-          set: Array.from(new Set(tagIds)).map((id) => ({ id })),
+          set: Array.from(tagIds).map((id) => ({ id })),
         },
       },
     });

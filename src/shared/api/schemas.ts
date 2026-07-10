@@ -38,6 +38,9 @@ export const createPurchaseRequestSchema = z
   })
   .strict();
 
+export const updatePurchaseRequestSchema =
+  createPurchaseRequestSchema.partial();
+
 export const updateUserItemRequestSchema = z
   .object({
     status: itemStatusSchema.optional(),
@@ -62,6 +65,75 @@ export const addToCollectionRequestSchema = z
   .strict();
 
 export const addToWishlistRequestSchema = z.object({}).strict();
+
+const itemReferenceListSchema = z.array(z.string().trim().min(1));
+
+export const updateItemRequestSchema = z
+  .object({
+    typeId: uuidSchema.optional(),
+    title: z.string().trim().min(1).optional(),
+    originalTitle: nullableStringSchema.optional(),
+    description: nullableStringSchema.optional(),
+    year: z.number().int().min(0).nullable().optional(),
+    minPlayers: z.number().int().positive().nullable().optional(),
+    maxPlayers: z.number().int().positive().nullable().optional(),
+    minPlayTime: z.number().int().positive().nullable().optional(),
+    maxPlayTime: z.number().int().positive().nullable().optional(),
+    minAge: z.number().int().positive().nullable().optional(),
+    complexity: z.number().nonnegative().nullable().optional(),
+    rating: z.number().nonnegative().nullable().optional(),
+    categories: itemReferenceListSchema.optional(),
+    mechanics: itemReferenceListSchema.optional(),
+    designers: itemReferenceListSchema.optional(),
+    artists: itemReferenceListSchema.optional(),
+    publishers: itemReferenceListSchema.optional(),
+  })
+  .strict();
+
+export const createExternalReferenceRequestSchema = z
+  .object({
+    provider: providerCodeSchema,
+    externalId: z.string().trim().min(1),
+    url: z.string().url().nullable().optional(),
+  })
+  .strict();
+
+export const updateExternalReferenceRequestSchema =
+  createExternalReferenceRequestSchema.partial();
+
+const imageRequestBaseSchema = z
+  .object({
+    type: z.enum(["reference", "user"]).default("user"),
+    provider: providerCodeSchema.nullable().optional(),
+    url: z.string().url().nullable().optional(),
+    path: nullableStringSchema.optional(),
+    caption: nullableStringSchema.optional(),
+    sortOrder: z.number().int().optional(),
+  })
+  .strict();
+
+export const createImageRequestSchema = imageRequestBaseSchema
+  .refine((input) => input.url || input.path, {
+    message: "Image URL or local path is required",
+    path: ["url"],
+  });
+
+export const updateImageRequestSchema = imageRequestBaseSchema
+  .partial()
+  .refine((input) => input.url !== null || input.path !== null, {
+    message: "Image URL and local path cannot both be null",
+    path: ["url"],
+  });
+
+export const createLinkRequestSchema = z
+  .object({
+    type: z.enum(linkTypes),
+    url: z.string().url(),
+    title: nullableStringSchema.optional(),
+  })
+  .strict();
+
+export const updateLinkRequestSchema = createLinkRequestSchema.partial();
 
 export const importExternalItemRequestSchema = z
   .object({
@@ -372,6 +444,18 @@ export const jsonBackupSchema = z
   .strict();
 
 export type CreatePurchaseInput = z.infer<typeof createPurchaseRequestSchema>;
+export type UpdatePurchaseInput = z.infer<typeof updatePurchaseRequestSchema>;
+export type UpdateItemInput = z.infer<typeof updateItemRequestSchema>;
+export type CreateExternalReferenceInput = z.infer<
+  typeof createExternalReferenceRequestSchema
+>;
+export type UpdateExternalReferenceInput = z.infer<
+  typeof updateExternalReferenceRequestSchema
+>;
+export type CreateImageInput = z.infer<typeof createImageRequestSchema>;
+export type UpdateImageInput = z.infer<typeof updateImageRequestSchema>;
+export type CreateLinkInput = z.infer<typeof createLinkRequestSchema>;
+export type UpdateLinkInput = z.infer<typeof updateLinkRequestSchema>;
 export type UpdateUserItemInput = z.infer<typeof updateUserItemRequestSchema>;
 export type AddToCollectionInput = z.infer<typeof addToCollectionRequestSchema>;
 export type AddToWishlistInput = z.infer<typeof addToWishlistRequestSchema>;

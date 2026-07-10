@@ -1,5 +1,15 @@
 import { PreordersPageClient } from "./preorders-page-client";
 
-export default function PreordersPage() {
-  return <PreordersPageClient />;
+type PreordersPageProps = {
+  searchParams: Promise<{
+    itemId?: string;
+  }>;
+};
+
+export default async function PreordersPage({
+  searchParams,
+}: PreordersPageProps) {
+  const { itemId } = await searchParams;
+
+  return <PreordersPageClient initialItemId={itemId} />;
 }

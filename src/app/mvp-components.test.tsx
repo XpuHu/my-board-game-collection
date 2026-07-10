@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "@/components/toast-provider";
 import { CollectionPageClient } from "@/app/collection/collection-page-client";
 import { CollectionItemPageClient } from "@/app/collection/[itemId]/collection-item-page-client";
+import { ExternalImportPageClient } from "@/app/items/new/external-import-page-client";
 import { PlaysPageClient } from "@/app/plays/plays-page-client";
 import { PreordersPageClient } from "@/app/preorders/preorders-page-client";
 import { WishlistItemPageClient } from "@/app/wishlist/[itemId]/wishlist-item-page-client";
@@ -35,6 +36,20 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Получаем компактные данные владельца");
   });
 
+  it("renders manual item creation quick actions before external search", () => {
+    const markup = renderToStaticMarkup(
+      <ExternalImportPageClient initialTarget="play" />,
+    );
+
+    expect(markup).toContain("Добавить игру");
+    expect(markup).toContain("Быстрый ручной сценарий");
+    expect(markup).toContain("Создать и добавить партию");
+    expect(markup).toContain("Создать и добавить в wishlist");
+    expect(markup).toContain("Создать и оформить предзаказ");
+    expect(markup).toContain("Создать как справочник");
+    expect(markup).toContain("Внешний поиск BGG/Tesera");
+  });
+
   it("renders the plays page shell with history filters and add action", () => {
     const markup = renderToStaticMarkup(
       <Wrapped>
@@ -46,7 +61,7 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Добавить партию");
     expect(markup).toContain("С даты");
     expect(markup).toContain("По дату");
-    expect(markup).toContain("Источник");
+    expect(markup).not.toContain("Источник");
   });
 
   it("renders the preorder page shell with expected-date workflow entry points", () => {

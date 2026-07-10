@@ -87,6 +87,7 @@ export async function updatePreorder(
   const existing = await getPreorderOrThrow(preorderId);
   const nextExpectedDate =
     "expectedDate" in input ? toDate(input.expectedDate) : undefined;
+  const nextReceivedDate = resolveReceivedDate(existing.receivedDate, input);
 
   const preorder = await prisma.$transaction(async (tx) => {
     const updated = await tx.preorder.update({
@@ -99,8 +100,7 @@ export async function updatePreorder(
         currency: input.currency,
         orderDate: "orderDate" in input ? toDate(input.orderDate) : undefined,
         expectedDate: nextExpectedDate,
-        receivedDate:
-          "receivedDate" in input ? toDate(input.receivedDate) : undefined,
+        receivedDate: nextReceivedDate,
         trackingNumber: input.trackingNumber,
         status: input.status,
         comment: input.comment,
@@ -120,6 +120,54 @@ export async function updatePreorder(
           newValue: nextExpectedDate?.toISOString() ?? null,
         },
       });
+    }
+
+    if (input.status && input.status !== existing.status) {
+      await tx.preorderEvent.create({
+        data: {
+          preorderId,
+          type: "status_changed",
+          oldValue: existing.status,
+          newValue: input.status,
+        },
+      });
+    }
+
+    if (input.status === "received") {
+      await tx.userItem.upsert({
+        where: {
+          itemId: existing.itemId,
+        },
+        create: {
+          itemId: existing.itemId,
+          owned: true,
+          wishlist: false,
+          status: "owned",
+        },
+        update: {
+          owned: true,
+          status: "owned",
+        },
+      });
+    }
+
+    if (input.status === "cancelled") {
+      const userItem = await tx.userItem.findUnique({
+        where: {
+          itemId: existing.itemId,
+        },
+      });
+
+      if (userItem && !userItem.owned) {
+        await tx.userItem.update({
+          where: {
+            itemId: existing.itemId,
+          },
+          data: {
+            status: userItem.wishlist ? "wishlist" : "archived",
+          },
+        });
+      }
     }
 
     return updated;
@@ -225,6 +273,21 @@ function toDate(value?: string | null) {
 
 function sameDate(left?: Date | null, right?: Date | null) {
   return (left?.getTime() ?? null) === (right?.getTime() ?? null);
+}
+
+function resolveReceivedDate(
+  existingReceivedDate: Date | null,
+  input: UpdatePreorderInput,
+) {
+  if ("receivedDate" in input) {
+    return toDate(input.receivedDate);
+  }
+
+  if (input.status === "received" && !existingReceivedDate) {
+    return new Date();
+  }
+
+  return undefined;
 }
 
 function isActive(preorder: { status: string }) {

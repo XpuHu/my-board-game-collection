@@ -166,6 +166,56 @@ export type CreatePurchaseRequest = {
   comment?: string | null;
 };
 
+export type UpdatePurchaseRequest = Partial<CreatePurchaseRequest>;
+
+export type UpdateItemRequest = {
+  typeId?: string;
+  title?: string;
+  originalTitle?: string | null;
+  description?: string | null;
+  year?: number | null;
+  minPlayers?: number | null;
+  maxPlayers?: number | null;
+  minPlayTime?: number | null;
+  maxPlayTime?: number | null;
+  minAge?: number | null;
+  complexity?: number | null;
+  rating?: number | null;
+  categories?: string[];
+  mechanics?: string[];
+  designers?: string[];
+  artists?: string[];
+  publishers?: string[];
+};
+
+export type CreateExternalReferenceRequest = {
+  provider: ProviderCode;
+  externalId: string;
+  url?: string | null;
+};
+
+export type UpdateExternalReferenceRequest =
+  Partial<CreateExternalReferenceRequest>;
+
+export type CreateImageRequest = {
+  type?: "reference" | "user";
+  provider?: ProviderCode | null;
+  url?: string | null;
+  path?: string | null;
+  caption?: string | null;
+  sortOrder?: number;
+};
+
+export type UpdateImageRequest = Partial<CreateImageRequest>;
+
+export type CreateLinkRequest = {
+  type: LinkType;
+  url: string;
+  title?: string | null;
+};
+
+export type UpdateLinkRequest = Partial<CreateLinkRequest>;
+
 export type NoteDto = {
   id: string;
   itemId: string;
@@ -540,5 +590,12 @@ export type JsonImportReportDto = {
     externalReferences: number;
     bggPlayIds: number;
     relations: number;
+    itemTags: number;
+  };
+  skippedMissingReferences: {
+    itemTypes: number;
+    items: number;
+    tags: number;
+    preorders: number;
   };
 };

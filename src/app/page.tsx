@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   Box,
-  Camera,
   Clock3,
   Cuboid,
   PlusCircle,
@@ -112,26 +111,26 @@ const stats = [
 const actions = [
   {
     title: "Добавить партию",
-    href: "/plays",
+    href: "/items/new?target=play",
     icon: Cuboid,
     className: "from-[#3c317a] to-[#221b44] text-[#a89cff]",
   },
   {
     title: "Добавить игру",
-    href: "/items/new",
+    href: "/items/new?target=collection",
     icon: PlusCircle,
     className: "from-[#14395f] to-[#0c223b] text-[#8cc7ff]",
   },
   {
-    title: "Изменить предзаказ",
-    href: "/preorders",
+    title: "Оформить предзаказ",
+    href: "/items/new?target=preorder",
     icon: Box,
     className: "from-[#184d31] to-[#102b20] text-[#8dffae]",
   },
   {
-    title: "Добавить фото",
-    href: "/collection",
-    icon: Camera,
+    title: "Добавить в wishlist",
+    href: "/items/new?target=wishlist",
+    icon: Star,
     className: "from-[#5a3714] to-[#2c1d10] text-[#ffd88c]",
   },
 ];

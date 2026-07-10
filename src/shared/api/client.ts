@@ -1,8 +1,12 @@
 import type {
   AddToCollectionRequest,
   CollectionItemDetailsDto,
+  CreateExternalReferenceRequest,
+  CreateImageRequest,
+  CreateLinkRequest,
   CreatePlaySessionRequest,
   CreatePreorderRequest,
+  CreatePurchaseRequest,
   CreateTagRequest,
   ExternalSearchResponse,
   ImportExternalItemRequest,
@@ -15,6 +19,7 @@ import type {
   PlaySessionDto,
   PreorderDto,
   ProviderCode,
+  PurchaseDto,
   SettingsDto,
   StatisticsSummaryDto,
   SyncBggPlaysRequest,
@@ -23,7 +28,12 @@ import type {
   SyncItemResponse,
   TagDto,
   UpdateBggSettingsRequest,
+  UpdateExternalReferenceRequest,
+  UpdateImageRequest,
+  UpdateItemRequest,
+  UpdateLinkRequest,
   UpdatePreorderExpectedDateRequest,
+  UpdatePurchaseRequest,
   UpdateUserItemRequest,
   UserItemDto,
   WishlistItemDetailsDto,
@@ -97,6 +107,8 @@ export type CreateItemRequest = {
   designers?: string[];
   artists?: string[];
   publishers?: string[];
+  imageUrl?: string | null;
+  linkUrl?: string | null;
   externalReference?: {
     provider: ProviderCode;
     externalId: string;
@@ -196,12 +208,90 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
           method: "POST",
           body: JSON.stringify(body),
         }),
+      update: (itemId: string, body: UpdateItemRequest) =>
+        request<ItemDetailsDto>(`/api/items/${encodeURIComponent(itemId)}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }),
       updateUserItem: (itemId: string, body: UpdateUserItemRequest) =>
         request<UserItemDto>(
           `/api/items/${encodeURIComponent(itemId)}/user-item`,
           {
             method: "PATCH",
             body: JSON.stringify(body),
+          },
+        ),
+      createExternalReference: (
+        itemId: string,
+        body: CreateExternalReferenceRequest,
+      ) =>
+        request<ItemDetailsDto>(
+          `/api/items/${encodeURIComponent(itemId)}/external-references`,
+          {
+            method: "POST",
+            body: JSON.stringify(body),
+          },
+        ),
+      updateExternalReference: (
+        itemId: string,
+        referenceId: string,
+        body: UpdateExternalReferenceRequest,
+      ) =>
+        request<ItemDetailsDto>(
+          `/api/items/${encodeURIComponent(itemId)}/external-references/${encodeURIComponent(referenceId)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(body),
+          },
+        ),
+      deleteExternalReference: (itemId: string, referenceId: string) =>
+        request<ItemDetailsDto>(
+          `/api/items/${encodeURIComponent(itemId)}/external-references/${encodeURIComponent(referenceId)}`,
+          {
+            method: "DELETE",
+          },
+        ),
+      createImage: (itemId: string, body: CreateImageRequest) =>
+        request<ItemDetailsDto>(
+          `/api/items/${encodeURIComponent(itemId)}/images`,
+          {
+            method: "POST",
+            body: JSON.stringify(body),
+          },
+        ),
+      updateImage: (itemId: string, imageId: string, body: UpdateImageRequest) =>
+        request<ItemDetailsDto>(
+          `/api/items/${encodeURIComponent(itemId)}/images/${encodeURIComponent(imageId)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(body),
+          },
+        ),
+      deleteImage: (itemId: string, imageId: string) =>
+        request<ItemDetailsDto>(
+          `/api/items/${encodeURIComponent(itemId)}/images/${encodeURIComponent(imageId)}`,
+          {
+            method: "DELETE",
+          },
+        ),
+      createLink: (itemId: string, body: CreateLinkRequest) =>
+        request<ItemDetailsDto>(`/api/items/${encodeURIComponent(itemId)}/links`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      updateLink: (itemId: string, linkId: string, body: UpdateLinkRequest) =>
+        request<ItemDetailsDto>(
+          `/api/items/${encodeURIComponent(itemId)}/links/${encodeURIComponent(linkId)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(body),
+          },
+        ),
+      deleteLink: (itemId: string, linkId: string) =>
+        request<ItemDetailsDto>(
+          `/api/items/${encodeURIComponent(itemId)}/links/${encodeURIComponent(linkId)}`,
+          {
+            method: "DELETE",
           },
         ),
       sync: (itemId: string, body: SyncItemRequest = {}) =>
@@ -268,6 +358,26 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
         ),
       delete: (preorderId: string) =>
         request<void>(`/api/preorders/${encodeURIComponent(preorderId)}`, {
+          method: "DELETE",
+        }),
+    },
+    purchases: {
+      list: () => request<PurchaseDto[]>("/api/purchases"),
+      create: (itemId: string, body: CreatePurchaseRequest) =>
+        request<PurchaseDto>(
+          `/api/items/${encodeURIComponent(itemId)}/purchases`,
+          {
+            method: "POST",
+            body: JSON.stringify(body),
+          },
+        ),
+      update: (purchaseId: string, body: UpdatePurchaseRequest) =>
+        request<PurchaseDto>(`/api/purchases/${encodeURIComponent(purchaseId)}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }),
+      delete: (purchaseId: string) =>
+        request<void>(`/api/purchases/${encodeURIComponent(purchaseId)}`, {
           method: "DELETE",
         }),
     },

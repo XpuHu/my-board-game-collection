@@ -7,6 +7,13 @@ import {
   itemStatusSchema,
   providerCodeSchema,
   type AddToCollectionInput,
+  type CreateExternalReferenceInput,
+  type CreateImageInput,
+  type CreateLinkInput,
+  type UpdateExternalReferenceInput,
+  type UpdateImageInput,
+  type UpdateItemInput,
+  type UpdateLinkInput,
   type UpdateUserItemInput,
 } from "@/shared/api";
 import { ApiError } from "@/server/api/errors";
@@ -38,6 +45,8 @@ const createItemSchema = z
     designers: z.array(z.string().trim().min(1)).default([]),
     artists: z.array(z.string().trim().min(1)).default([]),
     publishers: z.array(z.string().trim().min(1)).default([]),
+    imageUrl: z.string().url().nullable().optional(),
+    linkUrl: z.string().url().nullable().optional(),
     externalReference: z
       .object({
         provider: providerCodeSchema,
@@ -84,6 +93,26 @@ export async function createItem(input: CreateItemInput) {
       designers: input.designers,
       artists: input.artists,
       publishers: input.publishers,
+      images: input.imageUrl
+        ? {
+            create: {
+              type: "user",
+              provider: "manual",
+              url: input.imageUrl,
+              caption: "Manual URL",
+              sortOrder: 0,
+            },
+          }
+        : undefined,
+      links: input.linkUrl
+        ? {
+            create: {
+              type: "other",
+              url: input.linkUrl,
+              title: "Manual link",
+            },
+          }
+        : undefined,
       externalReferences: input.externalReference
         ? {
             create: {
@@ -104,6 +133,194 @@ export async function createItem(input: CreateItemInput) {
   });
 
   return getItemDetails(item.id);
+}
+
+export async function updateItem(itemId: string, input: UpdateItemInput) {
+  await assertItemExists(itemId);
+
+  await prisma.item.update({
+    where: {
+      id: itemId,
+    },
+    data: {
+      typeId: input.typeId,
+      title: input.title,
+      originalTitle: input.originalTitle,
+      description: input.description,
+      year: input.year,
+      minPlayers: input.minPlayers,
+      maxPlayers: input.maxPlayers,
+      minPlayTime: input.minPlayTime,
+      maxPlayTime: input.maxPlayTime,
+      minAge: input.minAge,
+      complexity: input.complexity,
+      rating: input.rating,
+      categories: input.categories,
+      mechanics: input.mechanics,
+      designers: input.designers,
+      artists: input.artists,
+      publishers: input.publishers,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function createExternalReference(
+  itemId: string,
+  input: CreateExternalReferenceInput,
+) {
+  await assertItemExists(itemId);
+
+  await prisma.externalReference.create({
+    data: {
+      itemId,
+      provider: input.provider,
+      externalId: input.externalId,
+      url: input.url,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function updateExternalReference(
+  itemId: string,
+  referenceId: string,
+  input: UpdateExternalReferenceInput,
+) {
+  await assertOwnedItemChild(itemId, "externalReference", referenceId);
+
+  await prisma.externalReference.update({
+    where: {
+      id: referenceId,
+    },
+    data: {
+      provider: input.provider,
+      externalId: input.externalId,
+      url: input.url,
+      lastSync: input.provider || input.externalId ? null : undefined,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function deleteExternalReference(
+  itemId: string,
+  referenceId: string,
+) {
+  await assertOwnedItemChild(itemId, "externalReference", referenceId);
+
+  await prisma.externalReference.delete({
+    where: {
+      id: referenceId,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function createImage(itemId: string, input: CreateImageInput) {
+  await assertItemExists(itemId);
+
+  await prisma.image.create({
+    data: {
+      itemId,
+      type: input.type,
+      provider: input.provider,
+      url: input.url,
+      path: input.path,
+      caption: input.caption,
+      sortOrder: input.sortOrder ?? 0,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function updateImage(
+  itemId: string,
+  imageId: string,
+  input: UpdateImageInput,
+) {
+  await assertOwnedItemChild(itemId, "image", imageId);
+
+  await prisma.image.update({
+    where: {
+      id: imageId,
+    },
+    data: {
+      type: input.type,
+      provider: input.provider,
+      url: input.url,
+      path: input.path,
+      caption: input.caption,
+      sortOrder: input.sortOrder,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function deleteImage(itemId: string, imageId: string) {
+  await assertOwnedItemChild(itemId, "image", imageId);
+
+  await prisma.image.delete({
+    where: {
+      id: imageId,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function createLink(itemId: string, input: CreateLinkInput) {
+  await assertItemExists(itemId);
+
+  await prisma.link.create({
+    data: {
+      itemId,
+      type: input.type,
+      url: input.url,
+      title: input.title,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function updateLink(
+  itemId: string,
+  linkId: string,
+  input: UpdateLinkInput,
+) {
+  await assertOwnedItemChild(itemId, "link", linkId);
+
+  await prisma.link.update({
+    where: {
+      id: linkId,
+    },
+    data: {
+      type: input.type,
+      url: input.url,
+      title: input.title,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function deleteLink(itemId: string, linkId: string) {
+  await assertOwnedItemChild(itemId, "link", linkId);
+
+  await prisma.link.delete({
+    where: {
+      id: linkId,
+    },
+  });
+
+  return getItemDetails(itemId);
 }
 
 export async function findByExternalReference(
@@ -301,6 +518,32 @@ async function assertItemExists(itemId: string) {
 
   if (!item) {
     throw ApiError.notFound("ITEM_NOT_FOUND", "Item was not found");
+  }
+}
+
+async function assertOwnedItemChild(
+  itemId: string,
+  kind: "externalReference" | "image" | "link",
+  childId: string,
+) {
+  await assertItemExists(itemId);
+
+  const where = {
+    id: childId,
+    itemId,
+  };
+  const select = {
+    id: true,
+  };
+  const child =
+    kind === "externalReference"
+      ? await prisma.externalReference.findFirst({ where, select })
+      : kind === "image"
+        ? await prisma.image.findFirst({ where, select })
+        : await prisma.link.findFirst({ where, select });
+
+  if (!child) {
+    throw ApiError.notFound("ITEM_CHILD_NOT_FOUND", "Item child was not found");
   }
 }
 

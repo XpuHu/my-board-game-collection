@@ -175,7 +175,7 @@ export function CollectionPageClient() {
           </p>
         </div>
         <Button asChild>
-          <Link href="/items/new">
+          <Link href="/items/new?target=collection">
             <ListPlus className="h-4 w-4" />
             Добавить игру
           </Link>
@@ -331,7 +331,7 @@ export function CollectionPageClient() {
           description="Добавленные owned-игры появятся здесь без длинных описаний: название, оценка, партии и последнее сыгранное."
           action={
             <Button asChild>
-              <Link href="/items/new">
+              <Link href="/items/new?target=collection">
                 <ListPlus className="h-4 w-4" />
                 Добавить игру
               </Link>

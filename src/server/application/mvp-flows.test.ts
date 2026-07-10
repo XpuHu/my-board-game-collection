@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 
 import { boardGameGeekProvider } from "@/infrastructure/providers/boardgamegeek-provider";
 import { boardGameGeekPlayProvider } from "@/infrastructure/providers/bgg-play-provider";
@@ -12,16 +13,38 @@ import {
 import {
   addItemToCollection,
   addItemToWishlist,
+  createItem,
+  updateUserItem,
 } from "@/server/application/items/item-service";
-import { createPlaySession } from "@/server/application/plays/play-service";
+import { listCollection } from "@/server/application/collection/collection-service";
+import {
+  createPlaySession,
+  deletePlaySession,
+  listPlaySessions,
+  updatePlaySession,
+} from "@/server/application/plays/play-service";
 import {
   createPreorder,
+  updatePreorder,
   updatePreorderExpectedDate,
 } from "@/server/application/preorders/preorder-service";
+import {
+  createPurchase,
+  deletePurchase,
+  listPurchases,
+  updatePurchase,
+} from "@/server/application/purchases/purchase-service";
+import { getStatisticsSummary } from "@/server/application/statistics/statistics-service";
+import {
+  exportJsonBackup,
+  importJsonBackup,
+} from "@/server/application/backup/backup-service";
 
 describe("MVP service flows", () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
+    process.env.EXTERNAL_PROVIDERS_ENABLED = "true";
+    process.env.BGG_SYNC_ENABLED = "true";
     await clearDomainData();
   });
 
@@ -69,6 +92,111 @@ describe("MVP service flows", () => {
     expect(userItem.owned).toBe(false);
     expect(userItem.wishlist).toBe(true);
     expect(userItem.status).toBe("wishlist");
+  });
+
+  it("updates the full manual UserItem state with tags", async () => {
+    const item = await createTestItem({ owned: false, wishlist: true });
+    const tag = await prisma.tag.create({
+      data: {
+        name: "Solo",
+      },
+    });
+
+    const userItem = await updateUserItem(item.id, {
+      owned: true,
+      wishlist: true,
+      status: "preordered",
+      location: "Shelf A",
+      personalRating: 9,
+      notes: "Keep shrink until campaign",
+      interestLevel: 5,
+      decisionNotes: "Buy if second printing arrives",
+      tagIds: [tag.id],
+    });
+
+    expect(userItem).toMatchObject({
+      owned: true,
+      wishlist: true,
+      status: "preordered",
+      location: "Shelf A",
+      personalRating: 9,
+      notes: "Keep shrink until campaign",
+      interestLevel: 5,
+      decisionNotes: "Buy if second printing arrives",
+    });
+    expect(userItem.tags).toEqual([
+      expect.objectContaining({
+        name: "Solo",
+      }),
+    ]);
+    await expect(prisma.userItem.count()).resolves.toBe(1);
+  });
+
+  it("creates a manual item with reference lists, image URL and link URL", async () => {
+    const type = await prisma.itemType.findUniqueOrThrow({
+      where: { code: "base_game" },
+    });
+
+    const details = await createItem({
+      typeId: type.id,
+      title: "Manual Game",
+      originalTitle: "Manual Original",
+      description: "Local card",
+      year: 2026,
+      minPlayers: 1,
+      maxPlayers: 4,
+      minPlayTime: 30,
+      maxPlayTime: 90,
+      minAge: 10,
+      complexity: 2.5,
+      rating: 8.1,
+      sourceMode: "manual",
+      categories: ["Strategy"],
+      mechanics: ["Drafting"],
+      designers: ["Designer One"],
+      artists: ["Artist One"],
+      publishers: ["Publisher One"],
+      imageUrl: "https://example.com/game.jpg",
+      linkUrl: "https://example.com/game",
+    });
+
+    expect(details.item).toMatchObject({
+      title: "Manual Game",
+      sourceMode: "manual",
+      designers: ["Designer One"],
+      artists: ["Artist One"],
+      publishers: ["Publisher One"],
+    });
+    expect(details.images[0]).toMatchObject({
+      type: "user",
+      provider: "manual",
+      url: "https://example.com/game.jpg",
+    });
+    expect(details.links[0]).toMatchObject({
+      type: "other",
+      url: "https://example.com/game",
+    });
+  });
+
+  it("returns a disabled warning without calling external providers", async () => {
+    process.env.EXTERNAL_PROVIDERS_ENABLED = "false";
+    const bggSearch = vi.spyOn(boardGameGeekProvider, "searchItems");
+    const teseraSearch = vi.spyOn(teseraProvider, "searchItems");
+
+    const response = await searchExternalItems({
+      q: "Ark Nova",
+      provider: "boardgamegeek",
+    });
+
+    expect(response.data).toEqual([]);
+    expect(response.warnings).toEqual([
+      expect.objectContaining({
+        provider: "boardgamegeek",
+        code: "PROVIDER_DISABLED",
+      }),
+    ]);
+    expect(bggSearch).not.toHaveBeenCalled();
+    expect(teseraSearch).not.toHaveBeenCalled();
   });
 
   it("falls back to Tesera when BGG search fails", async () => {
@@ -207,7 +335,7 @@ describe("MVP service flows", () => {
     });
   });
 
-  it("creates a play session linked to the selected Item", async () => {
+  it("manages manual play sessions and collection aggregates locally", async () => {
     const item = await createTestItem({ title: "Spirit Island", owned: true });
     const playedAt = "2026-07-06T12:00:00.000Z";
 
@@ -228,7 +356,42 @@ describe("MVP service flows", () => {
     expect(play.playedAt).toBe(playedAt);
     expect(play.playersCount).toBe(2);
     expect(play.result).toBe("win");
-    await expect(prisma.playSession.count()).resolves.toBe(1);
+    expect(play.source).toBe("manual");
+
+    const manualPlays = await listPlaySessions(
+      { source: "manual" },
+      { page: 1, pageSize: 10 },
+    );
+    const bggPlays = await listPlaySessions(
+      { source: "boardgamegeek" },
+      { page: 1, pageSize: 10 },
+    );
+    const collection = await listCollection({}, { page: 1, pageSize: 10 });
+
+    expect(manualPlays.pagination.total).toBe(1);
+    expect(bggPlays.pagination.total).toBe(0);
+    expect(collection.data[0]).toMatchObject({
+      playsCount: 1,
+      lastPlayedAt: playedAt,
+    });
+
+    const updated = await updatePlaySession(play.id, {
+      playedAt: "2026-07-07T12:00:00.000Z",
+      playersCount: 3,
+      durationMinutes: 105,
+      result: "score",
+      score: "81",
+      playerNames: ["Anna", "Max", "Nina"],
+      usedItemIds: [],
+      notes: "Second run",
+    });
+
+    expect(updated.playersCount).toBe(3);
+    expect(updated.result).toBe("score");
+    expect(updated.locallyModifiedAt).not.toBeNull();
+
+    await deletePlaySession(play.id);
+    await expect(prisma.playSession.count()).resolves.toBe(0);
   });
 
   it("syncs BGG plays idempotently by bggPlayId", async () => {
@@ -254,6 +417,16 @@ describe("MVP service flows", () => {
     expect(secondReport.imported).toBe(0);
     expect(secondReport.skippedDuplicates).toBe(2);
     await expect(prisma.playSession.count()).resolves.toBe(1);
+  });
+
+  it("fails BGG sync with PROVIDER_DISABLED before calling the provider", async () => {
+    process.env.BGG_SYNC_ENABLED = "false";
+    const playProvider = vi.spyOn(boardGameGeekPlayProvider, "getUserPlays");
+
+    await expect(syncBggPlays({ username: "tester" })).rejects.toMatchObject({
+      code: "PROVIDER_DISABLED",
+    });
+    expect(playProvider).not.toHaveBeenCalled();
   });
 
   it("creates a PreorderEvent when expected date changes", async () => {
@@ -284,6 +457,260 @@ describe("MVP service flows", () => {
       comment: "Wave moved",
     });
     await expect(prisma.preorderEvent.count()).resolves.toBe(1);
+  });
+
+  it("marks a preorder as received and moves the item into collection", async () => {
+    const item = await createTestItem({ wishlist: true });
+    const preorder = await createPreorder(item.id, {
+      shop: "Gamefound",
+      price: 80,
+      currency: "USD",
+      orderDate: "2026-06-01T00:00:00.000Z",
+      expectedDate: "2026-08-01T00:00:00.000Z",
+      status: "ordered",
+      comment: "Late pledge",
+    });
+
+    const received = await updatePreorder(preorder.id, {
+      status: "received",
+      receivedDate: "2026-08-20T00:00:00.000Z",
+    });
+    const userItem = await prisma.userItem.findUniqueOrThrow({
+      where: { itemId: item.id },
+    });
+
+    expect(received.status).toBe("received");
+    expect(received.receivedDate).toBe("2026-08-20T00:00:00.000Z");
+    expect(received.events).toEqual([
+      expect.objectContaining({
+        type: "status_changed",
+        oldValue: "ordered",
+        newValue: "received",
+      }),
+    ]);
+    expect(userItem.owned).toBe(true);
+    expect(userItem.status).toBe("owned");
+  });
+
+  it("manages purchases manually and includes them in statistics", async () => {
+    const item = await createTestItem({ owned: false, wishlist: true });
+
+    const purchase = await createPurchase(item.id, {
+      shop: "Local Store",
+      price: 5000,
+      currency: "RUB",
+      deliveryCost: 500,
+      discount: 300,
+      purchaseDate: "2026-07-09T00:00:00.000Z",
+      comment: "Retail copy",
+    });
+    const userItem = await prisma.userItem.findUniqueOrThrow({
+      where: { itemId: item.id },
+    });
+    const statisticsAfterCreate = await getStatisticsSummary();
+
+    expect(purchase.totalPrice).toBe(5200);
+    expect(userItem.owned).toBe(true);
+    expect(statisticsAfterCreate.collectionValue).toEqual([
+      { amount: 5200, currency: "RUB" },
+    ]);
+
+    const updated = await updatePurchase(purchase.id, {
+      price: 4500,
+      deliveryCost: 400,
+      discount: 0,
+      comment: "Discount corrected",
+    });
+    const purchases = await listPurchases();
+    const statisticsAfterUpdate = await getStatisticsSummary();
+
+    expect(updated.totalPrice).toBe(4900);
+    expect(purchases).toHaveLength(1);
+    expect(statisticsAfterUpdate.collectionValue).toEqual([
+      { amount: 4900, currency: "RUB" },
+    ]);
+
+    await deletePurchase(purchase.id);
+    const statisticsAfterDelete = await getStatisticsSummary();
+
+    await expect(prisma.purchase.count()).resolves.toBe(0);
+    expect(statisticsAfterDelete.collectionValue).toEqual([]);
+  });
+
+  it("exports and imports the full manual dataset without duplicate records", async () => {
+    const base = await createTestItem({
+      title: "Backup Base Game",
+      owned: true,
+      wishlist: true,
+    });
+    const expansion = await createTestItem({
+      title: "Backup Expansion",
+      owned: true,
+    });
+    const tag = await prisma.tag.create({
+      data: {
+        name: "Backup Tag",
+      },
+    });
+
+    await prisma.item.update({
+      where: { id: base.id },
+      data: {
+        categories: ["Strategy"],
+        mechanics: ["Deck building"],
+        designers: ["Designer"],
+        artists: ["Artist"],
+        publishers: ["Publisher"],
+        tags: {
+          set: [{ id: tag.id }],
+        },
+      },
+    });
+    await prisma.externalReference.create({
+      data: {
+        itemId: base.id,
+        provider: "boardgamegeek",
+        externalId: "backup-1",
+        url: "https://boardgamegeek.com/boardgame/1/backup",
+      },
+    });
+    await prisma.image.create({
+      data: {
+        itemId: base.id,
+        type: "user",
+        provider: "manual",
+        url: "https://example.com/backup.jpg",
+        caption: "Box",
+      },
+    });
+    await prisma.link.create({
+      data: {
+        itemId: base.id,
+        type: "rules",
+        url: "https://example.com/rules.pdf",
+        title: "Rules",
+      },
+    });
+    await prisma.note.create({
+      data: {
+        itemId: base.id,
+        title: "Note",
+        body: "Manual note",
+      },
+    });
+    await prisma.itemRelation.create({
+      data: {
+        parentItemId: base.id,
+        childItemId: expansion.id,
+        relationType: "expansion",
+      },
+    });
+    await createPurchase(base.id, {
+      shop: "Backup Shop",
+      price: 1000,
+      currency: "RUB",
+      purchaseDate: "2026-07-09T00:00:00.000Z",
+    });
+    const preorder = await createPreorder(base.id, {
+      shop: "Backup Preorder",
+      price: 40,
+      currency: "USD",
+      expectedDate: "2026-10-01T00:00:00.000Z",
+      status: "ordered",
+    });
+    await updatePreorderExpectedDate(preorder.id, {
+      expectedDate: "2026-11-01T00:00:00.000Z",
+      reason: "Delay",
+    });
+    await createPlaySession(base.id, {
+      playedAt: "2026-07-01T00:00:00.000Z",
+      playersCount: 2,
+      usedItemIds: [expansion.id],
+    });
+    await prisma.playSession.create({
+      data: {
+        itemId: base.id,
+        playedAt: new Date("2026-07-02T00:00:00.000Z"),
+        source: "boardgamegeek",
+        bggPlayId: "backup-bgg-play",
+        playerNames: [],
+        usedItemIds: [],
+      },
+    });
+
+    const backup = await exportJsonBackup();
+    const duplicateExternalReference = {
+      ...backup.data.externalReferences[0],
+      id: randomUUID(),
+    };
+    const duplicateRelation = {
+      ...backup.data.relations[0],
+      id: randomUUID(),
+    };
+    const bggPlay = backup.data.playSessions.find((play) => play.bggPlayId);
+
+    if (!bggPlay) {
+      throw new Error("Expected exported BGG play");
+    }
+
+    const duplicateBggPlay = {
+      ...bggPlay,
+      id: randomUUID(),
+    };
+
+    backup.data.externalReferences.push(duplicateExternalReference);
+    backup.data.relations.push(duplicateRelation);
+    backup.data.itemTags.push(backup.data.itemTags[0]);
+    backup.data.playSessions.push(duplicateBggPlay);
+
+    await clearDomainData();
+
+    const firstReport = await importJsonBackup(backup);
+    const secondReport = await importJsonBackup(backup);
+    const importedBase = await prisma.item.findUniqueOrThrow({
+      where: { id: base.id },
+      include: {
+        tags: true,
+      },
+    });
+
+    expect(firstReport.created).toMatchObject({
+      items: 2,
+      userItems: 2,
+      externalReferences: 1,
+      images: 1,
+      links: 1,
+      purchases: 1,
+      preorders: 1,
+      preorderEvents: 1,
+      playSessions: 2,
+      notes: 1,
+      relations: 1,
+    });
+    expect(firstReport.skippedDuplicates).toMatchObject({
+      externalReferences: 1,
+      bggPlayIds: 1,
+      relations: 1,
+      itemTags: 1,
+    });
+    expect(firstReport.skippedMissingReferences).toEqual({
+      itemTypes: 0,
+      items: 0,
+      tags: 0,
+      preorders: 0,
+    });
+    expect(secondReport.updated.items).toBe(2);
+    expect(secondReport.skippedDuplicates).toMatchObject({
+      externalReferences: 1,
+      bggPlayIds: 1,
+      relations: 2,
+      itemTags: 1,
+    });
+    await expect(prisma.externalReference.count()).resolves.toBe(1);
+    await expect(prisma.itemRelation.count()).resolves.toBe(1);
+    await expect(prisma.playSession.count()).resolves.toBe(2);
+    expect(importedBase.tags).toHaveLength(1);
+    expect(importedBase.categories).toEqual(["Strategy"]);
   });
 });
 

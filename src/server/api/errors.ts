@@ -33,13 +33,25 @@ export class ApiError extends Error {
   static conflict(code: string, message: string, details?: unknown) {
     return new ApiError(409, code, message, details);
   }
+
+  static serviceUnavailable(code: string, message: string, details?: unknown) {
+    return new ApiError(503, code, message, details);
+  }
 }
 
 export function validationError(error: ZodError) {
   return ApiError.badRequest(
     "VALIDATION_ERROR",
     "Request validation failed",
-    error.flatten(),
+    {
+      issues: error.issues.map((issue) => ({
+        path: issue.path.map(String).join(".") || "<root>",
+        message: issue.message,
+        code: issue.code,
+      })),
+      formErrors: error.flatten().formErrors,
+      fieldErrors: error.flatten().fieldErrors,
+    },
   );
 }
 

@@ -84,6 +84,7 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [hasImportedPlays, setHasImportedPlays] = React.useState(false);
   const [dialogOpen, setDialogOpen] = React.useState(Boolean(initialItemId));
   const [editingPlay, setEditingPlay] = React.useState<PlaySessionDto | null>(
     null,
@@ -109,8 +110,9 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
         pageSize: 100,
       }),
       apiClient.collection.list({ pageSize: 100 }),
+      apiClient.plays.list({ source: "boardgamegeek", pageSize: 1 }),
     ])
-      .then(([playsResponse, collectionResponse]) => {
+      .then(([playsResponse, collectionResponse, importedResponse]) => {
         if (!isActive) {
           return;
         }
@@ -118,6 +120,7 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
         setPlays(playsResponse.data);
         setTotal(playsResponse.pagination.total);
         setCollectionItems(collectionResponse.data);
+        setHasImportedPlays(importedResponse.pagination.total > 0);
         setError(null);
       })
       .catch((loadError: unknown) => {
@@ -344,22 +347,24 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
           />
         </div>
 
-        <div>
-          <Label>Источник</Label>
-          <Select
-            value={filters.source}
-            onValueChange={(value) => updateFilter("source", value)}
-          >
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_VALUE}>Все</SelectItem>
-              <SelectItem value="manual">Ручные</SelectItem>
-              <SelectItem value="boardgamegeek">BGG</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {hasImportedPlays ? (
+          <div>
+            <Label>Источник</Label>
+            <Select
+              value={filters.source}
+              onValueChange={(value) => updateFilter("source", value)}
+            >
+              <SelectTrigger className="mt-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_VALUE}>Все</SelectItem>
+                <SelectItem value="manual">Ручные</SelectItem>
+                <SelectItem value="boardgamegeek">BGG</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
 
         <div className="flex items-end gap-2">
           <Button type="submit">Показать</Button>
@@ -389,10 +394,19 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
           title="История партий пуста"
           description="Добавьте первую партию: дата, игроки, результат и заметки сохранятся в PlaySession."
           action={
-            <Button type="button" onClick={openCreateDialog}>
-              <CalendarPlus className="h-4 w-4" />
-              Добавить партию
-            </Button>
+            collectionItems.length > 0 ? (
+              <Button type="button" onClick={openCreateDialog}>
+                <CalendarPlus className="h-4 w-4" />
+                Добавить партию
+              </Button>
+            ) : (
+              <Button asChild>
+                <Link href="/items/new?target=play">
+                  <CalendarPlus className="h-4 w-4" />
+                  Создать игру и добавить партию
+                </Link>
+              </Button>
+            )
           }
         />
       ) : (

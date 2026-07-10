@@ -1,5 +1,11 @@
 import { ExternalImportPageClient } from "./external-import-page-client";
-import type { ImportExternalItemRequest } from "@/shared/api";
+
+type ManualQuickAction =
+  | "collection"
+  | "play"
+  | "wishlist"
+  | "preorder"
+  | "reference_only";
 
 type NewItemPageProps = {
   searchParams: Promise<{
@@ -17,10 +23,12 @@ export default async function NewItemPage({ searchParams }: NewItemPageProps) {
 
 function parseTarget(
   value?: string,
-): NonNullable<ImportExternalItemRequest["target"]> | undefined {
+): ManualQuickAction | undefined {
   if (
     value === "collection" ||
+    value === "play" ||
     value === "wishlist" ||
+    value === "preorder" ||
     value === "reference_only"
   ) {
     return value;

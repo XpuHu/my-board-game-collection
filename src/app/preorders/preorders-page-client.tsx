@@ -4,12 +4,14 @@ import * as React from "react";
 import Link from "next/link";
 import {
   CalendarClock,
+  CheckCircle2,
   Edit3,
   Package,
   Plus,
   RotateCcw,
   Save,
   Trash2,
+  XCircle,
 } from "lucide-react";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui-state";
@@ -67,6 +69,10 @@ type ExpectedDateFormState = {
   comment: string;
 };
 
+type PreordersPageClientProps = {
+  initialItemId?: string;
+};
+
 const emptyPreorderForm: PreorderFormState = {
   itemId: "",
   shop: "",
@@ -86,7 +92,7 @@ const emptyExpectedDateForm: ExpectedDateFormState = {
   comment: "",
 };
 
-export function PreordersPageClient() {
+export function PreordersPageClient({ initialItemId }: PreordersPageClientProps) {
   const { toast } = useToast();
   const [preorders, setPreorders] = React.useState<PreorderDto[]>([]);
   const [items, setItems] = React.useState<ItemListDto[]>([]);
@@ -94,7 +100,9 @@ export function PreordersPageClient() {
   const [loadVersion, setLoadVersion] = React.useState(0);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [preorderDialogOpen, setPreorderDialogOpen] = React.useState(false);
+  const [preorderDialogOpen, setPreorderDialogOpen] = React.useState(
+    Boolean(initialItemId),
+  );
   const [dateDialogOpen, setDateDialogOpen] = React.useState(false);
   const [editingPreorder, setEditingPreorder] =
     React.useState<PreorderDto | null>(null);
@@ -102,7 +110,10 @@ export function PreordersPageClient() {
     null,
   );
   const [preorderForm, setPreorderForm] =
-    React.useState<PreorderFormState>(emptyPreorderForm);
+    React.useState<PreorderFormState>({
+      ...emptyPreorderForm,
+      itemId: initialItemId ?? "",
+    });
   const [expectedDateForm, setExpectedDateForm] =
     React.useState<ExpectedDateFormState>(emptyExpectedDateForm);
 
@@ -166,7 +177,10 @@ export function PreordersPageClient() {
 
   function openCreateDialog() {
     setEditingPreorder(null);
-    setPreorderForm(emptyPreorderForm);
+    setPreorderForm({
+      ...emptyPreorderForm,
+      itemId: initialItemId ?? "",
+    });
     setPreorderDialogOpen(true);
   }
 
@@ -303,6 +317,56 @@ export function PreordersPageClient() {
     }
   }
 
+  async function markPreorderReceived(preorder: PreorderDto) {
+    try {
+      await apiClient.preorders.update(preorder.id, {
+        status: "received",
+        receivedDate: new Date().toISOString(),
+      });
+      toast({
+        title: "Предзаказ получен",
+        description: "Игра отмечена как owned в коллекции.",
+        variant: "success",
+      });
+      reload();
+    } catch (updateError) {
+      toast({
+        title: "Не удалось отметить полученным",
+        description:
+          updateError instanceof Error
+            ? updateError.message
+            : "Попробуйте еще раз.",
+        variant: "error",
+      });
+    }
+  }
+
+  async function cancelPreorder(preorder: PreorderDto) {
+    if (!window.confirm(`Отменить предзаказ ${preorder.itemTitle}?`)) {
+      return;
+    }
+
+    try {
+      await apiClient.preorders.update(preorder.id, {
+        status: "cancelled",
+      });
+      toast({
+        title: "Предзаказ отменен",
+        variant: "success",
+      });
+      reload();
+    } catch (updateError) {
+      toast({
+        title: "Не удалось отменить предзаказ",
+        description:
+          updateError instanceof Error
+            ? updateError.message
+            : "Попробуйте еще раз.",
+        variant: "error",
+      });
+    }
+  }
+
   const activePreorders = preorders.filter((preorder) =>
     activeStatuses.includes(preorder.status),
   );
@@ -338,10 +402,19 @@ export function PreordersPageClient() {
           title="Активных предзаказов нет"
           description="Оформите предзаказ для игры из коллекции или wishlist, чтобы отслеживать ожидаемую дату доставки."
           action={
-            <Button type="button" onClick={openCreateDialog}>
-              <Plus className="h-4 w-4" />
-              Оформить предзаказ
-            </Button>
+            items.length > 0 ? (
+              <Button type="button" onClick={openCreateDialog}>
+                <Plus className="h-4 w-4" />
+                Оформить предзаказ
+              </Button>
+            ) : (
+              <Button asChild>
+                <Link href="/items/new?target=preorder">
+                  <Plus className="h-4 w-4" />
+                  Создать игру и оформить предзаказ
+                </Link>
+              </Button>
+            )
           }
         />
       ) : (
@@ -363,6 +436,8 @@ export function PreordersPageClient() {
                 onChangeDate={openDateDialog}
                 onEdit={openEditDialog}
                 onDelete={deletePreorderItem}
+                onMarkReceived={markPreorderReceived}
+                onCancel={cancelPreorder}
               />
             ))}
           </div>
@@ -382,6 +457,8 @@ export function PreordersPageClient() {
                 onChangeDate={openDateDialog}
                 onEdit={openEditDialog}
                 onDelete={deletePreorderItem}
+                onMarkReceived={markPreorderReceived}
+                onCancel={cancelPreorder}
               />
             ))}
           </div>
@@ -643,12 +720,18 @@ function PreorderRow({
   onChangeDate,
   onEdit,
   onDelete,
+  onMarkReceived,
+  onCancel,
 }: {
   preorder: PreorderDto;
   onChangeDate: (preorder: PreorderDto) => void;
   onEdit: (preorder: PreorderDto) => void;
   onDelete: (preorder: PreorderDto) => void;
+  onMarkReceived: (preorder: PreorderDto) => void;
+  onCancel: (preorder: PreorderDto) => void;
 }) {
+  const isActive = isActivePreorder(preorder);
+
   return (
     <article className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_10rem_10rem_auto] lg:items-center">
       <div className="min-w-0">
@@ -682,9 +765,33 @@ function PreorderRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-        <Badge variant={isActivePreorder(preorder) ? "default" : "secondary"}>
+        <Badge variant={isActive ? "default" : "secondary"}>
           {statusLabel(preorder.status)}
         </Badge>
+        {isActive ? (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => onMarkReceived(preorder)}
+              title="Отметить полученным"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="sr-only">Отметить полученным</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => onCancel(preorder)}
+              title="Отменить предзаказ"
+            >
+              <XCircle className="h-4 w-4" />
+              <span className="sr-only">Отменить предзаказ</span>
+            </Button>
+          </>
+        ) : null}
         <Button
           type="button"
           variant="outline"

@@ -7,31 +7,20 @@ import {
   BookOpen,
   CalendarPlus,
   ExternalLink,
-  Save,
   Star,
 } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/ui-state";
+import { ItemReferenceEditor } from "@/components/item-reference-editor";
+import { UserItemEditor } from "@/components/user-item-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/components/toast-provider";
 import {
   apiClient,
   type CollectionItemDetailsDto,
-  type TagDto,
+  type ItemDetailsDto,
+  type UserItemDto,
 } from "@/shared/api";
-
-const NO_RATING = "__none__";
 
 type CollectionItemPageClientProps = {
   itemId: string;
@@ -40,20 +29,11 @@ type CollectionItemPageClientProps = {
 export function CollectionItemPageClient({
   itemId,
 }: CollectionItemPageClientProps) {
-  const { toast } = useToast();
   const [details, setDetails] = React.useState<CollectionItemDetailsDto | null>(
     null,
   );
   const [loading, setLoading] = React.useState(true);
-  const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [form, setForm] = React.useState({
-    owned: true,
-    location: "",
-    personalRating: NO_RATING,
-    notes: "",
-    tags: "",
-  });
 
   const loadDetails = React.useCallback(async () => {
     setLoading(true);
@@ -62,15 +42,6 @@ export function CollectionItemPageClient({
     try {
       const response = await apiClient.collection.get(itemId);
       setDetails(response);
-      setForm({
-        owned: response.userItem.owned,
-        location: response.userItem.location ?? "",
-        personalRating: response.userItem.personalRating
-          ? String(response.userItem.personalRating)
-          : NO_RATING,
-        notes: response.userItem.notes ?? "",
-        tags: response.userItem.tags.map((tag) => tag.name).join(", "),
-      });
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -93,15 +64,6 @@ export function CollectionItemPageClient({
         }
 
         setDetails(response);
-        setForm({
-          owned: response.userItem.owned,
-          location: response.userItem.location ?? "",
-          personalRating: response.userItem.personalRating
-            ? String(response.userItem.personalRating)
-            : NO_RATING,
-          notes: response.userItem.notes ?? "",
-          tags: response.userItem.tags.map((tag) => tag.name).join(", "),
-        });
         setError(null);
       })
       .catch((loadError: unknown) => {
@@ -126,62 +88,28 @@ export function CollectionItemPageClient({
     };
   }, [itemId]);
 
-  function updateForm<K extends keyof typeof form>(
-    key: K,
-    value: (typeof form)[K],
-  ) {
-    setForm((current) => ({ ...current, [key]: value }));
+  function applyItemDetailsUpdate(updated: ItemDetailsDto) {
+    setDetails((current) =>
+      current
+        ? {
+            ...current,
+            ...updated,
+            recentPlays: current.recentPlays,
+            primaryAction: current.primaryAction,
+          }
+        : current,
+    );
   }
 
-  async function saveUserItem(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true);
-
-    try {
-      const tagIds = await resolveTagIds(form.tags);
-      const userItem = await apiClient.items.updateUserItem(itemId, {
-        owned: form.owned,
-        wishlist: details?.userItem.wishlist ?? false,
-        location: nullableText(form.location),
-        personalRating:
-          form.personalRating === NO_RATING
-            ? null
-            : Number(form.personalRating),
-        notes: nullableText(form.notes),
-        tagIds,
-      });
-
-      setDetails((current) =>
-        current
-          ? {
-              ...current,
-              userItem,
-            }
-          : current,
-      );
-      setForm((current) => ({
-        ...current,
-        tags: userItem.tags.map((tag) => tag.name).join(", "),
-      }));
-      toast({
-        title: "Сохранено",
-        description: form.owned
-          ? "Данные владельца обновлены."
-          : "Игра больше не отмечена как owned.",
-        variant: "success",
-      });
-    } catch (saveError) {
-      toast({
-        title: "Не удалось сохранить",
-        description:
-          saveError instanceof Error
-            ? saveError.message
-            : "Проверьте поля и попробуйте еще раз.",
-        variant: "error",
-      });
-    } finally {
-      setSaving(false);
-    }
+  function applyUserItemUpdate(userItem: UserItemDto) {
+    setDetails((current) =>
+      current
+        ? {
+            ...current,
+            userItem,
+          }
+        : current,
+    );
   }
 
   if (loading) {
@@ -288,6 +216,11 @@ export function CollectionItemPageClient({
         <MetricCard label="Стоимость" value={totalValue} />
       </section>
 
+      <ItemReferenceEditor
+        details={details}
+        onDetailsChange={applyItemDetailsUpdate}
+      />
+
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <section className="rounded-lg border bg-card">
           <div className="border-b px-4 py-3">
@@ -326,81 +259,10 @@ export function CollectionItemPageClient({
           )}
         </section>
 
-        <form onSubmit={saveUserItem} className="rounded-lg border bg-card p-4">
-          <h2 className="text-base font-semibold">Данные владельца</h2>
-
-          <div className="mt-4 flex items-center gap-2">
-            <input
-              id="collection-owned"
-              type="checkbox"
-              checked={form.owned}
-              onChange={(event) => updateForm("owned", event.target.checked)}
-              className="h-4 w-4 rounded border"
-            />
-            <Label htmlFor="collection-owned">Есть в коллекции</Label>
-          </div>
-
-          <div className="mt-4">
-            <Label htmlFor="collection-item-location">Место хранения</Label>
-            <Input
-              id="collection-item-location"
-              value={form.location}
-              onChange={(event) => updateForm("location", event.target.value)}
-              className="mt-2"
-              placeholder="Шкаф, полка, коробка"
-            />
-          </div>
-
-          <div className="mt-4">
-            <Label>Личная оценка</Label>
-            <Select
-              value={form.personalRating}
-              onValueChange={(value) => updateForm("personalRating", value)}
-            >
-              <SelectTrigger className="mt-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_RATING}>Без оценки</SelectItem>
-                {Array.from({ length: 10 }, (_, index) => {
-                  const value = String(10 - index);
-                  return (
-                    <SelectItem key={value} value={value}>
-                      {value}/10
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="mt-4">
-            <Label htmlFor="collection-item-tags">Теги</Label>
-            <Input
-              id="collection-item-tags"
-              value={form.tags}
-              onChange={(event) => updateForm("tags", event.target.value)}
-              className="mt-2"
-              placeholder="Соло, семейная, кампания"
-            />
-          </div>
-
-          <div className="mt-4">
-            <Label htmlFor="collection-item-notes">Заметки</Label>
-            <Textarea
-              id="collection-item-notes"
-              value={form.notes}
-              onChange={(event) => updateForm("notes", event.target.value)}
-              className="mt-2"
-              placeholder="Личные заметки владельца"
-            />
-          </div>
-
-          <Button type="submit" className="mt-5 w-full" disabled={saving}>
-            <Save className="h-4 w-4" />
-            {saving ? "Сохраняем" : "Сохранить"}
-          </Button>
-        </form>
+        <UserItemEditor
+          userItem={details.userItem}
+          onUserItemChange={applyUserItemUpdate}
+        />
       </div>
     </main>
   );
@@ -424,51 +286,6 @@ function MetricCard({
       <div className="mt-2 text-xl font-semibold">{value}</div>
     </div>
   );
-}
-
-async function resolveTagIds(value: string) {
-  const names = parseTagNames(value);
-
-  if (names.length === 0) {
-    return [];
-  }
-
-  const existingTags = await apiClient.tags.list();
-  const tagsByName = new Map(
-    existingTags.map((tag) => [tag.name.toLowerCase(), tag]),
-  );
-  const resolvedTags: TagDto[] = [];
-
-  for (const name of names) {
-    const existingTag = tagsByName.get(name.toLowerCase());
-
-    if (existingTag) {
-      resolvedTags.push(existingTag);
-      continue;
-    }
-
-    const createdTag = await apiClient.tags.create({ name });
-    tagsByName.set(createdTag.name.toLowerCase(), createdTag);
-    resolvedTags.push(createdTag);
-  }
-
-  return resolvedTags.map((tag) => tag.id);
-}
-
-function parseTagNames(value: string) {
-  return Array.from(
-    new Set(
-      value
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    ),
-  );
-}
-
-function nullableText(value: string) {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
 
 function formatDate(value?: string | null) {

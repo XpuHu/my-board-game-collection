@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Boxes,
+  CalendarPlus,
   Download,
   ExternalLink,
+  Image as ImageIcon,
+  Link2,
   Loader2,
-  PenLine,
   PlusCircle,
   RotateCcw,
   Search,
@@ -38,6 +40,13 @@ import {
 
 const ANY_VALUE = "__any__";
 
+type ManualQuickAction =
+  | "collection"
+  | "play"
+  | "wishlist"
+  | "preorder"
+  | "reference_only";
+
 const itemTypeOptions = [
   { value: ANY_VALUE, label: "Все типы" },
   { value: "base_game", label: "Игры" },
@@ -55,8 +64,46 @@ const targetOptions = [
   icon: typeof Boxes;
 }[];
 
+const quickActionOptions = [
+  {
+    value: "collection",
+    label: "Создать в коллекции",
+    description: "Карточка сразу появится в owned-списке.",
+    icon: Boxes,
+  },
+  {
+    value: "play",
+    label: "Создать и добавить партию",
+    description: "После сохранения откроется форма партии.",
+    icon: CalendarPlus,
+  },
+  {
+    value: "wishlist",
+    label: "Создать и добавить в wishlist",
+    description: "Игра попадет в список будущих покупок.",
+    icon: Star,
+  },
+  {
+    value: "preorder",
+    label: "Создать и оформить предзаказ",
+    description: "После сохранения откроется форма предзаказа.",
+    icon: PlusCircle,
+  },
+  {
+    value: "reference_only",
+    label: "Создать как справочник",
+    description: "Без owned, wishlist и других действий.",
+    icon: Download,
+  },
+] satisfies {
+  value: ManualQuickAction;
+  label: string;
+  description: string;
+  icon: typeof Boxes;
+}[];
+
 type ExternalImportPageClientProps = {
-  initialTarget?: NonNullable<ImportExternalItemRequest["target"]>;
+  initialTarget?: ManualQuickAction;
 };
 
 export function ExternalImportPageClient({
@@ -66,16 +113,16 @@ export function ExternalImportPageClient({
   const [query, setQuery] = React.useState("");
   const [type, setType] = React.useState(ANY_VALUE);
   const [target, setTarget] =
-    React.useState<NonNullable<ImportExternalItemRequest["target"]>>(
-      initialTarget,
-    );
+    React.useState<ManualQuickAction>(initialTarget);
   const [results, setResults] = React.useState<ExternalSearchResultDto[]>([]);
   const [itemTypes, setItemTypes] = React.useState<ItemTypeDto[]>([]);
   const [searched, setSearched] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [importingId, setImportingId] = React.useState<string | null>(null);
-  const [showManualForm, setShowManualForm] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [externalWarning, setExternalWarning] = React.useState<string | null>(
+    null,
+  );
   const [manualMessage, setManualMessage] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -100,6 +147,7 @@ export function ExternalImportPageClient({
 
     setLoading(true);
     setError(null);
+    setExternalWarning(null);
 
     try {
       const response = await apiClient.externalSearch.search({
@@ -109,7 +157,7 @@ export function ExternalImportPageClient({
       });
       setResults(response.data);
       setSearched(true);
-      setShowManualForm(response.data.length === 0);
+      setExternalWarning(response.warnings?.[0]?.message ?? null);
     } catch (searchError) {
       setError(
         searchError instanceof Error
@@ -118,7 +166,7 @@ export function ExternalImportPageClient({
       );
       setResults([]);
       setSearched(true);
-      setShowManualForm(true);
+      setExternalWarning(null);
     } finally {
       setLoading(false);
     }
@@ -132,7 +180,7 @@ export function ExternalImportPageClient({
       const details = await apiClient.externalSearch.import({
         provider: result.provider,
         externalId: result.externalId,
-        target,
+        target: toExternalImportTarget(target),
       });
 
       if (target === "collection") {
@@ -163,8 +211,8 @@ export function ExternalImportPageClient({
     setType(ANY_VALUE);
     setResults([]);
     setSearched(false);
-    setShowManualForm(false);
     setError(null);
+    setExternalWarning(null);
     setManualMessage(null);
   }
 
@@ -175,123 +223,23 @@ export function ExternalImportPageClient({
           Добавить игру
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Поиск во внешнем каталоге и импорт справочных данных.
+          Создайте локальную карточку без внешних каталогов. При необходимости ее можно сразу добавить в коллекцию или wishlist.
         </p>
       </div>
 
-      <form
-        onSubmit={searchItems}
-        className="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-[minmax(16rem,1fr)_12rem_13rem_auto]"
-      >
-        <div>
-          <Label htmlFor="external-search">Название или ссылка</Label>
-          <div className="relative mt-2">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="external-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="pl-9"
-              placeholder="Ark Nova или BGG URL"
-            />
-          </div>
-        </div>
-
-        <div>
-          <Label>Тип</Label>
-          <Select value={type} onValueChange={setType}>
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {itemTypeOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div>
-          <Label>Цель импорта</Label>
-          <Select
-            value={target}
-            onValueChange={(value) =>
-              setTarget(
-                value as NonNullable<ImportExternalItemRequest["target"]>,
-              )
-            }
-          >
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {targetOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-end gap-2">
-          <Button type="submit" disabled={loading} className="min-w-28">
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-            Найти
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={reset}
-            title="Сбросить"
-          >
-            <RotateCcw className="h-4 w-4" />
-            <span className="sr-only">Сбросить</span>
-          </Button>
-        </div>
-      </form>
-
       {error ? <ErrorState description={error} /> : null}
 
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
-        <div>
-          <h2 className="text-base font-semibold tracking-normal">
-            Добавить вручную
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Если BGG недоступен или не нашел игру, заполните карточку сами.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant={showManualForm ? "secondary" : "outline"}
-          onClick={() => setShowManualForm((value) => !value)}
-        >
-          <PenLine className="h-4 w-4" />
-          {showManualForm ? "Скрыть форму" : "Ручной ввод"}
-        </Button>
-      </section>
-
-      {showManualForm ? (
-        <ManualItemForm
-          initialTitle={query}
-          itemTypes={itemTypes}
-          selectedType={type}
-          target={target}
-          onError={setError}
-          onSavedAsReference={(title) => {
-            setManualMessage(`Карточка "${title}" создана вручную.`);
-            setError(null);
-          }}
-        />
-      ) : null}
+      <ManualItemForm
+        itemTypes={itemTypes}
+        selectedType={type}
+        target={target}
+        onTargetChange={setTarget}
+        onError={setError}
+        onSavedAsReference={(title) => {
+          setManualMessage(`Карточка "${title}" создана вручную.`);
+          setError(null);
+        }}
+      />
 
       {manualMessage ? (
         <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-900">
@@ -299,13 +247,101 @@ export function ExternalImportPageClient({
         </div>
       ) : null}
 
-      {!searched && !error ? (
-        <EmptyState
-          icon={Search}
-          title="Начните с поиска"
-          description="Введите название игры, внешний ID или ссылку на страницу BoardGameGeek."
-        />
-      ) : null}
+      <details className="rounded-lg border bg-card">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+          Внешний поиск BGG/Tesera
+        </summary>
+        <div className="grid gap-4 border-t p-4">
+          <p className="text-sm text-muted-foreground">
+            Дополнительный импорт доступен только при включенных внешних провайдерах. Основной сценарий выше не делает сетевых запросов.
+          </p>
+
+          <form
+            onSubmit={searchItems}
+            className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_12rem_13rem_auto]"
+          >
+            <div>
+              <Label htmlFor="external-search">Название или ссылка</Label>
+              <div className="relative mt-2">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="external-search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="pl-9"
+                  placeholder="Ark Nova или BGG URL"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Тип</Label>
+              <Select value={type} onValueChange={setType}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {itemTypeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Цель импорта</Label>
+              <Select
+                value={target}
+                onValueChange={(value) =>
+                  setTarget(
+                    value as NonNullable<ImportExternalItemRequest["target"]>,
+                  )
+                }
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {targetOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <Button type="submit" disabled={loading} className="min-w-28">
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                Найти
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={reset}
+                title="Сбросить"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span className="sr-only">Сбросить</span>
+              </Button>
+            </div>
+          </form>
+
+          {externalWarning ? (
+            <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+              {externalWarning}
+            </div>
+          ) : null}
+        </div>
+      </details>
 
       {searched && !loading && results.length === 0 && !error ? (
         <EmptyState
@@ -321,7 +357,7 @@ export function ExternalImportPageClient({
             <SearchResultRow
               key={`${result.provider}:${result.externalId}`}
               result={result}
-              target={target}
+              target={toExternalImportTarget(target)}
               importing={importingId === result.externalId}
               onImport={() => importItem(result)}
             />
@@ -395,23 +431,23 @@ function SearchResultRow({
 }
 
 function ManualItemForm({
-  initialTitle,
   itemTypes,
   selectedType,
   target,
+  onTargetChange,
   onError,
   onSavedAsReference,
 }: {
-  initialTitle: string;
   itemTypes: ItemTypeDto[];
   selectedType: string;
-  target: NonNullable<ImportExternalItemRequest["target"]>;
+  target: ManualQuickAction;
+  onTargetChange: (target: ManualQuickAction) => void;
   onError: (message: string | null) => void;
   onSavedAsReference: (title: string) => void;
 }) {
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
-  const [title, setTitle] = React.useState(initialTitle);
+  const [title, setTitle] = React.useState("");
   const [typeId, setTypeId] = React.useState("");
   const [originalTitle, setOriginalTitle] = React.useState("");
   const [year, setYear] = React.useState("");
@@ -425,6 +461,10 @@ function ManualItemForm({
   const [categories, setCategories] = React.useState("");
   const [mechanics, setMechanics] = React.useState("");
   const [publishers, setPublishers] = React.useState("");
+  const [designers, setDesigners] = React.useState("");
+  const [artists, setArtists] = React.useState("");
+  const [imageUrl, setImageUrl] = React.useState("");
+  const [linkUrl, setLinkUrl] = React.useState("");
   const [description, setDescription] = React.useState("");
   const defaultTypeId = React.useMemo(() => {
     const selected =
@@ -475,8 +515,10 @@ function ManualItemForm({
         categories: splitList(categories),
         mechanics: splitList(mechanics),
         publishers: splitList(publishers),
-        designers: [],
-        artists: [],
+        designers: splitList(designers),
+        artists: splitList(artists),
+        imageUrl: optionalText(imageUrl),
+        linkUrl: optionalText(linkUrl),
       };
       const details = await apiClient.items.create(body);
 
@@ -489,9 +531,21 @@ function ManualItemForm({
         return;
       }
 
+      if (target === "play") {
+        await apiClient.collection.add(details.item.id, {});
+        router.push(`/plays?itemId=${encodeURIComponent(details.item.id)}`);
+        return;
+      }
+
       if (target === "wishlist") {
         await apiClient.wishlist.add(details.item.id);
         router.push(`/wishlist/${details.item.id}`);
+        return;
+      }
+
+      if (target === "preorder") {
+        await apiClient.wishlist.add(details.item.id);
+        router.push(`/preorders?itemId=${encodeURIComponent(details.item.id)}`);
         return;
       }
 
@@ -512,7 +566,44 @@ function ManualItemForm({
       onSubmit={saveManualItem}
       className="grid gap-4 rounded-lg border bg-card p-4"
     >
-      <div className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_14rem_8rem]">
+      <div>
+        <h2 className="text-base font-semibold tracking-normal">
+          Быстрый ручной сценарий
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Выберите, что сделать после создания локальной карточки.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {quickActionOptions.map((option) => {
+          const Icon = option.icon;
+          const selected = target === option.value;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onTargetChange(option.value)}
+              className={[
+                "flex min-h-28 flex-col gap-2 rounded-lg border p-3 text-left transition-colors",
+                selected
+                  ? "border-primary bg-primary/5 text-foreground"
+                  : "bg-background hover:bg-secondary",
+              ].join(" ")}
+              aria-pressed={selected}
+            >
+              <Icon className="h-5 w-5" />
+              <span className="text-sm font-medium">{option.label}</span>
+              <span className="text-xs leading-5 text-muted-foreground">
+                {option.description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_14rem_8rem_13rem]">
         <div>
           <Label htmlFor="manual-title">Название</Label>
           <Input
@@ -551,6 +642,27 @@ function ManualItemForm({
             type="number"
             min="0"
           />
+        </div>
+
+        <div>
+          <Label>Сценарий</Label>
+          <Select
+            value={target}
+            onValueChange={(value) =>
+              onTargetChange(value as ManualQuickAction)
+            }
+          >
+            <SelectTrigger className="mt-2">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {quickActionOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -653,6 +765,60 @@ function ManualItemForm({
         </div>
       </div>
 
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <Label htmlFor="manual-designers">Авторы</Label>
+          <Input
+            id="manual-designers"
+            value={designers}
+            onChange={(event) => setDesigners(event.target.value)}
+            className="mt-2"
+            placeholder="Через запятую"
+          />
+        </div>
+        <div>
+          <Label htmlFor="manual-artists">Художники</Label>
+          <Input
+            id="manual-artists"
+            value={artists}
+            onChange={(event) => setArtists(event.target.value)}
+            className="mt-2"
+            placeholder="Через запятую"
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <Label htmlFor="manual-image-url">Изображение по URL</Label>
+          <div className="relative mt-2">
+            <ImageIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="manual-image-url"
+              value={imageUrl}
+              onChange={(event) => setImageUrl(event.target.value)}
+              className="pl-9"
+              placeholder="https://..."
+              type="url"
+            />
+          </div>
+        </div>
+        <div>
+          <Label htmlFor="manual-link-url">Внешняя ссылка</Label>
+          <div className="relative mt-2">
+            <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="manual-link-url"
+              value={linkUrl}
+              onChange={(event) => setLinkUrl(event.target.value)}
+              className="pl-9"
+              placeholder="https://..."
+              type="url"
+            />
+          </div>
+        </div>
+      </div>
+
       <div>
         <Label htmlFor="manual-description">Описание</Label>
         <Textarea
@@ -670,7 +836,8 @@ function ManualItemForm({
           ) : (
             <PlusCircle className="h-4 w-4" />
           )}
-          Сохранить
+          {quickActionOptions.find((option) => option.value === target)
+            ?.label ?? "Сохранить"}
         </Button>
       </div>
     </form>
@@ -739,6 +906,20 @@ function providerLabel(provider: ExternalSearchResultDto["provider"]) {
   }
 
   return provider;
+}
+
+function toExternalImportTarget(
+  target: ManualQuickAction,
+): NonNullable<ImportExternalItemRequest["target"]> {
+  if (target === "play") {
+    return "collection";
+  }
+
+  if (target === "preorder") {
+    return "wishlist";
+  }
+
+  return target;
 }
 
 function itemTypeLabel(itemTypeCode: NonNullable<ExternalSearchResultDto["itemTypeCode"]>) {

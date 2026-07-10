@@ -26,11 +26,16 @@ import {
   type JsonImportReportDto,
   type SyncBggPlaysResponse,
 } from "@/shared/api";
+import type { IntegrationFeatureFlags } from "@/server/config/feature-flags";
 
 const BGG_USERNAME_KEY = "board-game-collection:bgg-username";
 const BGG_LAST_SYNC_KEY = "board-game-collection:bgg-last-sync";
 
-export function SettingsPageClient() {
+type SettingsPageClientProps = {
+  featureFlags: IntegrationFeatureFlags;
+};
+
+export function SettingsPageClient({ featureFlags }: SettingsPageClientProps) {
   const { toast } = useToast();
   const [username, setUsername] = React.useState(() =>
     getLocalStorageValue<string>(BGG_USERNAME_KEY, ""),
@@ -67,6 +72,16 @@ export function SettingsPageClient() {
 
   async function runSync(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!featureFlags.bggSyncEnabled) {
+      toast({
+        title: "BGG sync отключен",
+        description: "Включите BGG_SYNC_ENABLED, чтобы импортировать партии из BoardGameGeek.",
+        variant: "error",
+      });
+      return;
+    }
+
     const trimmedUsername = username.trim();
 
     if (!trimmedUsername) {
@@ -175,7 +190,7 @@ export function SettingsPageClient() {
         title: "Импорт не выполнен",
         description:
           importError instanceof Error
-            ? importError.message
+            ? formatImportError(importError)
             : "Проверьте формат JSON-файла.",
         variant: "error",
       });
@@ -196,12 +211,44 @@ export function SettingsPageClient() {
       <section className="rounded-lg border bg-card">
         <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold">BoardGameGeek sync</h2>
+            <h2 className="text-base font-semibold">Внешние интеграции</h2>
             <p className="text-sm text-muted-foreground">
-              Импорт партий по внешним идентификаторам BGG.
+              Ручной режим работает без токенов и сетевых провайдеров.
             </p>
           </div>
-          <Badge variant="secondary">boardgamegeek</Badge>
+          <Badge variant="secondary">
+            {featureFlags.externalProvidersEnabled ? "включено" : "отключено, нет токена"}
+          </Badge>
+        </div>
+
+        <div className="grid gap-3 p-4 text-sm sm:grid-cols-2">
+          <IntegrationStatus
+            title="BGG/Tesera поиск"
+            enabled={featureFlags.externalProvidersEnabled}
+          />
+          <IntegrationStatus
+            title="BGG play sync"
+            enabled={featureFlags.bggSyncEnabled}
+          />
+          <IntegrationStatus
+            title="BGG application token"
+            enabled={featureFlags.bggApplicationTokenConfigured}
+            disabledLabel="не настроен"
+          />
+        </div>
+      </section>
+
+      <section className="rounded-lg border bg-card">
+        <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">BoardGameGeek sync</h2>
+            <p className="text-sm text-muted-foreground">
+              Импорт партий по внешним идентификаторам BGG доступен только после включения флага.
+            </p>
+          </div>
+          <Badge variant="secondary">
+            {featureFlags.bggSyncEnabled ? "boardgamegeek" : "отключено"}
+          </Badge>
         </div>
 
         <form onSubmit={runSync} className="grid gap-4 p-4">
@@ -214,6 +261,7 @@ export function SettingsPageClient() {
                 onChange={(event) => setUsername(event.target.value)}
                 className="mt-2"
                 placeholder="username"
+                disabled={!featureFlags.bggSyncEnabled}
               />
             </div>
 
@@ -225,6 +273,7 @@ export function SettingsPageClient() {
                 value={since}
                 onChange={(event) => setSince(event.target.value)}
                 className="mt-2"
+                disabled={!featureFlags.bggSyncEnabled}
               />
             </div>
 
@@ -235,11 +284,12 @@ export function SettingsPageClient() {
                 size="icon"
                 onClick={saveLocalSettings}
                 title="Сохранить username"
+                disabled={!featureFlags.bggSyncEnabled}
               >
                 <Save className="h-4 w-4" />
                 <span className="sr-only">Сохранить username</span>
               </Button>
-              <Button type="submit" disabled={syncing}>
+              <Button type="submit" disabled={syncing || !featureFlags.bggSyncEnabled}>
                 <DatabaseZap className="h-4 w-4" />
                 {syncing ? "Синхронизация" : "Запустить"}
               </Button>
@@ -258,6 +308,7 @@ export function SettingsPageClient() {
                 variant="ghost"
                 size="sm"
                 onClick={useLastSyncAsSince}
+                disabled={!featureFlags.bggSyncEnabled}
               >
                 <CalendarClock className="h-4 w-4" />
                 Использовать дату
@@ -318,6 +369,25 @@ export function SettingsPageClient() {
   );
 }
 
+function IntegrationStatus({
+  title,
+  enabled,
+  disabledLabel = "отключено, нет токена",
+}: {
+  title: string;
+  enabled: boolean;
+  disabledLabel?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
+      <span>{title}</span>
+      <Badge variant={enabled ? "default" : "secondary"}>
+        {enabled ? "включено" : disabledLabel}
+      </Badge>
+    </div>
+  );
+}
+
 function SyncReport({ report }: { report: SyncBggPlaysResponse }) {
   return (
     <section className="rounded-lg border bg-card">
@@ -331,7 +401,7 @@ function SyncReport({ report }: { report: SyncBggPlaysResponse }) {
         <CheckCircle2 className="h-5 w-5 text-primary" />
       </div>
 
-      <div className="grid gap-3 p-4 sm:grid-cols-3">
+      <div className="grid gap-3 p-4 sm:grid-cols-4">
         <ReportMetric label="Импортировано" value={report.imported} />
         <ReportMetric label="Обновлено" value={report.updated} />
         <ReportMetric label="Дубли" value={report.skippedDuplicates} />
@@ -416,7 +486,9 @@ function ImportReport({ report }: { report: JsonImportReportDto }) {
   const duplicatesTotal =
     report.skippedDuplicates.externalReferences +
     report.skippedDuplicates.bggPlayIds +
-    report.skippedDuplicates.relations;
+    report.skippedDuplicates.relations +
+    report.skippedDuplicates.itemTags;
+  const missingTotal = sumRecord(report.skippedMissingReferences);
 
   return (
     <section className="rounded-lg border bg-card">
@@ -434,6 +506,7 @@ function ImportReport({ report }: { report: JsonImportReportDto }) {
         <ReportMetric label="Создано" value={createdTotal} />
         <ReportMetric label="Обновлено" value={updatedTotal} />
         <ReportMetric label="Дубли" value={duplicatesTotal} />
+        <ReportMetric label="Нет ссылок" value={missingTotal} />
       </div>
 
       <div className="grid gap-3 border-t p-4 md:grid-cols-2">
@@ -441,7 +514,7 @@ function ImportReport({ report }: { report: JsonImportReportDto }) {
         <ReportRecord title="Обновлено" values={report.updated} />
       </div>
 
-      <div className="grid gap-2 border-t px-4 py-3 text-sm sm:grid-cols-3">
+      <div className="grid gap-2 border-t px-4 py-3 text-sm sm:grid-cols-4">
         <DuplicateMetric
           label="ExternalReference"
           value={report.skippedDuplicates.externalReferences}
@@ -453,6 +526,29 @@ function ImportReport({ report }: { report: JsonImportReportDto }) {
         <DuplicateMetric
           label="Relation"
           value={report.skippedDuplicates.relations}
+        />
+        <DuplicateMetric
+          label="ItemTag"
+          value={report.skippedDuplicates.itemTags}
+        />
+      </div>
+
+      <div className="grid gap-2 border-t px-4 py-3 text-sm sm:grid-cols-4">
+        <DuplicateMetric
+          label="ItemType"
+          value={report.skippedMissingReferences.itemTypes}
+        />
+        <DuplicateMetric
+          label="Item"
+          value={report.skippedMissingReferences.items}
+        />
+        <DuplicateMetric
+          label="Tag"
+          value={report.skippedMissingReferences.tags}
+        />
+        <DuplicateMetric
+          label="Preorder"
+          value={report.skippedMissingReferences.preorders}
         />
       </div>
     </section>
@@ -525,4 +621,35 @@ function getLocalStorageValue<T extends string | null>(
   }
 
   return (window.localStorage.getItem(key) ?? fallback) as T;
+}
+
+function formatImportError(error: Error) {
+  const details = "details" in error ? error.details : undefined;
+  const issues =
+    details &&
+    typeof details === "object" &&
+    "issues" in details &&
+    Array.isArray(details.issues)
+      ? details.issues
+      : [];
+
+  if (issues.length === 0) {
+    return error.message;
+  }
+
+  const paths = issues
+    .slice(0, 3)
+    .map((issue) =>
+      issue &&
+      typeof issue === "object" &&
+      "path" in issue &&
+      typeof issue.path === "string"
+        ? issue.path
+        : null,
+    )
+    .filter((path): path is string => Boolean(path));
+
+  return paths.length > 0
+    ? `${error.message}: ${paths.join(", ")}`
+    : error.message;
 }

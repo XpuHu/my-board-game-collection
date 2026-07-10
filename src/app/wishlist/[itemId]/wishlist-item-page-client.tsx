@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/components/ui-state";
+import { ItemReferenceEditor } from "@/components/item-reference-editor";
+import { UserItemEditor } from "@/components/user-item-editor";
 import { useToast } from "@/components/toast-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,7 +39,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   apiClient,
   type CreatePreorderRequest,
+  type ItemDetailsDto,
   type PreorderStatus,
+  type UserItemDto,
   type WishlistItemDetailsDto,
 } from "@/shared/api";
 
@@ -137,6 +141,34 @@ export function WishlistItemPageClient({
     value: PreorderFormState[K],
   ) {
     setPreorderForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function applyItemDetailsUpdate(updated: ItemDetailsDto) {
+    setDetails((current) =>
+      current
+        ? {
+            ...current,
+            ...updated,
+            similarItems: current.similarItems,
+            videos: updated.links.filter((link) => link.type === "youtube"),
+            shopLinks: updated.links.filter((link) =>
+              ["shop", "kickstarter", "gamefound"].includes(link.type),
+            ),
+            primaryActions: current.primaryActions,
+          }
+        : current,
+    );
+  }
+
+  function applyUserItemUpdate(userItem: UserItemDto) {
+    setDetails((current) =>
+      current
+        ? {
+            ...current,
+            userItem,
+          }
+        : current,
+    );
   }
 
   async function addToCollection() {
@@ -311,6 +343,11 @@ export function WishlistItemPageClient({
         </section>
       </div>
 
+      <ItemReferenceEditor
+        details={details}
+        onDetailsChange={applyItemDetailsUpdate}
+      />
+
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="grid gap-6">
           <InfoSection title="Описание">
@@ -394,6 +431,11 @@ export function WishlistItemPageClient({
               ) : null}
             </div>
           </InfoSection>
+
+          <UserItemEditor
+            userItem={details.userItem}
+            onUserItemChange={applyUserItemUpdate}
+          />
         </aside>
       </div>
 

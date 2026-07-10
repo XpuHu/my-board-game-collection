@@ -8,6 +8,7 @@ import type {
 import { prisma } from "@/infrastructure/database/prisma";
 import { boardGameGeekProvider } from "@/infrastructure/providers/boardgamegeek-provider";
 import { teseraProvider } from "@/infrastructure/providers/tesera-provider";
+import { getIntegrationFeatureFlags } from "@/server/config/feature-flags";
 import type {
   ItemProvider,
   ProviderItem,
@@ -32,6 +33,20 @@ export async function searchExternalItems(
 
   if (!searchQuery) {
     throw ApiError.badRequest("VALIDATION_ERROR", "Search query is required");
+  }
+
+  if (!getIntegrationFeatureFlags().externalProvidersEnabled) {
+    return {
+      data: [],
+      warnings: [
+        {
+          provider: query.provider ?? "boardgamegeek",
+          code: "PROVIDER_DISABLED",
+          message:
+            "External providers are disabled. Use manual item creation instead.",
+        },
+      ],
+    };
   }
 
   const provider = getProvider(query.provider ?? "boardgamegeek");
@@ -104,6 +119,13 @@ async function searchTeseraFallback(
 export async function importExternalItem(
   input: ImportExternalItemRequest,
 ): Promise<ItemDetailsDto> {
+  if (!getIntegrationFeatureFlags().externalProvidersEnabled) {
+    throw ApiError.serviceUnavailable(
+      "PROVIDER_DISABLED",
+      "External providers are disabled. Use manual item creation instead.",
+    );
+  }
+
   const provider = getProvider(input.provider);
   const item = await provider.getItem(input.externalId);
   const itemId = await importOrReuseItem(item, input.typeId);

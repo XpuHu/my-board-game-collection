@@ -246,7 +246,7 @@ function mapLink(link: Link): LinkDto {
   };
 }
 
-function mapPurchase(purchase: Purchase): PurchaseDto {
+export function mapPurchase(purchase: Purchase): PurchaseDto {
   return {
     id: purchase.id,
     itemId: purchase.itemId,

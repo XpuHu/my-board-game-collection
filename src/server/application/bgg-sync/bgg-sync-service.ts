@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/infrastructure/database/prisma";
+import { getIntegrationFeatureFlags } from "@/server/config/feature-flags";
 import {
   boardGameGeekPlayProvider,
   type NormalizedBggPlay,
@@ -13,6 +14,13 @@ const BGG_PROVIDER = "boardgamegeek";
 export async function syncBggPlays(
   input: SyncBggPlaysInput,
 ): Promise<SyncBggPlaysResponse> {
+  if (!getIntegrationFeatureFlags().bggSyncEnabled) {
+    throw ApiError.serviceUnavailable(
+      "PROVIDER_DISABLED",
+      "BGG play sync is disabled. Enable BGG_SYNC_ENABLED to use it.",
+    );
+  }
+
   const username = input.username?.trim();
 
   if (!username) {
