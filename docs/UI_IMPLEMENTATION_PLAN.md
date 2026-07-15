@@ -701,6 +701,81 @@ features/statistics/api
 
 Результат: единая визуальная и компонентная база.
 
+## Этап 2.1. Выравнивание контрактов и стабилизация foundation
+
+Зависимости: этапы 0–2. Этап является обязательным gate перед миграциями и
+переключением страниц на новый UI. Изменения persistence-схемы в scope не входят:
+поля этапов 3 и 5 до миграции выдаются через документированные fallback-проекции.
+
+### 2.1.1 DTO и совместимость API
+
+- [x] Привести `CollectionCardDto`, `WishlistCardDto`, `PlayListItemDto`,
+  `PreorderListItemDto`, detail DTO и `DashboardDto` к формам из `SPEC.md`.
+- [x] Добавить серверный resolver `UserItem.states`; legacy-значения `status`
+  нормализовать в lifecycle projection, не записывая изменения в БД.
+- [x] До миграции использовать безопасные fallback: `ownedAt = createdAt` для
+  owned-записей, `favorite = false`, preorder precision `day | unknown`,
+  nullable play-поля — `null`.
+- [x] Возвращать `usedItems` как compact DTO, Money DTO и preorder/event values
+  в согласованной форме, включая чтение legacy event strings.
+- [x] Сохранить старые response contracts через явный legacy adapter/view до
+  переключения соответствующей страницы; не смешивать legacy и target DTO.
+
+### 2.1.2 Query contracts и границы выборок
+
+- [x] Исправить инвариант wishlist: list/detail используют
+  `wishlist = true AND owned = false`.
+- [x] Привести названия, repeatable-параметры, defaults, sort/direction и
+  pagination к разделу 10 `SPEC.md`; старые имена временно принимать как aliases.
+- [x] Валидировать enum, диапазоны, даты и конфликтующие фильтры; возвращать 400,
+  а не молча игнорировать некорректные значения.
+- [x] Перенести фильтры collection по числу и последней дате партий в SQL/Prisma;
+  не строить глобальные массивы ID в application memory.
+- [x] Ограничить временные JSON-фильтры taxonomy/plays предварительной DB-выборкой;
+  player/used-item filters выполнять только для явно заданного периода.
+- [x] Проверить стабильную сортировку и корректный `total` на наборах 0, 1, 24,
+  25 и 100+ записей.
+
+### 2.1.3 AppShell и visual foundation
+
+- [x] Оставить `powered_by_bgg.webp` только в sidebar; удалить attribution из
+  collection/wishlist detail и исключить дублирующий footer.
+- [x] Убрать `max-width` из основного desktop layout; ограничения ширины оставлять
+  только у форм, modal и читаемых текстовых блоков.
+- [x] Убрать literal colors и сильные тени из AppShell/shared UI. Page-specific
+  legacy literals удалять при миграции страниц, начиная с dashboard этапа 4.
+- [ ] Проверить AppShell на 1280/1024/768/430/390 px, включая safe-area,
+  mobile menu, keyboard focus и единственный BGG attribution.
+
+  Автоматические проверки safe-area, focus styles и единственного attribution
+  добавлены; интерактивная viewport-проверка ожидает доступного browser runtime.
+
+### 2.1.4 Frontend data layer
+
+- [x] Подключить page-level REST adapters и `useAdapterQuery` минимум к dashboard
+  и collection read flow; React-компоненты не импортируют URL или raw fetch.
+- [x] Реализовать abort/ignore stale response при смене filter/page и единое
+  преобразование API errors в page state.
+- [x] Синхронизировать collection filter/sort/page с URL и восстановлением через
+  Back/Forward; изменение фильтра сбрасывает `page=1`.
+- [x] Добавить реальные mock fixtures для 0, 1, 4–8 и 100+ записей; mock и REST
+  adapters должны проходить один contract suite.
+
+### 2.1.5 Тесты и критерии выхода
+
+- [x] Добавить contract tests target и legacy response для dashboard, collection,
+  wishlist, plays и preorders, включая 400 для невалидных query.
+- [x] Добавить regression test: owned Item отсутствует в wishlist response.
+- [x] Добавить тесты SQL pagination/filter/sort и ограниченных JSON candidates.
+- [x] Добавить tests adapters/query hook: cancellation, stale response, retry,
+  empty/error/offline и URL restoration.
+- [x] Зафиксировать отсутствие BGG attribution вне AppShell статическим тестом.
+- [x] Выполнить `lint`, `typecheck`, tests и production build.
+
+Результат: target DTO и query contracts совпадают с `SPEC.md`, legacy API остается
+работоспособным, foundation проверен вертикальным dashboard/collection срезом, а
+этапы 3–4 не наследуют расхождения контрактов и заведомо дорогие read queries.
+
 ## Этап 3. P0-миграция даты коллекции
 
 - [ ] Добавить `ownedAt`.

@@ -77,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="min-w-0 md:pl-[72px] xl:pl-56">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/95 px-4 backdrop-blur md:hidden">
+        <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
           <Link
             href="/"
             className="flex items-center gap-3"
@@ -116,7 +116,7 @@ type NavItem = (typeof navItems)[number];
 
 function BrandMark() {
   return (
-    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary text-white shadow-[0_0_20px_rgba(117,103,248,0.28)]">
+    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
       <Boxes className="h-5 w-5" aria-hidden="true" />
     </span>
   );

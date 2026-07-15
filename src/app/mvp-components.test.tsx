@@ -15,6 +15,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: vi.fn(),
   }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 describe("MVP component contracts", () => {
@@ -24,7 +25,7 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Моя коллекция");
     expect(markup).toContain("Поиск");
     expect(markup).toContain("Добавить игру");
-    expect(markup).toContain("Загружаем коллекцию");
+    expect(markup).toContain("Загружаем данные");
   });
 
   it("renders the collection item card loading shell", () => {

@@ -130,8 +130,11 @@ describe("MVP API flows", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.expectedDate).toBe("2026-10-01T00:00:00.000Z");
-    expect(body.events).toHaveLength(1);
+    expect(body.preorder.expectedDate).toBe("2026-10-01T00:00:00.000Z");
+    expect(body.event).toMatchObject({
+      type: "expected_date_changed",
+      legacyFormat: false,
+    });
     await expect(prisma.preorderEvent.count()).resolves.toBe(1);
   });
 

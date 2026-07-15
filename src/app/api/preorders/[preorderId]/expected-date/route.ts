@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 
 import { updatePreorderExpectedDateRequestSchema } from "@/shared/api";
 import { withApiErrorHandling } from "@/server/api/errors";
+import { parseResponseView } from "@/server/api/query-contracts";
 import { parseJsonBody } from "@/server/api/request";
-import { updatePreorderExpectedDate } from "@/server/application/preorders/preorder-service";
+import {
+  updatePreorderExpectedDate,
+  updatePreorderExpectedDateTarget,
+} from "@/server/application/preorders/preorder-service";
 
 type RouteContext = {
   params: Promise<{
@@ -18,9 +22,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       request,
       updatePreorderExpectedDateRequestSchema,
     );
+    const view = parseResponseView(new URL(request.url).searchParams);
 
     return NextResponse.json(
-      await updatePreorderExpectedDate(preorderId, input),
+      view === "legacy"
+        ? await updatePreorderExpectedDate(preorderId, input)
+        : await updatePreorderExpectedDateTarget(preorderId, input),
     );
   });
 }

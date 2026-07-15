@@ -7,7 +7,7 @@ import { OfflineBanner } from "@/components/offline-banner";
 import { PageHeader } from "@/components/page-header";
 import { Rating } from "@/components/rating";
 import { StatusBadge } from "@/components/status-badge";
-import { EmptyState, LoadingState } from "@/components/ui-state";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui-state";
 
 describe("UI foundation", () => {
   it("renders the shared page and status primitives", () => {
@@ -51,5 +51,13 @@ describe("UI foundation", () => {
     expect(markup).toContain(
       "Нет подключения. Отображаются сохранённые данные.",
     );
+  });
+
+  it("renders a retry action for the shared error state", () => {
+    const markup = renderToStaticMarkup(
+      <ErrorState description="API error" onRetry={() => undefined} />,
+    );
+    expect(markup).toContain("API error");
+    expect(markup).toContain("Повторить");
   });
 });

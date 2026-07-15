@@ -13,6 +13,7 @@ import { ApiError } from "@/server/api/errors";
 import type { PaginationInput } from "@/server/api/pagination";
 import {
   mapPreorder,
+  mapPreorderEvent,
   mapPreorderListItem,
 } from "@/server/application/items/item-mappers";
 
@@ -151,8 +152,14 @@ export async function updatePreorder(
         data: {
           preorderId,
           type: "expected_date_changed",
-          oldValue: existing.expectedDate?.toISOString() ?? null,
-          newValue: nextExpectedDate?.toISOString() ?? null,
+          oldValue: JSON.stringify({
+            expectedDate: existing.expectedDate?.toISOString() ?? null,
+            expectedDatePrecision: existing.expectedDate ? "day" : "unknown",
+          }),
+          newValue: JSON.stringify({
+            expectedDate: nextExpectedDate?.toISOString() ?? null,
+            expectedDatePrecision: nextExpectedDate ? "day" : "unknown",
+          }),
         },
       });
     }
@@ -216,7 +223,9 @@ export async function updatePreorderExpectedDate(
   input: UpdatePreorderExpectedDateInput,
 ): Promise<PreorderDto> {
   const existing = await getPreorderOrThrow(preorderId);
-  const expectedDate = toDate(input.expectedDate);
+  const precision = input.expectedDatePrecision ??
+    (input.expectedDate ? "day" : "unknown");
+  const expectedDate = normalizeExpectedDate(input.expectedDate, precision);
 
   await prisma.$transaction(async (tx) => {
     await tx.preorder.update({
@@ -232,8 +241,14 @@ export async function updatePreorderExpectedDate(
       data: {
         preorderId,
         type: "expected_date_changed",
-        oldValue: existing.expectedDate?.toISOString() ?? null,
-        newValue: expectedDate?.toISOString() ?? null,
+        oldValue: JSON.stringify({
+          expectedDate: existing.expectedDate?.toISOString() ?? null,
+          expectedDatePrecision: existing.expectedDate ? "day" : "unknown",
+        }),
+        newValue: JSON.stringify({
+          expectedDate: expectedDate?.toISOString() ?? null,
+          expectedDatePrecision: precision,
+        }),
         reason: input.reason,
         comment: input.comment,
       },
@@ -241,6 +256,28 @@ export async function updatePreorderExpectedDate(
   });
 
   return getPreorderDto(preorderId);
+}
+
+export async function updatePreorderExpectedDateTarget(
+  preorderId: string,
+  input: UpdatePreorderExpectedDateInput,
+) {
+  await updatePreorderExpectedDate(preorderId, input);
+  const [preorder, event] = await Promise.all([
+    prisma.preorder.findUnique({
+      where: { id: preorderId },
+      select: preorderListSelect,
+    }),
+    prisma.preorderEvent.findFirst({
+      where: { preorderId, type: "expected_date_changed" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    }),
+  ]);
+  if (!preorder || !event) throw preorderNotFound();
+  return {
+    preorder: mapPreorderListItem(preorder),
+    event: mapPreorderEvent(event),
+  };
 }
 
 export async function deletePreorder(preorderId: string) {
@@ -306,6 +343,26 @@ function toDate(value?: string | null) {
   return value ? new Date(value) : null;
 }
 
+function endOfDay(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T23:59:59.999Z`)
+    : new Date(value);
+}
+
+function normalizeExpectedDate(
+  value: string | null,
+  precision: "day" | "month" | "quarter" | "unknown",
+) {
+  if (!value || precision === "unknown") return null;
+  const date = new Date(value);
+  date.setUTCHours(0, 0, 0, 0);
+  if (precision === "month") date.setUTCDate(1);
+  if (precision === "quarter") {
+    date.setUTCMonth(Math.floor(date.getUTCMonth() / 3) * 3, 1);
+  }
+  return date;
+}
+
 function sameDate(left?: Date | null, right?: Date | null) {
   return (left?.getTime() ?? null) === (right?.getTime() ?? null);
 }
@@ -346,7 +403,7 @@ function buildPreorderWhere(
       query.expectedFrom || query.expectedTo
         ? {
             gte: query.expectedFrom ? new Date(query.expectedFrom) : undefined,
-            lte: query.expectedTo ? new Date(query.expectedTo) : undefined,
+            lte: query.expectedTo ? endOfDay(query.expectedTo) : undefined,
           }
         : undefined,
     item: { deletedAt: null },

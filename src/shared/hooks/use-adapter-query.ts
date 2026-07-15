@@ -48,11 +48,12 @@ export function useAdapterQuery<TParams, TData>(
         signal: controller.signal,
       })
       .then((result) => {
+        if (!active || controller.signal.aborted) return;
         setData(result);
         setIsLoading(false);
       })
       .catch((reason: unknown) => {
-        if (controller.signal.aborted) return;
+        if (!active || controller.signal.aborted) return;
         setError(
           reason instanceof Error
             ? reason.message

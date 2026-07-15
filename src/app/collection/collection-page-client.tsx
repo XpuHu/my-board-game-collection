@@ -2,460 +2,185 @@
 
 import * as React from "react";
 import Link from "next/link";
-import {
-  CalendarDays,
-  Filter,
-  ListPlus,
-  RotateCcw,
-  Search,
-  Star,
-} from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Boxes, ListPlus, Search } from "lucide-react";
 
-import { EmptyState, ErrorState, LoadingState } from "@/components/ui-state";
+import { GameCover } from "@/components/game-cover";
+import { Pagination } from "@/components/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui-state";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  apiClient,
-  type CollectionQuery,
-  type ItemListDto,
-} from "@/shared/api";
+  collectionRestAdapter,
+  type CollectionListQuery,
+} from "@/features/collection/api";
+import type { ItemTypeCode } from "@/shared/api";
+import { useAdapterQuery } from "@/shared/hooks/use-adapter-query";
 
-const ANY_VALUE = "__any__";
-
-const itemTypeOptions = [
-  { value: ANY_VALUE, label: "Все типы" },
-  { value: "base_game", label: "Игры" },
-  { value: "expansion", label: "Дополнения" },
-  { value: "accessory", label: "Аксессуары" },
-  { value: "organizer", label: "Органайзеры" },
-  { value: "component", label: "Компоненты" },
-  { value: "other", label: "Другое" },
-];
-
-const ratingOptions = [
-  { value: ANY_VALUE, label: "Любая оценка" },
-  ...Array.from({ length: 10 }, (_, index) => {
-    const rating = String(10 - index);
-    return { value: rating, label: `${rating}/10` };
-  }),
-];
+const ANY = "all";
 
 export function CollectionPageClient() {
-  const [items, setItems] = React.useState<ItemListDto[]>([]);
-  const [total, setTotal] = React.useState(0);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
-  const [filters, setFilters] = React.useState({
-    q: "",
-    type: ANY_VALUE,
-    rating: ANY_VALUE,
-    location: "",
-    tag: "",
-    playedFrom: "",
-    playedTo: "",
-    hasActivePreorder: ANY_VALUE,
-  });
-  const [appliedFilters, setAppliedFilters] = React.useState(filters);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const query = React.useMemo(
+    () => collectionQueryFromUrl(searchParams),
+    [searchParams],
+  );
+  const result = useAdapterQuery(collectionRestAdapter, query);
 
-  const loadCollection = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await apiClient.collection.list({
-        ...toCollectionQuery(appliedFilters),
-        pageSize: 50,
-      });
-      setItems(response.data);
-      setTotal(response.pagination.total);
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Не удалось загрузить коллекцию",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [appliedFilters]);
-
-  React.useEffect(() => {
-    let isActive = true;
-
-    apiClient.collection
-      .list({
-        ...toCollectionQuery(appliedFilters),
-        pageSize: 50,
-      })
-      .then((response) => {
-        if (!isActive) {
-          return;
-        }
-
-        setItems(response.data);
-        setTotal(response.pagination.total);
-        setError(null);
-      })
-      .catch((loadError: unknown) => {
-        if (!isActive) {
-          return;
-        }
-
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Не удалось загрузить коллекцию",
-        );
-      })
-      .finally(() => {
-        if (isActive) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [appliedFilters]);
-
-  function updateFilter(key: keyof typeof filters, value: string) {
-    setFilters((current) => ({ ...current, [key]: value }));
-  }
-
-  function applyFilters(event: React.FormEvent<HTMLFormElement>) {
+  function applyFilters(event: React.FormEvent) {
     event.preventDefault();
-    setLoading(true);
-    setError(null);
-    setAppliedFilters(filters);
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    const q = String(form.get("q") ?? "").trim();
+    const type = String(form.get("type") ?? ANY);
+    const next = new URLSearchParams(searchParams.toString());
+    setOrDelete(next, "q", q);
+    setOrDelete(next, "type", type === ANY ? "" : type);
+    next.delete("page");
+    router.push(collectionHref(next));
   }
 
-  function resetFilters() {
-    const nextFilters = {
-      q: "",
-      type: ANY_VALUE,
-      rating: ANY_VALUE,
-      location: "",
-      tag: "",
-      playedFrom: "",
-      playedTo: "",
-      hasActivePreorder: ANY_VALUE,
-    };
-    setFilters(nextFilters);
-    setLoading(true);
-    setError(null);
-    setAppliedFilters(nextFilters);
+  function setSort(value: string) {
+    const next = new URLSearchParams(searchParams.toString());
+    setOrDelete(next, "sort", value === "added" ? "" : value);
+    next.delete("page");
+    router.push(collectionHref(next));
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+    <main className="grid w-full gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">
-            Моя коллекция
-          </h1>
+          <h1 className="text-3xl font-semibold">Моя коллекция</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Компактный список owned-игр для быстрых ежедневных действий.
+            Фильтры, сортировка и страница сохраняются в адресе.
           </p>
         </div>
         <Button asChild>
           <Link href="/items/new?target=collection">
-            <ListPlus className="h-4 w-4" />
+            <ListPlus className="h-4 w-4" aria-hidden="true" />
             Добавить игру
           </Link>
         </Button>
-      </div>
+      </header>
 
-      <form
-        onSubmit={applyFilters}
-        className="grid gap-3 rounded-lg border bg-card p-4 lg:grid-cols-[minmax(16rem,1.6fr)_repeat(3,minmax(10rem,1fr))_auto]"
-      >
-        <div className="lg:col-span-2">
+      <form key={searchParams.toString()} onSubmit={applyFilters} className="grid gap-3 rounded-xl border bg-card p-4 md:grid-cols-[minmax(14rem,1fr)_12rem_10rem_auto] md:items-end">
+        <div>
           <Label htmlFor="collection-search">Поиск</Label>
           <div className="relative mt-2">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="collection-search"
-              value={filters.q}
-              onChange={(event) => updateFilter("q", event.target.value)}
-              className="pl-9"
-              placeholder="Название или оригинальное название"
-            />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input id="collection-search" name="q" defaultValue={query.q ?? ""} className="pl-9" placeholder="Название игры" />
           </div>
         </div>
-
         <div>
           <Label>Тип</Label>
-          <Select
-            value={filters.type}
-            onValueChange={(value) => updateFilter("type", value)}
-          >
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {itemTypeOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <select name="type" defaultValue={query.type ?? ANY} className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <option value={ANY}>Все типы</option>
+            <option value="base_game">Игры</option>
+            <option value="expansion">Дополнения</option>
+            <option value="accessory">Аксессуары</option>
+            <option value="other">Другое</option>
+          </select>
         </div>
-
         <div>
-          <Label>Оценка</Label>
-          <Select
-            value={filters.rating}
-            onValueChange={(value) => updateFilter("rating", value)}
-          >
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ratingOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label>Сортировка</Label>
+          <select defaultValue={query.sort ?? "added"} onChange={(event) => setSort(event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <option value="added">Сначала новые</option>
+            <option value="title">По названию</option>
+            <option value="lastPlayed">По последней партии</option>
+            <option value="plays">По числу партий</option>
+            <option value="rating">По оценке</option>
+          </select>
         </div>
-
-        <div>
-          <Label>Предзаказ</Label>
-          <Select
-            value={filters.hasActivePreorder}
-            onValueChange={(value) => updateFilter("hasActivePreorder", value)}
-          >
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY_VALUE}>Не важно</SelectItem>
-              <SelectItem value="true">Есть активный</SelectItem>
-              <SelectItem value="false">Нет активного</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div>
-          <Label htmlFor="collection-location">Место</Label>
-          <Input
-            id="collection-location"
-            value={filters.location}
-            onChange={(event) => updateFilter("location", event.target.value)}
-            className="mt-2"
-            placeholder="Полка, шкаф"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="collection-tag">Тег</Label>
-          <Input
-            id="collection-tag"
-            value={filters.tag}
-            onChange={(event) => updateFilter("tag", event.target.value)}
-            className="mt-2"
-            placeholder="Соло, семья"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="collection-played-from">Партии с</Label>
-          <Input
-            id="collection-played-from"
-            type="date"
-            value={filters.playedFrom}
-            onChange={(event) => updateFilter("playedFrom", event.target.value)}
-            className="mt-2"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="collection-played-to">Партии до</Label>
-          <Input
-            id="collection-played-to"
-            type="date"
-            value={filters.playedTo}
-            onChange={(event) => updateFilter("playedTo", event.target.value)}
-            className="mt-2"
-          />
-        </div>
-
-        <div className="flex items-end gap-2">
-          <Button type="submit" className="min-w-28">
-            <Filter className="h-4 w-4" />
-            Найти
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={resetFilters}
-            title="Сбросить фильтры"
-          >
-            <RotateCcw className="h-4 w-4" />
-            <span className="sr-only">Сбросить фильтры</span>
-          </Button>
-        </div>
+        <Button type="submit">Применить</Button>
       </form>
 
-      {loading ? (
-        <LoadingState
-          title="Загружаем коллекцию"
-          description="Получаем компактный список owned-игр."
-        />
-      ) : error ? (
-        <ErrorState description={error} onRetry={loadCollection} />
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={Search}
-          title="Коллекция пуста"
-          description="Добавленные owned-игры появятся здесь без длинных описаний: название, оценка, партии и последнее сыгранное."
-          action={
-            <Button asChild>
-              <Link href="/items/new?target=collection">
-                <ListPlus className="h-4 w-4" />
-                Добавить игру
+      {result.isLoading ? <LoadingState /> : null}
+      {result.error ? <ErrorState description={result.error} onRetry={result.reload} /> : null}
+      {result.data && result.data.data.length === 0 ? (
+        <EmptyState icon={Boxes} title="Ничего не найдено" description="Измените фильтры или добавьте игру в коллекцию." />
+      ) : null}
+      {result.data?.data.length ? (
+        <>
+          <section aria-label="Игры в коллекции" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {result.data.data.map((card) => (
+              <Link key={card.item.id} href={`/collection/${card.item.id}`} className="grid grid-cols-[80px_minmax(0,1fr)] gap-4 rounded-xl border bg-card p-3 transition-colors hover:bg-[var(--bg-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <GameCover src={card.item.cover?.url ?? card.item.cover?.path} alt={card.item.cover?.alt ?? card.item.title} size="md" />
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{card.item.title}</span>
+                  <span className="mt-1 block text-sm text-muted-foreground">{card.item.year ?? "Год не указан"}</span>
+                  <span className="mt-3 flex flex-wrap gap-2">
+                    <Badge variant="secondary">{card.plays.count} партий</Badge>
+                    {card.userItem.favorite ? <Badge>Избранное</Badge> : null}
+                    {card.activePreorder ? <Badge variant="outline">Предзаказ</Badge> : null}
+                  </span>
+                </span>
               </Link>
-            </Button>
-          }
-        />
-      ) : (
-        <section className="rounded-lg border bg-card">
-          <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-            <div className="text-sm font-medium">{totalLabel(total)}</div>
-            <div className="text-xs text-muted-foreground">
-              Показано {items.length}
-            </div>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Название</TableHead>
-                <TableHead className="w-32">Оценка</TableHead>
-                <TableHead className="w-32">Партии</TableHead>
-                <TableHead className="w-44">Последняя партия</TableHead>
-                <TableHead className="w-44">Место</TableHead>
-                <TableHead className="w-28 text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((entry) => (
-                <CollectionRow key={entry.item.id} entry={entry} />
-              ))}
-            </TableBody>
-          </Table>
-        </section>
-      )}
+            ))}
+          </section>
+          <Pagination
+            page={result.data.pagination.page}
+            totalPages={result.data.pagination.totalPages}
+            createHref={(page) => {
+              const next = new URLSearchParams(searchParams.toString());
+              if (page <= 1) next.delete("page");
+              else next.set("page", String(page));
+              return collectionHref(next);
+            }}
+          />
+        </>
+      ) : null}
     </main>
   );
 }
 
-function CollectionRow({ entry }: { entry: ItemListDto }) {
-  return (
-    <TableRow>
-      <TableCell>
-        <Link
-          href={`/collection/${entry.item.id}`}
-          className="font-medium text-foreground hover:underline"
-        >
-          {entry.item.title}
-        </Link>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>{entry.item.type.name}</span>
-          {entry.item.year ? <span>{entry.item.year}</span> : null}
-          {entry.activePreordersCount > 0 ? (
-            <Badge variant="secondary">
-              {entry.activePreordersCount} предзаказ
-            </Badge>
-          ) : null}
-        </div>
-      </TableCell>
-      <TableCell>
-        <RatingValue value={entry.userItem.personalRating} />
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-muted-foreground" />
-          <span>{entry.playsCount}</span>
-        </div>
-      </TableCell>
-      <TableCell>{formatDate(entry.lastPlayedAt)}</TableCell>
-      <TableCell className="text-muted-foreground">
-        {entry.userItem.location || "Не указано"}
-      </TableCell>
-      <TableCell className="text-right">
-        <Button asChild variant="outline" size="sm">
-          <Link href={`/collection/${entry.item.id}`}>Открыть</Link>
-        </Button>
-      </TableCell>
-    </TableRow>
-  );
-}
-
-function RatingValue({ value }: { value?: number | null }) {
-  if (!value) {
-    return <span className="text-muted-foreground">Нет</span>;
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1 font-medium">
-      <Star className="h-4 w-4 fill-primary text-primary" />
-      {value}/10
-    </span>
-  );
-}
-
-function toCollectionQuery(filters: Record<string, string>): CollectionQuery {
+export function collectionQueryFromUrl(searchParams: URLSearchParams): CollectionListQuery {
+  const page = Number(searchParams.get("page") ?? 1);
+  const type = searchParams.get("type") as ItemTypeCode | null;
+  const sort = searchParams.get("sort") as CollectionListQuery["sort"] | null;
+  const direction = searchParams.get("direction");
   return {
-    q: filters.q.trim() || undefined,
-    type: filters.type === ANY_VALUE ? undefined : filters.type,
-    rating: filters.rating === ANY_VALUE ? undefined : Number(filters.rating),
-    location: filters.location.trim() || undefined,
-    tag: filters.tag.trim() || undefined,
-    playedFrom: filters.playedFrom || undefined,
-    playedTo: filters.playedTo || undefined,
-    hasActivePreorder:
-      filters.hasActivePreorder === ANY_VALUE
-        ? undefined
-        : filters.hasActivePreorder === "true",
+    q: searchParams.get("q") || undefined,
+    type: type || undefined,
+    personalRating: optionalNumber(searchParams, "personalRating"),
+    playsMin: optionalNumber(searchParams, "playsMin"),
+    playsMax: optionalNumber(searchParams, "playsMax"),
+    lastPlayedFrom: searchParams.get("lastPlayedFrom") || undefined,
+    lastPlayedTo: searchParams.get("lastPlayedTo") || undefined,
+    hasExpansions: optionalBoolean(searchParams, "hasExpansions"),
+    hasActivePreorder: optionalBoolean(searchParams, "hasActivePreorder"),
+    neverPlayed: optionalBoolean(searchParams, "neverPlayed"),
+    notPlayedSince: searchParams.get("notPlayedSince") || undefined,
+    location: searchParams.get("location") || undefined,
+    tag: searchParams.getAll("tag"),
+    favorite: optionalBoolean(searchParams, "favorite"),
+    sort: sort || "added",
+    direction: direction === "asc" ? "asc" : "desc",
+    page: Number.isInteger(page) && page > 0 ? page : 1,
+    pageSize: 24,
   };
 }
 
-function formatDate(value?: string | null) {
-  if (!value) {
-    return <span className="text-muted-foreground">Не было</span>;
-  }
-
-  return new Intl.DateTimeFormat("ru", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
+function optionalNumber(searchParams: URLSearchParams, key: string) {
+  const value = searchParams.get(key);
+  if (value === null || value === "") return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
 }
 
-function totalLabel(total: number) {
-  if (total === 1) {
-    return "1 игра в коллекции";
-  }
+function optionalBoolean(searchParams: URLSearchParams, key: string) {
+  const value = searchParams.get(key);
+  return value === "true" ? true : value === "false" ? false : undefined;
+}
 
-  return `${total} игр в коллекции`;
+function setOrDelete(params: URLSearchParams, key: string, value: string) {
+  if (value) params.set(key, value);
+  else params.delete(key);
+}
+
+export function collectionHref(params: URLSearchParams) {
+  const value = params.toString();
+  return value ? `/collection?${value}` : "/collection";
 }

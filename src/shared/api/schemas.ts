@@ -178,10 +178,31 @@ export const createPreorderRequestSchema = z
 export const updatePreorderExpectedDateRequestSchema = z
   .object({
     expectedDate: isoDateStringSchema.nullable(),
+    expectedDatePrecision: z
+      .enum(["day", "month", "quarter", "unknown"])
+      .optional(),
     reason: nullableStringSchema.optional(),
     comment: nullableStringSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const precision = value.expectedDatePrecision ??
+      (value.expectedDate ? "day" : "unknown");
+    if (precision === "unknown" && value.expectedDate !== null) {
+      context.addIssue({
+        code: "custom",
+        path: ["expectedDate"],
+        message: "Unknown precision requires a null expectedDate",
+      });
+    }
+    if (precision !== "unknown" && value.expectedDate === null) {
+      context.addIssue({
+        code: "custom",
+        path: ["expectedDate"],
+        message: "A date is required for day, month or quarter precision",
+      });
+    }
+  });
 
 export const updateBggSettingsRequestSchema = z
   .object({

@@ -47,9 +47,11 @@ export function createMockQueryAdapter<TParams, TData>(
     async load(params, context) {
       if (delay > 0) await abortableDelay(delay, context?.signal);
       throwIfAborted(context?.signal);
-      return typeof resolve === "function"
+      const result = typeof resolve === "function"
         ? await (resolve as (params: TParams) => TData | Promise<TData>)(params)
         : resolve;
+      throwIfAborted(context?.signal);
+      return result;
     },
   };
 }

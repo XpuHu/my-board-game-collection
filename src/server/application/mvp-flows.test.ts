@@ -491,8 +491,14 @@ describe("MVP service flows", () => {
     expect(updated.events).toHaveLength(1);
     expect(updated.events[0]).toMatchObject({
       type: "expected_date_changed",
-      oldValue: "2026-08-01T00:00:00.000Z",
-      newValue: "2026-09-15T00:00:00.000Z",
+      oldValue: JSON.stringify({
+        expectedDate: "2026-08-01T00:00:00.000Z",
+        expectedDatePrecision: "day",
+      }),
+      newValue: JSON.stringify({
+        expectedDate: "2026-09-15T00:00:00.000Z",
+        expectedDatePrecision: "day",
+      }),
       reason: "Publisher delay",
       comment: "Wave moved",
     });
@@ -631,8 +637,8 @@ describe("MVP service flows", () => {
     expect(collection.pagination).toMatchObject({ total: 1, pageSize: 1 });
     expect(collection.data[0]).toMatchObject({
       item: { title: "Owned" },
-      playsCount: 1,
-      activePreordersCount: 1,
+      plays: { count: 1 },
+      activePreorder: { uiStatus: "active" },
     });
     expect(lastPlayedCollection.data[0].item.title).toBe("Owned");
     expect(wishlist.data[0].item.title).toBe("Wanted");

@@ -13,7 +13,6 @@ import {
   X,
 } from "lucide-react";
 
-import { BggAttribution } from "@/components/bgg-attribution";
 import { ErrorState, LoadingState } from "@/components/ui-state";
 import { ItemReferenceEditor } from "@/components/item-reference-editor";
 import { UserItemEditor } from "@/components/user-item-editor";
@@ -93,7 +92,7 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
 
   if (loading) {
     return (
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="w-full px-4 py-6 sm:px-6 lg:px-8">
         <LoadingState
           title="Загружаем карточку"
           description="Получаем компактные данные владельца."
@@ -104,7 +103,7 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
 
   if (error || !details) {
     return (
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="w-full px-4 py-6 sm:px-6 lg:px-8">
         <ErrorState
           description={error ?? "Карточка коллекции не найдена"}
           onRetry={loadDetails}
@@ -116,17 +115,13 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
   const cover = [...details.images]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .find((image) => image.url ?? image.path);
-  const isPoweredByBgg =
-    details.externalReferences.some(
-      (reference) => reference.provider === "boardgamegeek",
-    ) || details.images.some((image) => image.provider === "boardgamegeek");
   const referenceUrl =
     details.externalReferences.find((reference) => reference.url)?.url ??
     details.links.find((link) => link.type === "official")?.url ??
     null;
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 pb-10 sm:px-6 lg:px-8">
+    <main className="flex w-full flex-col gap-5 px-4 pb-10 sm:px-6 lg:px-8">
       <nav
         className="flex items-center gap-2 text-sm text-muted-foreground"
         aria-label="Хлебные крошки"
@@ -182,7 +177,6 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
               {details.item.originalTitle}
             </p>
           ) : null}
-          {isPoweredByBgg ? <BggAttribution className="mt-4" compact /> : null}
           <div className="mt-5 flex items-center gap-3">
             <Stars rating={details.item.rating} />
             <span className="font-semibold">{details.item.rating ?? "—"}</span>

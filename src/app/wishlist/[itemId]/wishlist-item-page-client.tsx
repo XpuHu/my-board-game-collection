@@ -13,7 +13,6 @@ import {
   Star,
 } from "lucide-react";
 
-import { BggAttribution } from "@/components/bgg-attribution";
 import { ErrorState, LoadingState } from "@/components/ui-state";
 import { ItemReferenceEditor } from "@/components/item-reference-editor";
 import { UserItemEditor } from "@/components/user-item-editor";
@@ -231,7 +230,7 @@ export function WishlistItemPageClient({
 
   if (loading) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="w-full px-4 py-6 sm:px-6 lg:px-8">
         <LoadingState
           title="Загружаем wishlist"
           description="Получаем подробную справочную карточку."
@@ -242,7 +241,7 @@ export function WishlistItemPageClient({
 
   if (error || !details) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="w-full px-4 py-6 sm:px-6 lg:px-8">
         <ErrorState
           description={error ?? "Карточка wishlist не найдена"}
           onRetry={loadDetails}
@@ -252,10 +251,6 @@ export function WishlistItemPageClient({
   }
 
   const mainImage = details.images.find((image) => image.url)?.url ?? null;
-  const isPoweredByBgg =
-    details.externalReferences.some(
-      (reference) => reference.provider === "boardgamegeek",
-    ) || details.images.some((image) => image.provider === "boardgamegeek");
   const externalLinks = [
     ...details.externalReferences
       .filter((reference) => reference.url)
@@ -272,7 +267,7 @@ export function WishlistItemPageClient({
   ];
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+    <main className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-4">
         <Button asChild variant="ghost" className="w-fit px-0">
           <Link href="/wishlist">
@@ -316,9 +311,6 @@ export function WishlistItemPageClient({
                   <span>{details.externalReferences.length} источников</span>
                 ) : null}
               </div>
-              {isPoweredByBgg ? (
-                <BggAttribution className="mt-4" compact />
-              ) : null}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -172,10 +172,12 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
   return {
     collection: {
       list: (query?: CollectionQuery) =>
-        request<PaginatedResponse<ItemListDto>>("/api/collection", { query }),
+        request<PaginatedResponse<ItemListDto>>("/api/collection", {
+          query: { ...query, view: "legacy" },
+        }),
       get: (itemId: string) =>
         request<CollectionItemDetailsDto>(
-          `/api/collection/${encodeURIComponent(itemId)}`,
+          `/api/collection/${encodeURIComponent(itemId)}?view=legacy`,
         ),
       add: (itemId: string, body: AddToCollectionRequest = {}) =>
         request<ItemDetailsDto>(
@@ -188,10 +190,12 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
     },
     wishlist: {
       list: (query?: WishlistQuery) =>
-        request<PaginatedResponse<ItemListDto>>("/api/wishlist", { query }),
+        request<PaginatedResponse<ItemListDto>>("/api/wishlist", {
+          query: { ...query, view: "legacy" },
+        }),
       get: (itemId: string) =>
         request<WishlistItemDetailsDto>(
-          `/api/wishlist/${encodeURIComponent(itemId)}`,
+          `/api/wishlist/${encodeURIComponent(itemId)}?view=legacy`,
         ),
       add: (itemId: string) =>
         request<UserItemDto>(
@@ -308,7 +312,9 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
     },
     plays: {
       list: (query?: PlaysQuery) =>
-        request<PaginatedResponse<PlaySessionDto>>("/api/plays", { query }),
+        request<PaginatedResponse<PlaySessionDto>>("/api/plays", {
+          query: { ...query, view: "legacy" },
+        }),
       create: (itemId: string, body: CreatePlaySessionRequest) =>
         request<PlaySessionDto>(
           `/api/items/${encodeURIComponent(itemId)}/plays`,
@@ -328,7 +334,7 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
         }),
     },
     preorders: {
-      list: () => request<PreorderDto[]>("/api/preorders"),
+      list: () => request<PreorderDto[]>("/api/preorders?view=legacy"),
       create: (itemId: string, body: CreatePreorderRequest) =>
         request<PreorderDto>(
           `/api/items/${encodeURIComponent(itemId)}/preorders`,
@@ -350,7 +356,7 @@ export function createApiClient(options: { baseUrl?: string } = {}) {
         body: UpdatePreorderExpectedDateRequest,
       ) =>
         request<PreorderDto>(
-          `/api/preorders/${encodeURIComponent(preorderId)}/expected-date`,
+          `/api/preorders/${encodeURIComponent(preorderId)}/expected-date?view=legacy`,
           {
             method: "PATCH",
             body: JSON.stringify(body),

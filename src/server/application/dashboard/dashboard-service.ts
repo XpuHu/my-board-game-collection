@@ -3,11 +3,11 @@ import type { PlaySession, Preorder } from "@prisma/client";
 import { prisma } from "@/infrastructure/database/prisma";
 import {
   mapCollectionCard,
-  mapPlayListItem,
   mapPreorderListItem,
   type ItemForCompact,
   type UserItemForCollectionCard,
 } from "@/server/application/items/item-mappers";
+import { mapPlayItemsWithUsedItems } from "@/server/application/plays/play-service";
 import { userItemCardSelect } from "@/server/application/collection/collection-service";
 import { playListSelect } from "@/server/application/plays/play-service";
 import { preorderListSelect } from "@/server/application/preorders/preorder-service";
@@ -87,8 +87,12 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
     }),
   ]);
 
+  const recentPlayItems = await mapPlayItemsWithUsedItems(
+    recentPlays as PlayForList[],
+  );
+
   return {
-    recentPlays: (recentPlays as PlayForList[]).map(mapPlayListItem),
+    recentPlays: recentPlayItems,
     upcomingPreorders: (upcomingPreorders as PreorderForList[]).map(
       (preorder) => mapPreorderListItem(preorder, now),
     ),

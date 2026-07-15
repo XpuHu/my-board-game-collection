@@ -6,16 +6,21 @@ import type { PaginationInput } from "@/server/api/pagination";
 import {
   mapCollectionCard,
   mapCollectionCardToLegacy,
+  mapCollectionItemDetail,
   mapItemDetails,
+  mapPlayListItem,
   mapPlaySession,
+  type ItemForCompact,
   type UserItemForCollectionCard,
 } from "@/server/application/items/item-mappers";
 import {
   asItemForDetails,
   itemDetailsInclude,
 } from "@/server/application/items/item-service";
+import { playListSelect } from "@/server/application/plays/play-service";
 import type {
   CollectionCardDto,
+  CollectionItemDetailDto,
   CollectionItemDetailsDto,
   CollectionQueryDto,
   ItemListDto,
@@ -59,47 +64,33 @@ async function queryCollection(
   query: CollectionQuery,
   pagination: PaginationInput,
 ) {
-  const where = await buildCollectionWhere(query);
   const { page, pageSize } = pagination;
-
-  if (query.sort === "lastPlayed") {
-    const total = await prisma.userItem.count({ where });
-    const pageIds = await findLastPlayedPageIds(
-      where,
-      pagination,
-      query.direction ?? "desc",
-    );
-    const userItems = await prisma.userItem.findMany({
-      where: { id: { in: pageIds } },
-      select: userItemCardSelect,
-    });
-    const positions = new Map(pageIds.map((id, index) => [id, index]));
-    userItems.sort(
-      (left, right) =>
-        (positions.get(left.id) ?? 0) - (positions.get(right.id) ?? 0),
-    );
-
-    return {
-      data: userItems as UserItemForCollectionCard[],
-      pagination: {
-        page,
-        pageSize,
-        total,
-        totalPages: Math.ceil(total / pageSize),
-      },
-    };
-  }
-
-  const [total, userItems] = await prisma.$transaction([
-    prisma.userItem.count({ where }),
-    prisma.userItem.findMany({
-      where,
-      select: userItemCardSelect,
-      orderBy: buildCollectionOrder(query),
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
+  const matches = buildCollectionMatchesSql(query);
+  const order = collectionOrderSql(query);
+  const offset = (page - 1) * pageSize;
+  const [countRows, pageRows] = await prisma.$transaction([
+    prisma.$queryRaw<{ total: bigint | number }[]>(Prisma.sql`
+      SELECT COUNT(*) AS total FROM (${matches}) AS collection_matches
+    `),
+    prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT id FROM (${matches}) AS collection_matches
+      ORDER BY ${order}, id ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `),
   ]);
+  const total = Number(countRows[0]?.total ?? 0);
+  const pageIds = pageRows.map(({ id }) => id);
+  const userItems = pageIds.length
+    ? await prisma.userItem.findMany({
+        where: { id: { in: pageIds } },
+        select: userItemCardSelect,
+      })
+    : [];
+  const positions = new Map(pageIds.map((id, index) => [id, index]));
+  userItems.sort(
+    (left, right) =>
+      (positions.get(left.id) ?? 0) - (positions.get(right.id) ?? 0),
+  );
 
   return {
     data: userItems as UserItemForCollectionCard[],
@@ -144,199 +135,171 @@ export async function getCollectionItem(
   };
 }
 
-async function buildCollectionWhere(
-  query: CollectionQuery,
-): Promise<Prisma.UserItemWhereInput> {
-  const itemAnd: Prisma.ItemWhereInput[] = [{ deletedAt: null }];
+export async function getCollectionItemDetail(
+  itemId: string,
+): Promise<CollectionItemDetailDto> {
+  const item = await prisma.item.findFirst({
+    where: {
+      id: itemId,
+      deletedAt: null,
+      userItem: { owned: true },
+    },
+    include: itemDetailsInclude,
+  });
+
+  if (!item) {
+    throw ApiError.notFound("ITEM_NOT_FOUND", "Collection item was not found");
+  }
+
+  const detailsItem = asItemForDetails(item);
+  const recent = detailsItem.playSessions.slice(0, 5);
+  const usedIds = [
+    ...new Set(recent.flatMap((play) => jsonStringArray(play.usedItemIds))),
+  ];
+  const usedItems = usedIds.length
+    ? await prisma.item.findMany({
+        where: { id: { in: usedIds }, deletedAt: null },
+        select: playListSelect.item.select,
+      })
+    : [];
+  const usedById = new Map(
+    (usedItems as ItemForCompact[]).map((usedItem) => [usedItem.id, usedItem]),
+  );
+  const recentPlays = recent.map((play) =>
+    mapPlayListItem(
+      { ...play, item: detailsItem },
+      jsonStringArray(play.usedItemIds).flatMap((id) => {
+        const usedItem = usedById.get(id);
+        return usedItem ? [usedItem] : [];
+      }),
+    ),
+  );
+
+  return mapCollectionItemDetail(detailsItem, recentPlays);
+}
+
+function buildCollectionMatchesSql(query: CollectionQuery) {
+  const where: Prisma.Sql[] = [
+    Prisma.sql`ui.owned = 1`,
+    Prisma.sql`i.deleted_at IS NULL`,
+  ];
+  const having: Prisma.Sql[] = [];
   const personalRating = query.personalRating ?? query.rating;
   const lastPlayedFrom = query.lastPlayedFrom ?? query.playedFrom;
   const lastPlayedTo = query.lastPlayedTo ?? query.playedTo;
 
   if (query.q) {
-    itemAnd.push({
-      OR: [
-        { title: { contains: query.q } },
-        { originalTitle: { contains: query.q } },
-      ],
-    });
+    const pattern = `%${query.q}%`;
+    where.push(Prisma.sql`(i.title LIKE ${pattern} OR i.original_title LIKE ${pattern})`);
   }
 
   if (query.type) {
-    itemAnd.push({ type: { code: query.type } });
+    where.push(Prisma.sql`it.code = ${query.type}`);
   }
 
-  if (query.tag) {
-    itemAnd.push({
-      tags: {
-        some: {
-          OR: [{ id: query.tag }, { name: { contains: query.tag } }],
-        },
-      },
-    });
+  if (query.tag?.length) {
+    for (const tag of query.tag) {
+      const pattern = `%${tag}%`;
+      where.push(Prisma.sql`EXISTS (
+        SELECT 1 FROM "_ItemTags" AS item_tags
+        JOIN tags AS tag ON tag.id = item_tags."B"
+        WHERE item_tags."A" = i.id
+          AND (tag.id = ${tag} OR tag.name LIKE ${pattern})
+      )`);
+    }
   }
 
   if (query.hasActivePreorder !== undefined) {
-    itemAnd.push({
-      preorders: query.hasActivePreorder
-        ? { some: { status: { in: activePreorderStatuses } } }
-        : { none: { status: { in: activePreorderStatuses } } },
-    });
+    const exists = Prisma.sql`EXISTS (
+      SELECT 1 FROM preorders AS active_preorder
+      WHERE active_preorder.item_id = i.id
+        AND active_preorder.status IN ('planned', 'ordered', 'paid', 'shipped')
+    )`;
+    where.push(query.hasActivePreorder ? exists : Prisma.sql`NOT ${exists}`);
   }
 
   if (query.hasExpansions !== undefined) {
-    const expansionRelation: Prisma.ItemWhereInput = {
-      OR: [
-        { parentRelations: { some: { relationType: "expands" } } },
-        { childRelations: { some: { relationType: "expands" } } },
-      ],
-    };
-    itemAnd.push(
-      query.hasExpansions ? expansionRelation : { NOT: expansionRelation },
-    );
+    const exists = Prisma.sql`EXISTS (
+      SELECT 1 FROM item_relations AS expansion
+      WHERE expansion.relation_type = 'expands'
+        AND (expansion.parent_item_id = i.id OR expansion.child_item_id = i.id)
+    )`;
+    where.push(query.hasExpansions ? exists : Prisma.sql`NOT ${exists}`);
   }
 
-  if (query.neverPlayed !== undefined) {
-    itemAnd.push({
-      playSessions: query.neverPlayed ? { none: {} } : { some: {} },
-    });
+  if (query.neverPlayed === true) {
+    having.push(Prisma.sql`COUNT(ps.id) = 0`);
+  } else if (query.neverPlayed === false) {
+    having.push(Prisma.sql`COUNT(ps.id) > 0`);
   }
 
   if (query.notPlayedSince) {
-    itemAnd.push({
-      playSessions: {
-        none: { playedAt: { gte: new Date(query.notPlayedSince) } },
-      },
-    });
+    where.push(Prisma.sql`NOT EXISTS (
+      SELECT 1 FROM play_sessions AS recent_play
+      WHERE recent_play.item_id = i.id
+        AND recent_play.played_at >= ${new Date(`${query.notPlayedSince}T00:00:00.000Z`)}
+    )`);
   }
 
-  if (lastPlayedFrom || lastPlayedTo) {
-    const itemIds = await findItemIdsByLastPlay(lastPlayedFrom, lastPlayedTo);
-    itemAnd.push({ id: { in: itemIds } });
-  }
+  if (lastPlayedFrom) having.push(Prisma.sql`MAX(ps.played_at) >= ${new Date(`${lastPlayedFrom}T00:00:00.000Z`)}`);
+  if (lastPlayedTo) having.push(Prisma.sql`MAX(ps.played_at) <= ${endOfDay(lastPlayedTo)}`);
+  if (query.playsMin !== undefined) having.push(Prisma.sql`COUNT(ps.id) >= ${query.playsMin}`);
+  if (query.playsMax !== undefined) having.push(Prisma.sql`COUNT(ps.id) <= ${query.playsMax}`);
 
-  if (query.playsMin !== undefined || query.playsMax !== undefined) {
-    const itemIds = await findItemIdsByPlayCount(
-      query.playsMin,
-      query.playsMax,
-    );
-    itemAnd.push({ id: { in: itemIds } });
-  }
-
-  // DATA-02 is intentionally outside this read-only stage. Until the
-  // persistent flag exists, every current record has the safe default false.
   if (query.favorite === true) {
-    itemAnd.push({ id: { in: [] } });
+    where.push(Prisma.sql`0 = 1`);
   }
 
-  return {
-    owned: true,
-    personalRating,
-    location: query.location ? { contains: query.location } : undefined,
-    item: { AND: itemAnd },
-  };
-}
+  if (personalRating !== undefined) where.push(Prisma.sql`ui.personal_rating = ${personalRating}`);
+  if (query.location) where.push(Prisma.sql`ui.location LIKE ${`%${query.location}%`}`);
 
-async function findItemIdsByPlayCount(min?: number, max?: number) {
-  const [counts, unplayed] = await Promise.all([
-    prisma.playSession.groupBy({
-      by: ["itemId"],
-      _count: { _all: true },
-    }),
-    min === undefined || min <= 0
-      ? prisma.item.findMany({
-          where: { playSessions: { none: {} } },
-          select: { id: true },
-        })
-      : Promise.resolve([]),
-  ]);
-
-  return [
-    ...counts
-      .filter(({ _count }) => {
-        const count = _count._all;
-        return (
-          (min === undefined || count >= min) &&
-          (max === undefined || count <= max)
-        );
-      })
-      .map(({ itemId }) => itemId),
-    ...unplayed.map(({ id }) => id),
-  ];
-}
-
-async function findItemIdsByLastPlay(from?: string, to?: string) {
-  const groups = await prisma.playSession.groupBy({
-    by: ["itemId"],
-    _max: { playedAt: true },
-  });
-  const fromDate = from ? new Date(from) : null;
-  const toDate = to ? new Date(to) : null;
-
-  return groups
-    .filter(({ _max }) => {
-      const lastPlayedAt = _max.playedAt;
-      return Boolean(
-        lastPlayedAt &&
-        (!fromDate || lastPlayedAt >= fromDate) &&
-        (!toDate || lastPlayedAt <= toDate),
-      );
-    })
-    .map(({ itemId }) => itemId);
-}
-
-async function findLastPlayedPageIds(
-  where: Prisma.UserItemWhereInput,
-  pagination: PaginationInput,
-  direction: "asc" | "desc",
-) {
-  const candidates = await prisma.userItem.findMany({
-    where,
-    select: { id: true },
-  });
-
-  if (candidates.length === 0) {
-    return [];
-  }
-
-  const ids = candidates.map(({ id }) => id);
-  const order = Prisma.raw(direction === "asc" ? "ASC" : "DESC");
-  const offset = (pagination.page - 1) * pagination.pageSize;
-  const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
-    SELECT ui.id
+  const havingSql = having.length
+    ? Prisma.sql`HAVING ${Prisma.join(having, " AND ")}`
+    : Prisma.empty;
+  return Prisma.sql`
+    SELECT
+      ui.id AS id,
+      ui.created_at AS added_at,
+      i.title AS title,
+      ui.personal_rating AS personal_rating,
+      COUNT(ps.id) AS plays_count,
+      MAX(ps.played_at) AS last_played_at
     FROM user_items AS ui
-    LEFT JOIN play_sessions AS ps ON ps.item_id = ui.item_id
-    WHERE ui.id IN (${Prisma.join(ids)})
+    JOIN items AS i ON i.id = ui.item_id
+    JOIN item_types AS it ON it.id = i.type_id
+    LEFT JOIN play_sessions AS ps ON ps.item_id = i.id
+    WHERE ${Prisma.join(where, " AND ")}
     GROUP BY ui.id
-    ORDER BY MAX(ps.played_at) ${order}, ui.id ASC
-    LIMIT ${pagination.pageSize} OFFSET ${offset}
-  `);
-
-  return rows.map(({ id }) => id);
+    ${havingSql}
+  `;
 }
 
-function buildCollectionOrder(
-  query: CollectionQuery,
-): Prisma.UserItemOrderByWithRelationInput[] {
+function collectionOrderSql(query: CollectionQuery) {
   const direction = query.direction ?? "desc";
+  const field = query.sort === "lastPlayed"
+    ? "last_played_at"
+    : query.sort === "plays"
+      ? "plays_count"
+      : query.sort === "rating"
+        ? "personal_rating"
+        : query.sort === "title"
+          ? "title COLLATE NOCASE"
+          : "added_at";
+  return Prisma.raw(`${field} ${direction === "asc" ? "ASC" : "DESC"}`);
+}
 
-  switch (query.sort) {
-    case "added":
-      return [{ createdAt: direction }, { id: "asc" }];
-    case "plays":
-      return [{ item: { playSessions: { _count: direction } } }, { id: "asc" }];
-    case "rating":
-      return [{ personalRating: direction }, { id: "asc" }];
-    case "title":
-      return [{ item: { title: direction } }, { id: "asc" }];
-    case "lastPlayed":
-      return [{ id: "asc" }];
-    default:
-      return [{ updatedAt: "desc" }, { id: "asc" }];
-  }
+function endOfDay(value: string) {
+  return new Date(`${value}T23:59:59.999Z`);
 }
 
 const activePreorderStatuses = ["planned", "ordered", "paid", "shipped"];
 const expansionRelationTypes = ["expands"];
+
+function jsonStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
 
 export const userItemCardSelect = {
   id: true,
@@ -346,6 +309,7 @@ export const userItemCardSelect = {
   personalRating: true,
   location: true,
   interestLevel: true,
+  createdAt: true,
   updatedAt: true,
   item: {
     select: {
@@ -366,15 +330,31 @@ export const userItemCardSelect = {
         take: 1,
       },
       playSessions: {
-        select: { playedAt: true },
+        select: { playedAt: true, result: true },
         orderBy: { playedAt: "desc" },
         take: 1,
+      },
+      preorders: {
+        where: { status: { in: activePreorderStatuses } },
+        select: {
+          id: true,
+          status: true,
+          expectedDate: true,
+          price: true,
+          currency: true,
+        },
+        orderBy: [{ expectedDate: "asc" }, { id: "asc" }],
+        take: 1,
+      },
+      purchases: {
+        select: { totalPrice: true, currency: true },
       },
       _count: {
         select: {
           playSessions: true,
           preorders: { where: { status: { in: activePreorderStatuses } } },
           purchases: true,
+          images: true,
           parentRelations: {
             where: { relationType: { in: expansionRelationTypes } },
           },

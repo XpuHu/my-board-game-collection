@@ -636,11 +636,33 @@ export const itemDetailsInclude = {
     },
   },
   parentRelations: {
+    include: {
+      childItem: {
+        include: {
+          type: true,
+          images: {
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+            take: 1,
+          },
+        },
+      },
+    },
     orderBy: {
       createdAt: "desc",
     },
   },
   childRelations: {
+    include: {
+      parentItem: {
+        include: {
+          type: true,
+          images: {
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+            take: 1,
+          },
+        },
+      },
+    },
     orderBy: {
       createdAt: "desc",
     },

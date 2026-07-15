@@ -23,5 +23,8 @@ describe("AppShell", () => {
     expect(markup).not.toContain("<footer");
     expect(markup).toContain("md:pl-[72px]");
     expect(markup).toContain("xl:pl-56");
+    expect(markup).toContain("safe-area-inset-top");
+    expect(markup).toContain("safe-area-inset-bottom");
+    expect(markup).not.toContain("shadow-[");
   });
 });

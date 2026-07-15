@@ -7,6 +7,7 @@ import {
   mapItemDetails,
   mapWishlistCard,
   mapWishlistCardToLegacy,
+  mapWishlistItemDetail,
   type UserItemForWishlistCard,
 } from "@/server/application/items/item-mappers";
 import {
@@ -18,17 +19,11 @@ import type {
   PaginatedResponse,
   WishlistCardDto,
   WishlistItemDetailsDto,
+  WishlistItemDetailDto,
+  WishlistQueryDto,
 } from "@/shared/api";
 
-export type WishlistQuery = {
-  q?: string;
-  minRating?: number;
-  players?: number;
-  maxPlayTime?: number;
-  mechanics?: string[];
-  categories?: string[];
-  hasPrice?: boolean;
-};
+export type WishlistQuery = WishlistQueryDto;
 
 export async function listWishlist(
   query: WishlistQuery,
@@ -65,7 +60,7 @@ async function queryWishlist(
     prisma.userItem.findMany({
       where,
       select: userItemWishlistCardSelect,
-      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      orderBy: buildWishlistOrder(query),
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
@@ -91,6 +86,7 @@ export async function getWishlistItem(
       deletedAt: null,
       userItem: {
         wishlist: true,
+        owned: false,
       },
     },
     include: itemDetailsInclude,
@@ -113,6 +109,25 @@ export async function getWishlistItem(
   };
 }
 
+export async function getWishlistItemDetail(
+  itemId: string,
+): Promise<WishlistItemDetailDto> {
+  const item = await prisma.item.findFirst({
+    where: {
+      id: itemId,
+      deletedAt: null,
+      userItem: { wishlist: true, owned: false },
+    },
+    include: itemDetailsInclude,
+  });
+
+  if (!item) {
+    throw ApiError.notFound("ITEM_NOT_FOUND", "Wishlist item was not found");
+  }
+
+  return mapWishlistItemDetail(asItemForDetails(item));
+}
+
 async function buildWishlistWhere(
   query: WishlistQuery,
 ): Promise<Prisma.UserItemWhereInput> {
@@ -127,8 +142,12 @@ async function buildWishlistWhere(
     });
   }
 
-  if (query.minRating !== undefined) {
-    itemAnd.push({ rating: { gte: query.minRating } });
+  if (query.type) {
+    itemAnd.push({ type: { code: query.type } });
+  }
+
+  if (query.ratingMin !== undefined) {
+    itemAnd.push({ rating: { gte: query.ratingMin } });
   }
 
   if (query.players !== undefined) {
@@ -138,10 +157,26 @@ async function buildWishlistWhere(
     );
   }
 
-  if (query.maxPlayTime !== undefined) {
+  if (query.playTimeMax !== undefined) {
     itemAnd.push({
-      OR: [{ maxPlayTime: null }, { maxPlayTime: { lte: query.maxPlayTime } }],
+      OR: [{ maxPlayTime: null }, { maxPlayTime: { lte: query.playTimeMax } }],
     });
+  }
+
+  if (query.complexityMin !== undefined || query.complexityMax !== undefined) {
+    itemAnd.push({
+      complexity: { gte: query.complexityMin, lte: query.complexityMax },
+    });
+  }
+
+  if (query.hasLocalization !== undefined) {
+    const localization: Prisma.ItemWhereInput = {
+      OR: [
+        { links: { some: { type: "publisher" } } },
+        { originalTitle: { not: null } },
+      ],
+    };
+    itemAnd.push(query.hasLocalization ? localization : { NOT: localization });
   }
 
   if (query.hasPrice !== undefined) {
@@ -155,23 +190,33 @@ async function buildWishlistWhere(
     itemAnd.push(query.hasPrice ? priceSignal : { NOT: priceSignal });
   }
 
-  if (query.mechanics?.length || query.categories?.length) {
+  if (query.mechanic?.length || query.category?.length) {
     const itemIds = await findTaxonomyItemIds(
-      query.mechanics ?? [],
-      query.categories ?? [],
+      itemAnd,
+      query.mechanic ?? [],
+      query.category ?? [],
     );
     itemAnd.push({ id: { in: itemIds } });
   }
 
   return {
     wishlist: true,
+    owned: false,
+    interestLevel: query.interestLevel,
     item: { AND: itemAnd },
   };
 }
 
-async function findTaxonomyItemIds(mechanics: string[], categories: string[]) {
+async function findTaxonomyItemIds(
+  prefilter: Prisma.ItemWhereInput[],
+  mechanics: string[],
+  categories: string[],
+) {
   const items = await prisma.item.findMany({
-    where: { deletedAt: null },
+    where: {
+      AND: prefilter,
+      userItem: { wishlist: true, owned: false },
+    },
     select: { id: true, mechanics: true, categories: true },
   });
 
@@ -182,6 +227,24 @@ async function findTaxonomyItemIds(mechanics: string[], categories: string[]) {
         containsAny(jsonStringArray(item.categories), categories),
     )
     .map(({ id }) => id);
+}
+
+function buildWishlistOrder(
+  query: WishlistQuery,
+): Prisma.UserItemOrderByWithRelationInput[] {
+  const direction = query.direction ?? "desc";
+  switch (query.sort) {
+    case "rating":
+      return [{ item: { rating: direction } }, { id: "asc" }];
+    case "year":
+      return [{ item: { year: direction } }, { id: "asc" }];
+    case "title":
+      return [{ item: { title: direction } }, { id: "asc" }];
+    case "updated":
+      return [{ updatedAt: direction }, { id: "asc" }];
+    default:
+      return [{ interestLevel: direction }, { id: "asc" }];
+  }
 }
 
 function containsAny(values: string[], queryValues: string[]) {
@@ -211,6 +274,7 @@ const userItemWishlistCardSelect = {
   location: true,
   interestLevel: true,
   decisionNotes: true,
+  createdAt: true,
   updatedAt: true,
   item: {
     select: {
@@ -222,6 +286,8 @@ const userItemWishlistCardSelect = {
       maxPlayers: true,
       minPlayTime: true,
       maxPlayTime: true,
+      minAge: true,
+      complexity: true,
       rating: true,
       mechanics: true,
       categories: true,
@@ -232,8 +298,23 @@ const userItemWishlistCardSelect = {
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         take: 1,
       },
-      purchases: { select: { id: true }, take: 1 },
-      preorders: { select: { id: true }, take: 1 },
+      purchases: {
+        select: { id: true, totalPrice: true, currency: true },
+        orderBy: { totalPrice: "asc" },
+        take: 1,
+      },
+      preorders: {
+        where: { status: { in: activePreorderStatuses } },
+        select: {
+          id: true,
+          status: true,
+          expectedDate: true,
+          price: true,
+          currency: true,
+        },
+        orderBy: [{ expectedDate: "asc" }, { id: "asc" }],
+        take: 1,
+      },
       links: {
         where: { type: { in: shopLinkTypes } },
         select: { id: true },

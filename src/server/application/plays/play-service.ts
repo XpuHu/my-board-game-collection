@@ -39,11 +39,35 @@ export async function listPlayItems(
   pagination: PaginationInput,
 ): Promise<PaginatedResponse<PlayListItemDto>> {
   const page = await queryPlaySessions(query, pagination);
+  const data = await mapPlayItemsWithUsedItems(page.data);
 
-  return {
-    ...page,
-    data: page.data.map(mapPlayListItem),
-  };
+  return { ...page, data };
+}
+
+export async function mapPlayItemsWithUsedItems(
+  plays: PlayForList[],
+): Promise<PlayListItemDto[]> {
+  const usedItemIds = [
+    ...new Set(plays.flatMap((play) => jsonStringArray(play.usedItemIds))),
+  ];
+  const usedItems = usedItemIds.length
+    ? await prisma.item.findMany({
+        where: { id: { in: usedItemIds }, deletedAt: null },
+        select: playListSelect.item.select,
+      })
+    : [];
+  const usedItemById = new Map(
+    (usedItems as ItemForCompact[]).map((item) => [item.id, item]),
+  );
+
+  return plays.map((play) =>
+      mapPlayListItem(
+        play,
+        jsonStringArray(play.usedItemIds).flatMap((id) => {
+          const item = usedItemById.get(id);
+          return item ? [item] : [];
+        }),
+      ));
 }
 
 async function queryPlaySessions(
@@ -57,7 +81,7 @@ async function queryPlaySessions(
     prisma.playSession.findMany({
       where,
       select: playListSelect,
-      orderBy: [{ playedAt: "desc" }, { id: "asc" }],
+      orderBy: buildPlayOrder(query),
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
@@ -161,7 +185,7 @@ async function buildPlayWhere(
       query.from || query.to
         ? {
             gte: query.from ? new Date(query.from) : undefined,
-            lte: query.to ? new Date(query.to) : undefined,
+            lte: query.to ? endOfDay(query.to) : undefined,
           }
         : undefined,
     item: {
@@ -169,7 +193,7 @@ async function buildPlayWhere(
     },
   };
 
-  if (query.playerName || query.usedItemId) {
+  if (query.player || query.playerName || query.usedItemId) {
     const candidateIds = await findJsonFilteredPlayIds(where, query);
     where.id = { in: candidateIds };
   }
@@ -185,7 +209,7 @@ async function findJsonFilteredPlayIds(
     where,
     select: { id: true, playerNames: true, usedItemIds: true },
   });
-  const playerName = query.playerName?.trim().toLowerCase();
+  const playerName = (query.player ?? query.playerName)?.trim().toLowerCase();
 
   return plays
     .filter((play) => {
@@ -202,10 +226,29 @@ async function findJsonFilteredPlayIds(
     .map(({ id }) => id);
 }
 
+function buildPlayOrder(
+  query: PlaysQuery,
+): Prisma.PlaySessionOrderByWithRelationInput[] {
+  const direction = query.direction ?? "desc";
+  switch (query.sort) {
+    case "duration":
+      return [{ durationMinutes: direction }, { id: "asc" }];
+    case "rating":
+      // DATA-04 is not migrated yet; keep a deterministic fallback order.
+      return [{ playedAt: direction }, { id: "asc" }];
+    default:
+      return [{ playedAt: direction }, { id: "asc" }];
+  }
+}
+
 function jsonStringArray(value: unknown) {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
     : [];
+}
+
+function endOfDay(value: string) {
+  return new Date(`${value}T23:59:59.999Z`);
 }
 
 async function assertItemExists(itemId: string) {

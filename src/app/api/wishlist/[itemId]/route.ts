@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { withApiErrorHandling } from "@/server/api/errors";
-import { getWishlistItem } from "@/server/application/wishlist/wishlist-service";
+import { parseWishlistDetailQuery } from "@/server/api/query-contracts";
+import {
+  getWishlistItem,
+  getWishlistItemDetail,
+} from "@/server/application/wishlist/wishlist-service";
 
 type RouteContext = {
   params: Promise<{
@@ -9,10 +13,15 @@ type RouteContext = {
   }>;
 };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   return withApiErrorHandling(async () => {
     const { itemId } = await context.params;
+    const { view } = parseWishlistDetailQuery(new URL(request.url).searchParams);
 
-    return NextResponse.json(await getWishlistItem(itemId));
+    return NextResponse.json(
+      view === "legacy"
+        ? await getWishlistItem(itemId)
+        : await getWishlistItemDetail(itemId),
+    );
   });
 }
