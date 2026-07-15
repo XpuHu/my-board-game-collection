@@ -14,10 +14,11 @@ const paginationSchema = z.object({
 
 export function parsePagination(
   searchParams: URLSearchParams,
+  defaults: Partial<PaginationInput> = {},
 ): PaginationInput {
   return paginationSchema.parse({
-    page: searchParams.get("page") ?? undefined,
-    pageSize: searchParams.get("pageSize") ?? undefined,
+    page: searchParams.get("page") ?? defaults.page,
+    pageSize: searchParams.get("pageSize") ?? defaults.pageSize,
   });
 }
 

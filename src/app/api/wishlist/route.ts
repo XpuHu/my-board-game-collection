@@ -7,25 +7,30 @@ import {
   getNumberSearchParam,
   getSearchParam,
 } from "@/server/api/request";
-import { listWishlist } from "@/server/application/wishlist/wishlist-service";
+import {
+  listWishlist,
+  listWishlistCards,
+} from "@/server/application/wishlist/wishlist-service";
 
 export async function GET(request: Request) {
   return withApiErrorHandling(async () => {
     const { searchParams } = new URL(request.url);
 
-    return NextResponse.json(
-      await listWishlist(
-        {
-          q: getSearchParam(searchParams, "q"),
-          minRating: getNumberSearchParam(searchParams, "minRating"),
-          players: getNumberSearchParam(searchParams, "players"),
-          maxPlayTime: getNumberSearchParam(searchParams, "maxPlayTime"),
-          mechanics: searchParams.getAll("mechanics"),
-          categories: searchParams.getAll("categories"),
-          hasPrice: getBooleanSearchParam(searchParams, "hasPrice"),
-        },
-        parsePagination(searchParams),
-      ),
-    );
+    const query = {
+      q: getSearchParam(searchParams, "q"),
+      minRating: getNumberSearchParam(searchParams, "minRating"),
+      players: getNumberSearchParam(searchParams, "players"),
+      maxPlayTime: getNumberSearchParam(searchParams, "maxPlayTime"),
+      mechanics: searchParams.getAll("mechanics"),
+      categories: searchParams.getAll("categories"),
+      hasPrice: getBooleanSearchParam(searchParams, "hasPrice"),
+    };
+    const pagination = parsePagination(searchParams, { pageSize: 24 });
+    const response =
+      getSearchParam(searchParams, "view") === "compact"
+        ? await listWishlistCards(query, pagination)
+        : await listWishlist(query, pagination);
+
+    return NextResponse.json(response);
   });
 }

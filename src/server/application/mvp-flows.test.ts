@@ -16,15 +16,22 @@ import {
   createItem,
   updateUserItem,
 } from "@/server/application/items/item-service";
-import { listCollection } from "@/server/application/collection/collection-service";
+import {
+  listCollection,
+  listCollectionCards,
+} from "@/server/application/collection/collection-service";
+import { listWishlistCards } from "@/server/application/wishlist/wishlist-service";
+import { getDashboard } from "@/server/application/dashboard/dashboard-service";
 import {
   createPlaySession,
   deletePlaySession,
+  listPlayItems,
   listPlaySessions,
   updatePlaySession,
 } from "@/server/application/plays/play-service";
 import {
   createPreorder,
+  listPreorderItems,
   updatePreorder,
   updatePreorderExpectedDate,
 } from "@/server/application/preorders/preorder-service";
@@ -34,7 +41,10 @@ import {
   listPurchases,
   updatePurchase,
 } from "@/server/application/purchases/purchase-service";
-import { getStatisticsSummary } from "@/server/application/statistics/statistics-service";
+import {
+  getStatisticsOverview,
+  getStatisticsSummary,
+} from "@/server/application/statistics/statistics-service";
 import {
   exportJsonBackup,
   importJsonBackup,
@@ -565,6 +575,99 @@ describe("MVP service flows", () => {
 
     await expect(prisma.purchase.count()).resolves.toBe(0);
     expect(statisticsAfterDelete.collectionValue).toEqual([]);
+  });
+
+  it("serves compact paginated read models and dashboard aggregates", async () => {
+    const ownedItem = await createTestItem({ title: "Owned", owned: true });
+    const usedItem = await createTestItem({ title: "Expansion", owned: true });
+    await createTestItem({ title: "Wanted", wishlist: true });
+
+    await createPlaySession(ownedItem.id, {
+      playedAt: "2026-07-10T18:00:00.000Z",
+      playersCount: 2,
+      durationMinutes: 90,
+      result: "win",
+      playerNames: ["Anna", "Max"],
+      usedItemIds: [usedItem.id],
+    });
+    await createPreorder(ownedItem.id, {
+      shop: "Store",
+      price: 50,
+      currency: "USD",
+      expectedDate: "2026-07-20T00:00:00.000Z",
+      status: "paid",
+    });
+
+    const collection = await listCollectionCards(
+      { playsMin: 1, sort: "plays" },
+      { page: 1, pageSize: 1 },
+    );
+    const lastPlayedCollection = await listCollectionCards(
+      { sort: "lastPlayed", direction: "desc" },
+      { page: 1, pageSize: 1 },
+    );
+    const wishlist = await listWishlistCards(
+      { q: "Want" },
+      { page: 1, pageSize: 24 },
+    );
+    const plays = await listPlayItems(
+      {
+        playerName: "ann",
+        usedItemId: usedItem.id,
+        result: "win",
+        durationMin: 60,
+      },
+      { page: 1, pageSize: 20 },
+    );
+    const preorders = await listPreorderItems(
+      { group: "active", expectedTo: "2026-07-31T23:59:59.999Z" },
+      { page: 1, pageSize: 20 },
+    );
+    const dashboard = await getDashboard(new Date("2026-07-15T12:00:00.000Z"));
+    const overview = await getStatisticsOverview(
+      new Date("2026-07-15T12:00:00.000Z"),
+    );
+
+    expect(collection.pagination).toMatchObject({ total: 1, pageSize: 1 });
+    expect(collection.data[0]).toMatchObject({
+      item: { title: "Owned" },
+      playsCount: 1,
+      activePreordersCount: 1,
+    });
+    expect(lastPlayedCollection.data[0].item.title).toBe("Owned");
+    expect(wishlist.data[0].item.title).toBe("Wanted");
+    expect(plays.data[0]).toMatchObject({
+      item: { title: "Owned" },
+      playerNames: ["Anna", "Max"],
+    });
+    expect(preorders.data[0]).toMatchObject({
+      item: { title: "Owned" },
+      uiStatus: "active",
+    });
+    expect(dashboard).toMatchObject({
+      monthSummary: {
+        playsCount: 1,
+        uniqueItemsCount: 1,
+        totalDurationMinutes: 90,
+        winsCount: 1,
+      },
+    });
+    expect(dashboard.recentPlays).toHaveLength(1);
+    expect(dashboard.upcomingPreorders).toHaveLength(1);
+    expect(overview).toMatchObject({
+      uniquePlayedItems: 1,
+      totalPlayHours: 1.5,
+      winRate: 100,
+    });
+    expect(overview.frequentPlayers[0]).toEqual({
+      name: "Anna",
+      playsCount: 1,
+    });
+    expect(overview.expansionUsage[0]).toEqual({
+      itemId: usedItem.id,
+      title: "Expansion",
+      playsCount: 1,
+    });
   });
 
   it("exports and imports the full manual dataset without duplicate records", async () => {

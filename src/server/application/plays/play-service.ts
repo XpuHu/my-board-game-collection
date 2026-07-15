@@ -1,37 +1,77 @@
+import type { PlaySession } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/infrastructure/database/prisma";
+import { ApiError } from "@/server/api/errors";
+import type { PaginationInput } from "@/server/api/pagination";
+import {
+  mapPlayListItem,
+  mapPlaySession,
+  type ItemForCompact,
+} from "@/server/application/items/item-mappers";
 import type {
   CreatePlaySessionInput,
+  PaginatedResponse,
+  PlayListItemDto,
+  PlaySessionDto,
+  PlaysQueryDto,
   UpdatePlaySessionInput,
 } from "@/shared/api";
-import type { PaginatedResponse, PlaySessionDto } from "@/shared/api";
-import { ApiError } from "@/server/api/errors";
-import { paginate, type PaginationInput } from "@/server/api/pagination";
-import { mapPlaySession } from "@/server/application/items/item-mappers";
 
-export type PlaysQuery = {
-  itemId?: string;
-  from?: string;
-  to?: string;
-  source?: "manual" | "boardgamegeek";
-};
+export type PlaysQuery = PlaysQueryDto;
+
+type PlayForList = PlaySession & { item: ItemForCompact };
 
 export async function listPlaySessions(
   query: PlaysQuery,
   pagination: PaginationInput,
 ): Promise<PaginatedResponse<PlaySessionDto>> {
-  const plays = await prisma.playSession.findMany({
-    where: buildPlayWhere(query),
-    include: {
-      item: true,
-    },
-    orderBy: {
-      playedAt: "desc",
-    },
-  });
+  const page = await queryPlaySessions(query, pagination);
 
-  return paginate(plays.map(mapPlaySession), pagination);
+  return {
+    ...page,
+    data: page.data.map(mapPlaySession),
+  };
+}
+
+export async function listPlayItems(
+  query: PlaysQuery,
+  pagination: PaginationInput,
+): Promise<PaginatedResponse<PlayListItemDto>> {
+  const page = await queryPlaySessions(query, pagination);
+
+  return {
+    ...page,
+    data: page.data.map(mapPlayListItem),
+  };
+}
+
+async function queryPlaySessions(
+  query: PlaysQuery,
+  pagination: PaginationInput,
+) {
+  const where = await buildPlayWhere(query);
+  const { page, pageSize } = pagination;
+  const [total, plays] = await prisma.$transaction([
+    prisma.playSession.count({ where }),
+    prisma.playSession.findMany({
+      where,
+      select: playListSelect,
+      orderBy: [{ playedAt: "desc" }, { id: "asc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  return {
+    data: plays as PlayForList[],
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  };
 }
 
 export async function createPlaySession(
@@ -102,10 +142,21 @@ export async function deletePlaySession(playId: string) {
   });
 }
 
-function buildPlayWhere(query: PlaysQuery): Prisma.PlaySessionWhereInput {
-  return {
+async function buildPlayWhere(
+  query: PlaysQuery,
+): Promise<Prisma.PlaySessionWhereInput> {
+  const where: Prisma.PlaySessionWhereInput = {
     itemId: query.itemId,
+    result: query.result,
     source: query.source,
+    playersCount:
+      query.playersMin !== undefined || query.playersMax !== undefined
+        ? { gte: query.playersMin, lte: query.playersMax }
+        : undefined,
+    durationMinutes:
+      query.durationMin !== undefined || query.durationMax !== undefined
+        ? { gte: query.durationMin, lte: query.durationMax }
+        : undefined,
     playedAt:
       query.from || query.to
         ? {
@@ -117,6 +168,44 @@ function buildPlayWhere(query: PlaysQuery): Prisma.PlaySessionWhereInput {
       deletedAt: null,
     },
   };
+
+  if (query.playerName || query.usedItemId) {
+    const candidateIds = await findJsonFilteredPlayIds(where, query);
+    where.id = { in: candidateIds };
+  }
+
+  return where;
+}
+
+async function findJsonFilteredPlayIds(
+  where: Prisma.PlaySessionWhereInput,
+  query: PlaysQuery,
+) {
+  const plays = await prisma.playSession.findMany({
+    where,
+    select: { id: true, playerNames: true, usedItemIds: true },
+  });
+  const playerName = query.playerName?.trim().toLowerCase();
+
+  return plays
+    .filter((play) => {
+      const matchesPlayer = playerName
+        ? jsonStringArray(play.playerNames).some((name) =>
+            name.toLowerCase().includes(playerName),
+          )
+        : true;
+      const matchesUsedItem = query.usedItemId
+        ? jsonStringArray(play.usedItemIds).includes(query.usedItemId)
+        : true;
+      return matchesPlayer && matchesUsedItem;
+    })
+    .map(({ id }) => id);
+}
+
+function jsonStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
 }
 
 async function assertItemExists(itemId: string) {
@@ -152,3 +241,41 @@ async function assertPlaySessionExists(playId: string) {
     );
   }
 }
+
+export const playListSelect = {
+  id: true,
+  itemId: true,
+  playedAt: true,
+  playersCount: true,
+  durationMinutes: true,
+  result: true,
+  score: true,
+  scenario: true,
+  playerNames: true,
+  usedItemIds: true,
+  notes: true,
+  source: true,
+  bggPlayId: true,
+  locallyModifiedAt: true,
+  importedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  item: {
+    select: {
+      id: true,
+      title: true,
+      originalTitle: true,
+      year: true,
+      minPlayers: true,
+      maxPlayers: true,
+      minPlayTime: true,
+      maxPlayTime: true,
+      rating: true,
+      type: true,
+      images: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        take: 1,
+      },
+    },
+  },
+} satisfies Prisma.PlaySessionSelect;

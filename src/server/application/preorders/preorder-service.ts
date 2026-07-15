@@ -3,11 +3,18 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/infrastructure/database/prisma";
 import type {
   CreatePreorderInput,
+  PaginatedResponse,
   PreorderDto,
+  PreorderListItemDto,
+  PreorderQueryDto,
   UpdatePreorderExpectedDateInput,
 } from "@/shared/api";
 import { ApiError } from "@/server/api/errors";
-import { mapPreorder } from "@/server/application/items/item-mappers";
+import type { PaginationInput } from "@/server/api/pagination";
+import {
+  mapPreorder,
+  mapPreorderListItem,
+} from "@/server/application/items/item-mappers";
 
 type UpdatePreorderInput = Partial<CreatePreorderInput>;
 
@@ -34,6 +41,34 @@ export async function listPreorders(): Promise<PreorderDto[]> {
   return preorders
     .sort((left, right) => Number(isActive(right)) - Number(isActive(left)))
     .map((preorder) => mapPreorder(preorder, preorder.item.title));
+}
+
+export async function listPreorderItems(
+  query: PreorderQueryDto,
+  pagination: PaginationInput,
+): Promise<PaginatedResponse<PreorderListItemDto>> {
+  const where = buildPreorderWhere(query);
+  const { page, pageSize } = pagination;
+  const [total, preorders] = await prisma.$transaction([
+    prisma.preorder.count({ where }),
+    prisma.preorder.findMany({
+      where,
+      select: preorderListSelect,
+      orderBy: [{ expectedDate: "asc" }, { createdAt: "desc" }, { id: "asc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  return {
+    data: preorders.map((preorder) => mapPreorderListItem(preorder)),
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  };
 }
 
 export async function createPreorder(
@@ -294,6 +329,30 @@ function isActive(preorder: { status: string }) {
   return activeStatuses.includes(preorder.status);
 }
 
+function buildPreorderWhere(
+  query: PreorderQueryDto,
+): Prisma.PreorderWhereInput {
+  return {
+    itemId: query.itemId,
+    status:
+      query.group === "active"
+        ? { in: activeStatuses }
+        : query.group === "received"
+          ? "received"
+          : query.group === "cancelled"
+            ? "cancelled"
+            : undefined,
+    expectedDate:
+      query.expectedFrom || query.expectedTo
+        ? {
+            gte: query.expectedFrom ? new Date(query.expectedFrom) : undefined,
+            lte: query.expectedTo ? new Date(query.expectedTo) : undefined,
+          }
+        : undefined,
+    item: { deletedAt: null },
+  };
+}
+
 const preorderInclude = {
   item: true,
   events: {
@@ -302,3 +361,37 @@ const preorderInclude = {
     },
   },
 } satisfies Prisma.PreorderInclude;
+
+export const preorderListSelect = {
+  id: true,
+  itemId: true,
+  shop: true,
+  price: true,
+  currency: true,
+  orderDate: true,
+  expectedDate: true,
+  receivedDate: true,
+  trackingNumber: true,
+  status: true,
+  comment: true,
+  createdAt: true,
+  updatedAt: true,
+  item: {
+    select: {
+      id: true,
+      title: true,
+      originalTitle: true,
+      year: true,
+      minPlayers: true,
+      maxPlayers: true,
+      minPlayTime: true,
+      maxPlayTime: true,
+      rating: true,
+      type: true,
+      images: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        take: 1,
+      },
+    },
+  },
+} satisfies Prisma.PreorderSelect;

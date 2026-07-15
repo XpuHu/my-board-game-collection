@@ -1,21 +1,24 @@
-import type {
-  ItemListDto,
-  PaginatedResponse,
-  WishlistItemDetailsDto,
-} from "@/shared/api";
 import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/infrastructure/database/prisma";
 import { ApiError } from "@/server/api/errors";
-import { paginate, type PaginationInput } from "@/server/api/pagination";
+import type { PaginationInput } from "@/server/api/pagination";
 import {
   mapItemDetails,
-  mapItemList,
-  type UserItemForList,
+  mapWishlistCard,
+  mapWishlistCardToLegacy,
+  type UserItemForWishlistCard,
 } from "@/server/application/items/item-mappers";
 import {
   asItemForDetails,
   itemDetailsInclude,
 } from "@/server/application/items/item-service";
+import type {
+  ItemListDto,
+  PaginatedResponse,
+  WishlistCardDto,
+  WishlistItemDetailsDto,
+} from "@/shared/api";
 
 export type WishlistQuery = {
   q?: string;
@@ -31,27 +34,52 @@ export async function listWishlist(
   query: WishlistQuery,
   pagination: PaginationInput,
 ): Promise<PaginatedResponse<ItemListDto>> {
-  const userItems = await prisma.userItem.findMany({
-    where: {
-      wishlist: true,
-      item: {
-        deletedAt: null,
-      },
-    },
-    include: userItemListInclude,
-    orderBy: {
-      updatedAt: "desc",
-    },
-  });
+  const page = await queryWishlist(query, pagination);
 
-  const filtered = userItems.filter((userItem) =>
-    matchesWishlistQuery(userItem as UserItemForList, query),
-  );
+  return {
+    ...page,
+    data: page.data.map(mapWishlistCardToLegacy),
+  };
+}
 
-  return paginate(
-    filtered.map((userItem) => mapItemList(userItem)),
-    pagination,
-  );
+export async function listWishlistCards(
+  query: WishlistQuery,
+  pagination: PaginationInput,
+): Promise<PaginatedResponse<WishlistCardDto>> {
+  const page = await queryWishlist(query, pagination);
+
+  return {
+    ...page,
+    data: page.data.map(mapWishlistCard),
+  };
+}
+
+async function queryWishlist(
+  query: WishlistQuery,
+  pagination: PaginationInput,
+) {
+  const where = await buildWishlistWhere(query);
+  const { page, pageSize } = pagination;
+  const [total, userItems] = await prisma.$transaction([
+    prisma.userItem.count({ where }),
+    prisma.userItem.findMany({
+      where,
+      select: userItemWishlistCardSelect,
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  return {
+    data: userItems as UserItemForWishlistCard[],
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  };
 }
 
 export async function getWishlistItem(
@@ -85,88 +113,84 @@ export async function getWishlistItem(
   };
 }
 
-function matchesWishlistQuery(userItem: UserItemForList, query: WishlistQuery) {
-  const item = userItem.item;
+async function buildWishlistWhere(
+  query: WishlistQuery,
+): Promise<Prisma.UserItemWhereInput> {
+  const itemAnd: Prisma.ItemWhereInput[] = [{ deletedAt: null }];
 
-  if (query.q && !matchesSearch(item.title, item.originalTitle, query.q)) {
-    return false;
+  if (query.q) {
+    itemAnd.push({
+      OR: [
+        { title: { contains: query.q } },
+        { originalTitle: { contains: query.q } },
+      ],
+    });
   }
 
-  if (query.minRating !== undefined && Number(item.rating) < query.minRating) {
-    return false;
+  if (query.minRating !== undefined) {
+    itemAnd.push({ rating: { gte: query.minRating } });
   }
 
-  if (query.players !== undefined && !matchesPlayers(item, query.players)) {
-    return false;
+  if (query.players !== undefined) {
+    itemAnd.push(
+      { OR: [{ minPlayers: null }, { minPlayers: { lte: query.players } }] },
+      { OR: [{ maxPlayers: null }, { maxPlayers: { gte: query.players } }] },
+    );
   }
 
-  if (
-    query.maxPlayTime !== undefined &&
-    item.maxPlayTime !== null &&
-    item.maxPlayTime > query.maxPlayTime
-  ) {
-    return false;
+  if (query.maxPlayTime !== undefined) {
+    itemAnd.push({
+      OR: [{ maxPlayTime: null }, { maxPlayTime: { lte: query.maxPlayTime } }],
+    });
   }
 
-  if (
-    query.hasPrice !== undefined &&
-    hasPriceSignals(item) !== query.hasPrice
-  ) {
-    return false;
+  if (query.hasPrice !== undefined) {
+    const priceSignal: Prisma.ItemWhereInput = {
+      OR: [
+        { purchases: { some: {} } },
+        { preorders: { some: {} } },
+        { links: { some: { type: "shop" } } },
+      ],
+    };
+    itemAnd.push(query.hasPrice ? priceSignal : { NOT: priceSignal });
   }
 
-  if (
-    query.mechanics?.length &&
-    !containsAny(jsonStringArray(item.mechanics), query.mechanics)
-  ) {
-    return false;
+  if (query.mechanics?.length || query.categories?.length) {
+    const itemIds = await findTaxonomyItemIds(
+      query.mechanics ?? [],
+      query.categories ?? [],
+    );
+    itemAnd.push({ id: { in: itemIds } });
   }
 
-  if (
-    query.categories?.length &&
-    !containsAny(jsonStringArray(item.categories), query.categories)
-  ) {
-    return false;
-  }
-
-  return true;
+  return {
+    wishlist: true,
+    item: { AND: itemAnd },
+  };
 }
 
-function matchesSearch(title: string, originalTitle: string | null, q: string) {
-  const query = q.toLowerCase();
+async function findTaxonomyItemIds(mechanics: string[], categories: string[]) {
+  const items = await prisma.item.findMany({
+    where: { deletedAt: null },
+    select: { id: true, mechanics: true, categories: true },
+  });
 
-  return (
-    title.toLowerCase().includes(query) ||
-    Boolean(originalTitle?.toLowerCase().includes(query))
-  );
-}
-
-function matchesPlayers(item: UserItemForList["item"], players: number) {
-  if (item.minPlayers !== null && item.minPlayers > players) {
-    return false;
-  }
-
-  if (item.maxPlayers !== null && item.maxPlayers < players) {
-    return false;
-  }
-
-  return true;
-}
-
-function hasPriceSignals(item: UserItemForList["item"]) {
-  return (
-    item.purchases.length > 0 ||
-    item.preorders.length > 0 ||
-    (item.links ?? []).some((link) => link.type === "shop")
-  );
+  return items
+    .filter(
+      (item) =>
+        containsAny(jsonStringArray(item.mechanics), mechanics) &&
+        containsAny(jsonStringArray(item.categories), categories),
+    )
+    .map(({ id }) => id);
 }
 
 function containsAny(values: string[], queryValues: string[]) {
-  const normalized = values.map((value) => value.toLowerCase());
+  if (queryValues.length === 0) {
+    return true;
+  }
 
-  return queryValues.some((queryValue) =>
-    normalized.includes(queryValue.toLowerCase()),
-  );
+  const normalized = new Set(values.map((value) => value.toLowerCase()));
+  return queryValues.some((value) => normalized.has(value.toLowerCase()));
 }
 
 function jsonStringArray(value: unknown) {
@@ -175,25 +199,59 @@ function jsonStringArray(value: unknown) {
     : [];
 }
 
-const userItemListInclude = {
+const activePreorderStatuses = ["planned", "ordered", "paid", "shipped"];
+const shopLinkTypes = ["shop", "kickstarter", "gamefound"];
+
+const userItemWishlistCardSelect = {
+  id: true,
+  status: true,
+  owned: true,
+  wishlist: true,
+  personalRating: true,
+  location: true,
+  interestLevel: true,
+  decisionNotes: true,
+  updatedAt: true,
   item: {
-    include: {
+    select: {
+      id: true,
+      title: true,
+      originalTitle: true,
+      year: true,
+      minPlayers: true,
+      maxPlayers: true,
+      minPlayTime: true,
+      maxPlayTime: true,
+      rating: true,
+      mechanics: true,
+      categories: true,
+      updatedAt: true,
       type: true,
-      images: {
-        orderBy: [
-          {
-            sortOrder: "asc",
-          },
-          {
-            createdAt: "asc",
-          },
-        ],
-      },
-      links: true,
-      playSessions: true,
-      preorders: true,
-      purchases: true,
       tags: true,
+      images: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        take: 1,
+      },
+      purchases: { select: { id: true }, take: 1 },
+      preorders: { select: { id: true }, take: 1 },
+      links: {
+        where: { type: { in: shopLinkTypes } },
+        select: { id: true },
+        take: 1,
+      },
+      playSessions: {
+        select: { playedAt: true },
+        orderBy: { playedAt: "desc" },
+        take: 1,
+      },
+      _count: {
+        select: {
+          links: { where: { type: { in: shopLinkTypes } } },
+          playSessions: true,
+          preorders: { where: { status: { in: activePreorderStatuses } } },
+          purchases: true,
+        },
+      },
     },
   },
-} satisfies Prisma.UserItemInclude;
+} satisfies Prisma.UserItemSelect;

@@ -123,6 +123,20 @@ export type ImageDto = {
   createdAt: string;
 };
 
+export type ItemCompactDto = {
+  id: string;
+  title: string;
+  originalTitle?: string | null;
+  type: ItemTypeDto;
+  year?: number | null;
+  cover?: ImageDto | null;
+  minPlayers?: number | null;
+  maxPlayers?: number | null;
+  minPlayTime?: number | null;
+  maxPlayTime?: number | null;
+  communityRating?: number | null;
+};
+
 export type ExternalReferenceDto = {
   id: string;
   itemId: string;
@@ -298,6 +312,42 @@ export type ItemListDto = {
   updatedAt: string;
 };
 
+export type CollectionCardDto = {
+  item: ItemCompactDto;
+  userItem: {
+    id: string;
+    status: ItemStatus;
+    personalRating?: number | null;
+    location?: string | null;
+    tags: TagDto[];
+  };
+  playsCount: number;
+  lastPlayedAt?: string | null;
+  activePreordersCount: number;
+  expansionsCount: number;
+  purchasesCount: number;
+  updatedAt: string;
+};
+
+export type WishlistCardDto = {
+  item: ItemCompactDto;
+  userItem: {
+    id: string;
+    status: ItemStatus;
+    interestLevel?: number | null;
+    decisionNotes?: string | null;
+    tags: TagDto[];
+  };
+  mechanics: string[];
+  categories: string[];
+  priceSignal: {
+    hasPurchases: boolean;
+    hasPreorders: boolean;
+    shopLinksCount: number;
+  };
+  updatedAt: string;
+};
+
 export type PlaySummaryDto = {
   playsCount: number;
   lastPlayedAt?: string | null;
@@ -392,6 +442,10 @@ export type PlaySessionDto = {
   updatedAt: string;
 };
 
+export type PlayListItemDto = Omit<PlaySessionDto, "itemTitle"> & {
+  item: ItemCompactDto;
+};
+
 export type CreatePlaySessionRequest = {
   playedAt: string;
   playersCount?: number | null;
@@ -442,6 +496,13 @@ export type PreorderDto = {
   events: PreorderEventDto[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type PreorderUiStatus = "active" | "delayed" | "received" | "cancelled";
+
+export type PreorderListItemDto = Omit<PreorderDto, "itemTitle" | "events"> & {
+  item: ItemCompactDto;
+  uiStatus: PreorderUiStatus;
 };
 
 export type PreorderEventDto = {
@@ -496,6 +557,75 @@ export type StatisticsSummaryDto = {
   wishlistTotal: number;
   collectionValue: MoneyAmountDto[];
   preorderValue: MoneyAmountDto[];
+};
+
+export type StatisticsOverviewDto = StatisticsSummaryDto & {
+  uniquePlayedItems: number;
+  totalPlayHours: number;
+  averagePersonalRating?: number | null;
+  winRate?: number | null;
+  playsByMonth: { month: string; playsCount: number }[];
+  playerCountDistribution: { playersCount: number; playsCount: number }[];
+  results: { result: PlayResult; playsCount: number }[];
+  activityByWeekday: { weekday: number; playsCount: number }[];
+  staleItems: CollectionCardDto[];
+  expansionUsage: { itemId: string; title: string; playsCount: number }[];
+  frequentPlayers: { name: string; playsCount: number }[];
+};
+
+export type DashboardDto = {
+  recentPlays: PlayListItemDto[];
+  upcomingPreorders: PreorderListItemDto[];
+  recentlyAdded: CollectionCardDto[];
+  monthSummary: {
+    playsCount: number;
+    uniqueItemsCount: number;
+    totalDurationMinutes: number;
+    averagePersonalRating?: number | null;
+    winsCount: number;
+  };
+  favoriteItem?: CollectionCardDto | null;
+  activity: { date: string; playsCount: number }[];
+};
+
+export type CollectionQueryDto = {
+  q?: string;
+  type?: ItemTypeCode;
+  personalRating?: number;
+  playsMin?: number;
+  playsMax?: number;
+  lastPlayedFrom?: string;
+  lastPlayedTo?: string;
+  hasExpansions?: boolean;
+  hasActivePreorder?: boolean;
+  neverPlayed?: boolean;
+  notPlayedSince?: string;
+  location?: string;
+  tag?: string;
+  favorite?: boolean;
+  sort?: "added" | "lastPlayed" | "plays" | "rating" | "title";
+  direction?: "asc" | "desc";
+};
+
+export type PlaysQueryDto = {
+  itemId?: string;
+  from?: string;
+  to?: string;
+  result?: PlayResult;
+  playerName?: string;
+  playersMin?: number;
+  playersMax?: number;
+  durationMin?: number;
+  durationMax?: number;
+  usedItemId?: string;
+  source?: "manual" | "boardgamegeek";
+};
+
+export type PreorderQueryDto = {
+  group?: "all" | "active" | "received" | "cancelled";
+  itemId?: string;
+  expectedFrom?: string;
+  expectedTo?: string;
 };
 
 export type SettingsDto = {

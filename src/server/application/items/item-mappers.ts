@@ -15,8 +15,10 @@ import type {
 } from "@prisma/client";
 
 import type {
+  CollectionCardDto,
   ExternalReferenceDto,
   ImageDto,
+  ItemCompactDto,
   ItemDetailsDto,
   ItemDto,
   ItemListDto,
@@ -27,15 +29,18 @@ import type {
   LinkDto,
   LinkType,
   NoteDto,
+  PlayListItemDto,
   PlaySessionDto,
   PlaySummaryDto,
   PreorderDto,
   PreorderEventDto,
+  PreorderListItemDto,
   PreorderStatus,
   ProviderCode,
   PurchaseDto,
   TagDto,
   UserItemDto,
+  WishlistCardDto,
 } from "@/shared/api";
 
 export type ItemForDetails = Item & {
@@ -69,6 +74,75 @@ export type UserItemWithTags = UserItem & {
   item: {
     tags: Tag[];
   };
+};
+
+export type ItemForCompact = Pick<
+  Item,
+  | "id"
+  | "title"
+  | "originalTitle"
+  | "year"
+  | "minPlayers"
+  | "maxPlayers"
+  | "minPlayTime"
+  | "maxPlayTime"
+  | "rating"
+> & {
+  type: ItemType;
+  images: Image[];
+};
+
+export type UserItemForCollectionCard = Pick<
+  UserItem,
+  | "id"
+  | "status"
+  | "owned"
+  | "wishlist"
+  | "personalRating"
+  | "location"
+  | "interestLevel"
+  | "updatedAt"
+> & {
+  item: ItemForCompact &
+    Pick<Item, "updatedAt"> & {
+      tags: Tag[];
+      playSessions: Pick<PlaySession, "playedAt">[];
+      _count: {
+        playSessions: number;
+        preorders: number;
+        purchases: number;
+        parentRelations: number;
+        childRelations: number;
+      };
+    };
+};
+
+export type UserItemForWishlistCard = Pick<
+  UserItem,
+  | "id"
+  | "status"
+  | "owned"
+  | "wishlist"
+  | "personalRating"
+  | "location"
+  | "interestLevel"
+  | "decisionNotes"
+  | "updatedAt"
+> & {
+  item: ItemForCompact &
+    Pick<Item, "mechanics" | "categories" | "updatedAt"> & {
+      tags: Tag[];
+      purchases: Pick<Purchase, "id">[];
+      preorders: Pick<Preorder, "id">[];
+      links: Pick<Link, "id">[];
+      playSessions: Pick<PlaySession, "playedAt">[];
+      _count: {
+        links: number;
+        playSessions: number;
+        preorders: number;
+        purchases: number;
+      };
+    };
 };
 
 export function mapItemDetails(item: ItemForDetails): ItemDetailsDto {
@@ -126,6 +200,136 @@ export function mapItemList(userItem: UserItemForList): ItemListDto {
   };
 }
 
+export function mapItemCompact(item: ItemForCompact): ItemCompactDto {
+  return {
+    id: item.id,
+    title: item.title,
+    originalTitle: item.originalTitle,
+    type: mapItemType(item.type),
+    year: item.year,
+    cover: item.images[0] ? mapImage(item.images[0]) : null,
+    minPlayers: item.minPlayers,
+    maxPlayers: item.maxPlayers,
+    minPlayTime: item.minPlayTime,
+    maxPlayTime: item.maxPlayTime,
+    communityRating: decimalToNumber(item.rating),
+  };
+}
+
+export function mapCollectionCard(
+  userItem: UserItemForCollectionCard,
+): CollectionCardDto {
+  return {
+    item: mapItemCompact(userItem.item),
+    userItem: {
+      id: userItem.id,
+      status: userItem.status as ItemStatus,
+      personalRating: userItem.personalRating,
+      location: userItem.location,
+      tags: userItem.item.tags.map(mapTag),
+    },
+    playsCount: userItem.item._count.playSessions,
+    lastPlayedAt: userItem.item.playSessions[0]?.playedAt.toISOString() ?? null,
+    activePreordersCount: userItem.item._count.preorders,
+    expansionsCount:
+      userItem.item._count.parentRelations +
+      userItem.item._count.childRelations,
+    purchasesCount: userItem.item._count.purchases,
+    updatedAt: latestDate([
+      userItem.updatedAt,
+      userItem.item.updatedAt,
+    ]).toISOString(),
+  };
+}
+
+export function mapCollectionCardToLegacy(
+  userItem: UserItemForCollectionCard,
+): ItemListDto {
+  const card = mapCollectionCard(userItem);
+
+  return {
+    item: {
+      id: card.item.id,
+      type: card.item.type,
+      title: card.item.title,
+      originalTitle: card.item.originalTitle,
+      year: card.item.year,
+      rating: card.item.communityRating,
+    },
+    userItem: {
+      status: card.userItem.status,
+      owned: userItem.owned,
+      wishlist: userItem.wishlist,
+      personalRating: card.userItem.personalRating,
+      location: card.userItem.location,
+      interestLevel: userItem.interestLevel,
+    },
+    mainImage: card.item.cover,
+    playsCount: card.playsCount,
+    lastPlayedAt: card.lastPlayedAt,
+    activePreordersCount: card.activePreordersCount,
+    purchasesCount: card.purchasesCount,
+    updatedAt: card.updatedAt,
+  };
+}
+
+export function mapWishlistCard(
+  userItem: UserItemForWishlistCard,
+): WishlistCardDto {
+  return {
+    item: mapItemCompact(userItem.item),
+    userItem: {
+      id: userItem.id,
+      status: userItem.status as ItemStatus,
+      interestLevel: userItem.interestLevel,
+      decisionNotes: userItem.decisionNotes,
+      tags: userItem.item.tags.map(mapTag),
+    },
+    mechanics: jsonStringArray(userItem.item.mechanics),
+    categories: jsonStringArray(userItem.item.categories),
+    priceSignal: {
+      hasPurchases: userItem.item.purchases.length > 0,
+      hasPreorders: userItem.item.preorders.length > 0,
+      shopLinksCount: userItem.item._count.links,
+    },
+    updatedAt: latestDate([
+      userItem.updatedAt,
+      userItem.item.updatedAt,
+    ]).toISOString(),
+  };
+}
+
+export function mapWishlistCardToLegacy(
+  userItem: UserItemForWishlistCard,
+): ItemListDto {
+  const card = mapWishlistCard(userItem);
+
+  return {
+    item: {
+      id: card.item.id,
+      type: card.item.type,
+      title: card.item.title,
+      originalTitle: card.item.originalTitle,
+      year: card.item.year,
+      rating: card.item.communityRating,
+    },
+    userItem: {
+      status: card.userItem.status,
+      owned: userItem.owned,
+      wishlist: userItem.wishlist,
+      personalRating: userItem.personalRating,
+      location: userItem.location,
+      interestLevel: card.userItem.interestLevel,
+    },
+    mainImage: card.item.cover,
+    playsCount: userItem.item._count.playSessions,
+    lastPlayedAt: userItem.item.playSessions[0]?.playedAt.toISOString() ?? null,
+    activePreordersCount: userItem.item._count.preorders,
+    purchasesCount: userItem.item._count.purchases,
+    updatedAt: card.updatedAt,
+  };
+}
+
 export function mapUserItem(userItem: UserItemWithTags): UserItemDto {
   return {
     id: userItem.id,
@@ -143,7 +347,7 @@ export function mapUserItem(userItem: UserItemWithTags): UserItemDto {
 }
 
 export function mapPlaySession(
-  play: PlaySession & { item?: Item },
+  play: PlaySession & { item?: Pick<Item, "title"> },
 ): PlaySessionDto {
   return {
     id: play.id,
@@ -163,6 +367,17 @@ export function mapPlaySession(
     locallyModifiedAt: play.locallyModifiedAt?.toISOString() ?? null,
     createdAt: play.createdAt.toISOString(),
     updatedAt: play.updatedAt.toISOString(),
+  };
+}
+
+export function mapPlayListItem(
+  play: PlaySession & { item: ItemForCompact },
+): PlayListItemDto {
+  const { itemTitle: _itemTitle, ...session } = mapPlaySession(play);
+
+  return {
+    ...session,
+    item: mapItemCompact(play.item),
   };
 }
 
@@ -284,6 +499,45 @@ export function mapPreorder(
     createdAt: preorder.createdAt.toISOString(),
     updatedAt: preorder.updatedAt.toISOString(),
   };
+}
+
+export function mapPreorderListItem(
+  preorder: Preorder & { item: ItemForCompact },
+  now = new Date(),
+): PreorderListItemDto {
+  return {
+    id: preorder.id,
+    itemId: preorder.itemId,
+    item: mapItemCompact(preorder.item),
+    shop: preorder.shop,
+    price: decimalToNumber(preorder.price) ?? 0,
+    currency: preorder.currency,
+    orderDate: preorder.orderDate?.toISOString() ?? null,
+    expectedDate: preorder.expectedDate?.toISOString() ?? null,
+    receivedDate: preorder.receivedDate?.toISOString() ?? null,
+    trackingNumber: preorder.trackingNumber,
+    status: preorder.status as PreorderStatus,
+    uiStatus: getPreorderUiStatus(preorder, now),
+    comment: preorder.comment,
+    createdAt: preorder.createdAt.toISOString(),
+    updatedAt: preorder.updatedAt.toISOString(),
+  };
+}
+
+function getPreorderUiStatus(preorder: Preorder, now: Date) {
+  if (preorder.status === "received") {
+    return "received" as const;
+  }
+
+  if (preorder.status === "cancelled") {
+    return "cancelled" as const;
+  }
+
+  if (preorder.expectedDate && preorder.expectedDate < now) {
+    return "delayed" as const;
+  }
+
+  return "active" as const;
 }
 
 function mapPreorderEvent(event: PreorderEvent): PreorderEventDto {

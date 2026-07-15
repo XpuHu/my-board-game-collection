@@ -1,59 +1,115 @@
-import type {
-  CollectionItemDetailsDto,
-  ItemListDto,
-  PaginatedResponse,
-} from "@/shared/api";
 import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/infrastructure/database/prisma";
 import { ApiError } from "@/server/api/errors";
-import { paginate, type PaginationInput } from "@/server/api/pagination";
+import type { PaginationInput } from "@/server/api/pagination";
 import {
+  mapCollectionCard,
+  mapCollectionCardToLegacy,
   mapItemDetails,
-  mapItemList,
   mapPlaySession,
-  type UserItemForList,
+  type UserItemForCollectionCard,
 } from "@/server/application/items/item-mappers";
 import {
   asItemForDetails,
   itemDetailsInclude,
 } from "@/server/application/items/item-service";
+import type {
+  CollectionCardDto,
+  CollectionItemDetailsDto,
+  CollectionQueryDto,
+  ItemListDto,
+  PaginatedResponse,
+} from "@/shared/api";
 
-export type CollectionQuery = {
-  q?: string;
-  type?: string;
+export type CollectionQuery = CollectionQueryDto & {
+  /** @deprecated Use personalRating. */
   rating?: number;
-  location?: string;
+  /** @deprecated Use lastPlayedFrom. */
   playedFrom?: string;
+  /** @deprecated Use lastPlayedTo. */
   playedTo?: string;
-  hasActivePreorder?: boolean;
-  tag?: string;
 };
 
 export async function listCollection(
   query: CollectionQuery,
   pagination: PaginationInput,
 ): Promise<PaginatedResponse<ItemListDto>> {
-  const userItems = await prisma.userItem.findMany({
-    where: {
-      owned: true,
-      item: {
-        deletedAt: null,
+  const page = await queryCollection(query, pagination);
+
+  return {
+    ...page,
+    data: page.data.map(mapCollectionCardToLegacy),
+  };
+}
+
+export async function listCollectionCards(
+  query: CollectionQuery,
+  pagination: PaginationInput,
+): Promise<PaginatedResponse<CollectionCardDto>> {
+  const page = await queryCollection(query, pagination);
+
+  return {
+    ...page,
+    data: page.data.map(mapCollectionCard),
+  };
+}
+
+async function queryCollection(
+  query: CollectionQuery,
+  pagination: PaginationInput,
+) {
+  const where = await buildCollectionWhere(query);
+  const { page, pageSize } = pagination;
+
+  if (query.sort === "lastPlayed") {
+    const total = await prisma.userItem.count({ where });
+    const pageIds = await findLastPlayedPageIds(
+      where,
+      pagination,
+      query.direction ?? "desc",
+    );
+    const userItems = await prisma.userItem.findMany({
+      where: { id: { in: pageIds } },
+      select: userItemCardSelect,
+    });
+    const positions = new Map(pageIds.map((id, index) => [id, index]));
+    userItems.sort(
+      (left, right) =>
+        (positions.get(left.id) ?? 0) - (positions.get(right.id) ?? 0),
+    );
+
+    return {
+      data: userItems as UserItemForCollectionCard[],
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
       },
-    },
-    include: userItemListInclude,
-    orderBy: {
-      updatedAt: "desc",
-    },
-  });
+    };
+  }
 
-  const filtered = userItems.filter((userItem) =>
-    matchesCollectionQuery(userItem as UserItemForList, query),
-  );
+  const [total, userItems] = await prisma.$transaction([
+    prisma.userItem.count({ where }),
+    prisma.userItem.findMany({
+      where,
+      select: userItemCardSelect,
+      orderBy: buildCollectionOrder(query),
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
 
-  return paginate(
-    filtered.map((userItem) => mapItemList(userItem)),
-    pagination,
-  );
+  return {
+    data: userItems as UserItemForCollectionCard[],
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  };
 }
 
 export async function getCollectionItem(
@@ -74,126 +130,259 @@ export async function getCollectionItem(
     throw ApiError.notFound("ITEM_NOT_FOUND", "Collection item was not found");
   }
 
-  const details = mapItemDetails(asItemForDetails(item));
+  const detailsItem = asItemForDetails(item);
+  const details = mapItemDetails(detailsItem);
 
   return {
     ...details,
-    recentPlays: asItemForDetails(item)
-      .playSessions.slice(0, 5)
+    recentPlays: detailsItem.playSessions
+      .slice(0, 5)
       .map((playSession) =>
-        mapPlaySession({ ...playSession, item: asItemForDetails(item) }),
+        mapPlaySession({ ...playSession, item: detailsItem }),
       ),
     primaryAction: "add_play",
   };
 }
 
-function matchesCollectionQuery(
-  userItem: UserItemForList,
+async function buildCollectionWhere(
   query: CollectionQuery,
-) {
-  const item = userItem.item;
+): Promise<Prisma.UserItemWhereInput> {
+  const itemAnd: Prisma.ItemWhereInput[] = [{ deletedAt: null }];
+  const personalRating = query.personalRating ?? query.rating;
+  const lastPlayedFrom = query.lastPlayedFrom ?? query.playedFrom;
+  const lastPlayedTo = query.lastPlayedTo ?? query.playedTo;
 
-  if (query.q && !matchesSearch(item.title, item.originalTitle, query.q)) {
-    return false;
+  if (query.q) {
+    itemAnd.push({
+      OR: [
+        { title: { contains: query.q } },
+        { originalTitle: { contains: query.q } },
+      ],
+    });
   }
 
-  if (query.type && item.type.code !== query.type) {
-    return false;
+  if (query.type) {
+    itemAnd.push({ type: { code: query.type } });
   }
 
-  if (query.rating !== undefined && userItem.personalRating !== query.rating) {
-    return false;
+  if (query.tag) {
+    itemAnd.push({
+      tags: {
+        some: {
+          OR: [{ id: query.tag }, { name: { contains: query.tag } }],
+        },
+      },
+    });
   }
 
-  if (
-    query.location &&
-    !userItem.location?.toLowerCase().includes(query.location.toLowerCase())
-  ) {
-    return false;
+  if (query.hasActivePreorder !== undefined) {
+    itemAnd.push({
+      preorders: query.hasActivePreorder
+        ? { some: { status: { in: activePreorderStatuses } } }
+        : { none: { status: { in: activePreorderStatuses } } },
+    });
   }
 
-  if (query.tag && !matchesTag(item.tags, query.tag)) {
-    return false;
-  }
-
-  if (
-    query.hasActivePreorder !== undefined &&
-    hasActivePreorder(item.preorders) !== query.hasActivePreorder
-  ) {
-    return false;
-  }
-
-  if (query.playedFrom || query.playedTo) {
-    return item.playSessions.some((playSession) =>
-      matchesPlayedRange(
-        playSession.playedAt,
-        query.playedFrom,
-        query.playedTo,
-      ),
+  if (query.hasExpansions !== undefined) {
+    const expansionRelation: Prisma.ItemWhereInput = {
+      OR: [
+        { parentRelations: { some: { relationType: "expands" } } },
+        { childRelations: { some: { relationType: "expands" } } },
+      ],
+    };
+    itemAnd.push(
+      query.hasExpansions ? expansionRelation : { NOT: expansionRelation },
     );
   }
 
-  return true;
+  if (query.neverPlayed !== undefined) {
+    itemAnd.push({
+      playSessions: query.neverPlayed ? { none: {} } : { some: {} },
+    });
+  }
+
+  if (query.notPlayedSince) {
+    itemAnd.push({
+      playSessions: {
+        none: { playedAt: { gte: new Date(query.notPlayedSince) } },
+      },
+    });
+  }
+
+  if (lastPlayedFrom || lastPlayedTo) {
+    const itemIds = await findItemIdsByLastPlay(lastPlayedFrom, lastPlayedTo);
+    itemAnd.push({ id: { in: itemIds } });
+  }
+
+  if (query.playsMin !== undefined || query.playsMax !== undefined) {
+    const itemIds = await findItemIdsByPlayCount(
+      query.playsMin,
+      query.playsMax,
+    );
+    itemAnd.push({ id: { in: itemIds } });
+  }
+
+  // DATA-02 is intentionally outside this read-only stage. Until the
+  // persistent flag exists, every current record has the safe default false.
+  if (query.favorite === true) {
+    itemAnd.push({ id: { in: [] } });
+  }
+
+  return {
+    owned: true,
+    personalRating,
+    location: query.location ? { contains: query.location } : undefined,
+    item: { AND: itemAnd },
+  };
 }
 
-function matchesSearch(title: string, originalTitle: string | null, q: string) {
-  const query = q.toLowerCase();
+async function findItemIdsByPlayCount(min?: number, max?: number) {
+  const [counts, unplayed] = await Promise.all([
+    prisma.playSession.groupBy({
+      by: ["itemId"],
+      _count: { _all: true },
+    }),
+    min === undefined || min <= 0
+      ? prisma.item.findMany({
+          where: { playSessions: { none: {} } },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+  ]);
 
-  return (
-    title.toLowerCase().includes(query) ||
-    Boolean(originalTitle?.toLowerCase().includes(query))
-  );
+  return [
+    ...counts
+      .filter(({ _count }) => {
+        const count = _count._all;
+        return (
+          (min === undefined || count >= min) &&
+          (max === undefined || count <= max)
+        );
+      })
+      .map(({ itemId }) => itemId),
+    ...unplayed.map(({ id }) => id),
+  ];
 }
 
-function matchesTag(tags: UserItemForList["item"]["tags"], tag: string) {
-  const query = tag.toLowerCase();
-
-  return tags.some(
-    (itemTag) =>
-      itemTag.id === tag || itemTag.name.toLowerCase().includes(query),
-  );
-}
-
-function matchesPlayedRange(playedAt: Date, from?: string, to?: string) {
+async function findItemIdsByLastPlay(from?: string, to?: string) {
+  const groups = await prisma.playSession.groupBy({
+    by: ["itemId"],
+    _max: { playedAt: true },
+  });
   const fromDate = from ? new Date(from) : null;
   const toDate = to ? new Date(to) : null;
 
-  if (fromDate && playedAt < fromDate) {
-    return false;
-  }
-
-  if (toDate && playedAt > toDate) {
-    return false;
-  }
-
-  return true;
+  return groups
+    .filter(({ _max }) => {
+      const lastPlayedAt = _max.playedAt;
+      return Boolean(
+        lastPlayedAt &&
+        (!fromDate || lastPlayedAt >= fromDate) &&
+        (!toDate || lastPlayedAt <= toDate),
+      );
+    })
+    .map(({ itemId }) => itemId);
 }
 
-function hasActivePreorder(preorders: UserItemForList["item"]["preorders"]) {
-  return preorders.some(
-    (preorder) =>
-      preorder.status !== "received" && preorder.status !== "cancelled",
-  );
+async function findLastPlayedPageIds(
+  where: Prisma.UserItemWhereInput,
+  pagination: PaginationInput,
+  direction: "asc" | "desc",
+) {
+  const candidates = await prisma.userItem.findMany({
+    where,
+    select: { id: true },
+  });
+
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const ids = candidates.map(({ id }) => id);
+  const order = Prisma.raw(direction === "asc" ? "ASC" : "DESC");
+  const offset = (pagination.page - 1) * pagination.pageSize;
+  const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT ui.id
+    FROM user_items AS ui
+    LEFT JOIN play_sessions AS ps ON ps.item_id = ui.item_id
+    WHERE ui.id IN (${Prisma.join(ids)})
+    GROUP BY ui.id
+    ORDER BY MAX(ps.played_at) ${order}, ui.id ASC
+    LIMIT ${pagination.pageSize} OFFSET ${offset}
+  `);
+
+  return rows.map(({ id }) => id);
 }
 
-const userItemListInclude = {
+function buildCollectionOrder(
+  query: CollectionQuery,
+): Prisma.UserItemOrderByWithRelationInput[] {
+  const direction = query.direction ?? "desc";
+
+  switch (query.sort) {
+    case "added":
+      return [{ createdAt: direction }, { id: "asc" }];
+    case "plays":
+      return [{ item: { playSessions: { _count: direction } } }, { id: "asc" }];
+    case "rating":
+      return [{ personalRating: direction }, { id: "asc" }];
+    case "title":
+      return [{ item: { title: direction } }, { id: "asc" }];
+    case "lastPlayed":
+      return [{ id: "asc" }];
+    default:
+      return [{ updatedAt: "desc" }, { id: "asc" }];
+  }
+}
+
+const activePreorderStatuses = ["planned", "ordered", "paid", "shipped"];
+const expansionRelationTypes = ["expands"];
+
+export const userItemCardSelect = {
+  id: true,
+  status: true,
+  owned: true,
+  wishlist: true,
+  personalRating: true,
+  location: true,
+  interestLevel: true,
+  updatedAt: true,
   item: {
-    include: {
+    select: {
+      id: true,
+      title: true,
+      originalTitle: true,
+      year: true,
+      minPlayers: true,
+      maxPlayers: true,
+      minPlayTime: true,
+      maxPlayTime: true,
+      rating: true,
+      updatedAt: true,
       type: true,
-      images: {
-        orderBy: [
-          {
-            sortOrder: "asc",
-          },
-          {
-            createdAt: "asc",
-          },
-        ],
-      },
-      playSessions: true,
-      preorders: true,
-      purchases: true,
       tags: true,
+      images: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        take: 1,
+      },
+      playSessions: {
+        select: { playedAt: true },
+        orderBy: { playedAt: "desc" },
+        take: 1,
+      },
+      _count: {
+        select: {
+          playSessions: true,
+          preorders: { where: { status: { in: activePreorderStatuses } } },
+          purchases: true,
+          parentRelations: {
+            where: { relationType: { in: expansionRelationTypes } },
+          },
+          childRelations: {
+            where: { relationType: { in: expansionRelationTypes } },
+          },
+        },
+      },
     },
   },
-} satisfies Prisma.UserItemInclude;
+} satisfies Prisma.UserItemSelect;

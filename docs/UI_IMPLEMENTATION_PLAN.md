@@ -683,11 +683,11 @@ features/statistics/api
 
 ## Этап 1. Безопасные backend-read изменения
 
-- [ ] Добавить compact DTO и dashboard DTO.
-- [ ] Перенести collection/wishlist pagination и filters в Prisma.
-- [ ] Расширить play/preorder queries.
-- [ ] Добавить недостающие статистические агрегаты из существующих данных.
-- [ ] Сохранить старые response contracts до переключения frontend.
+- [x] Добавить compact DTO и dashboard DTO.
+- [x] Перенести collection/wishlist pagination и filters в Prisma.
+- [x] Расширить play/preorder queries.
+- [x] Добавить недостающие статистические агрегаты из существующих данных.
+- [x] Сохранить старые response contracts до переключения frontend.
 
 Результат: новый UI можно строить без миграции и без mock-only логики.
 
