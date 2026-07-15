@@ -232,6 +232,36 @@ describe("MVP service flows", () => {
     });
   });
 
+  it("removes duplicate provider results with the same external ID", async () => {
+    vi.spyOn(boardGameGeekProvider, "searchItems").mockResolvedValue([
+      {
+        provider: "boardgamegeek",
+        externalId: "342501",
+        title: "Games Afoot",
+        itemTypeCode: "base_game",
+        year: 2022,
+      },
+      {
+        provider: "boardgamegeek",
+        externalId: "342501",
+        title: "Games Afoot",
+        itemTypeCode: "base_game",
+        year: 2022,
+      },
+    ]);
+
+    const response = await searchExternalItems({
+      q: "Games Afoot",
+      provider: "boardgamegeek",
+    });
+
+    expect(response.data).toHaveLength(1);
+    expect(response.data[0]).toMatchObject({
+      provider: "boardgamegeek",
+      externalId: "342501",
+    });
+  });
+
   it("falls back to Tesera when BGG returns no search results", async () => {
     vi.spyOn(boardGameGeekProvider, "searchItems").mockResolvedValue([]);
     vi.spyOn(teseraProvider, "searchItems").mockResolvedValue([

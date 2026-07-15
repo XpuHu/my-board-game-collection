@@ -1,4 +1,5 @@
 import type {
+  ExternalSearchResultDto,
   ExternalSearchResponse,
   ProviderWarningDto,
   ImportExternalItemRequest,
@@ -55,7 +56,9 @@ export async function searchExternalItems(
   };
 
   try {
-    const data = await provider.searchItems(searchQuery, filters);
+    const data = uniqueSearchResults(
+      await provider.searchItems(searchQuery, filters),
+    );
 
     if (provider.code === "boardgamegeek" && data.length === 0) {
       return searchTeseraFallback(searchQuery, filters, {
@@ -93,7 +96,9 @@ async function searchTeseraFallback(
   ];
 
   try {
-    const data = await teseraProvider.searchItems(searchQuery, filters);
+    const data = uniqueSearchResults(
+      await teseraProvider.searchItems(searchQuery, filters),
+    );
 
     return {
       data,
@@ -114,6 +119,21 @@ async function searchTeseraFallback(
       warnings,
     };
   }
+}
+
+function uniqueSearchResults(results: ExternalSearchResultDto[]) {
+  const seen = new Set<string>();
+
+  return results.filter((result) => {
+    const key = `${result.provider}:${result.externalId}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function importExternalItem(

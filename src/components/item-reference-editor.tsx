@@ -383,6 +383,11 @@ export function ItemReferenceEditor({
     setLinkForm(emptyLinkForm);
   }
 
+  const referenceLabels = uniqueValues([
+    ...details.item.categories,
+    ...details.item.mechanics,
+  ]);
+
   if (!isEditing) {
     return (
       <div className="grid gap-4 lg:grid-cols-2">
@@ -393,18 +398,16 @@ export function ItemReferenceEditor({
           <p className="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
             {details.item.description ?? "Описание пока не добавлено."}
           </p>
-          {details.item.categories.length || details.item.mechanics.length ? (
+          {referenceLabels.length ? (
             <div className="mt-5 flex flex-wrap gap-2">
-              {[...details.item.categories, ...details.item.mechanics].map(
-                (value) => (
-                  <span
-                    key={value}
-                    className="rounded-md bg-secondary px-2.5 py-1 text-xs text-secondary-foreground"
-                  >
-                    {value}
-                  </span>
-                ),
-              )}
+              {referenceLabels.map((value) => (
+                <span
+                  key={value}
+                  className="rounded-md bg-secondary px-2.5 py-1 text-xs text-secondary-foreground"
+                >
+                  {value}
+                </span>
+              ))}
             </div>
           ) : null}
         </section>
@@ -947,14 +950,16 @@ function nullableNumber(value: string) {
 }
 
 function parseList(value: string) {
-  return Array.from(
-    new Set(
-      value
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    ),
+  return uniqueValues(
+    value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
   );
+}
+
+function uniqueValues(values: string[]) {
+  return Array.from(new Set(values));
 }
 
 function showSaveError(

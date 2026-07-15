@@ -41,11 +41,7 @@ import {
 const ANY_VALUE = "__any__";
 
 type ManualQuickAction =
-  | "collection"
-  | "play"
-  | "wishlist"
-  | "preorder"
-  | "reference_only";
+  "collection" | "play" | "wishlist" | "preorder" | "reference_only";
 
 const itemTypeOptions = [
   { value: ANY_VALUE, label: "Все типы" },
@@ -112,8 +108,7 @@ export function ExternalImportPageClient({
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [type, setType] = React.useState(ANY_VALUE);
-  const [target, setTarget] =
-    React.useState<ManualQuickAction>(initialTarget);
+  const [target, setTarget] = React.useState<ManualQuickAction>(initialTarget);
   const [results, setResults] = React.useState<ExternalSearchResultDto[]>([]);
   const [itemTypes, setItemTypes] = React.useState<ItemTypeDto[]>([]);
   const [searched, setSearched] = React.useState(false);
@@ -223,136 +218,123 @@ export function ExternalImportPageClient({
           Добавить игру
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Создайте локальную карточку без внешних каталогов. При необходимости ее можно сразу добавить в коллекцию или wishlist.
+          Сначала найдём игру в BoardGameGeek. Если там ничего нет, поиск
+          автоматически продолжится в Tesera, а затем можно будет заполнить
+          карточку вручную.
         </p>
       </div>
 
       {error ? <ErrorState description={error} /> : null}
 
-      <ManualItemForm
-        itemTypes={itemTypes}
-        selectedType={type}
-        target={target}
-        onTargetChange={setTarget}
-        onError={setError}
-        onSavedAsReference={(title) => {
-          setManualMessage(`Карточка "${title}" создана вручную.`);
-          setError(null);
-        }}
-      />
-
-      {manualMessage ? (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-900">
-          {manualMessage}
-        </div>
-      ) : null}
-
-      <details className="rounded-lg border bg-card">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-          Внешний поиск BGG/Tesera
-        </summary>
-        <div className="grid gap-4 border-t p-4">
+      <section className="grid gap-4 rounded-lg border bg-card p-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-normal">
+            1. Найти в каталогах
+          </h2>
           <p className="text-sm text-muted-foreground">
-            Дополнительный импорт доступен только при включенных внешних провайдерах. Основной сценарий выше не делает сетевых запросов.
+            Поиск выполняется по очереди: сначала BoardGameGeek, затем Tesera.
           </p>
-
-          <form
-            onSubmit={searchItems}
-            className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_12rem_13rem_auto]"
-          >
-            <div>
-              <Label htmlFor="external-search">Название или ссылка</Label>
-              <div className="relative mt-2">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="external-search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className="pl-9"
-                  placeholder="Ark Nova или BGG URL"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label>Тип</Label>
-              <Select value={type} onValueChange={setType}>
-                <SelectTrigger className="mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {itemTypeOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Цель импорта</Label>
-              <Select
-                value={target}
-                onValueChange={(value) =>
-                  setTarget(
-                    value as NonNullable<ImportExternalItemRequest["target"]>,
-                  )
-                }
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {targetOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-end gap-2">
-              <Button type="submit" disabled={loading} className="min-w-28">
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Search className="h-4 w-4" />
-                )}
-                Найти
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={reset}
-                title="Сбросить"
-              >
-                <RotateCcw className="h-4 w-4" />
-                <span className="sr-only">Сбросить</span>
-              </Button>
-            </div>
-          </form>
-
-          {externalWarning ? (
-            <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
-              {externalWarning}
-            </div>
-          ) : null}
         </div>
-      </details>
+
+        <form
+          onSubmit={searchItems}
+          className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_12rem_13rem_auto]"
+        >
+          <div>
+            <Label htmlFor="external-search">Название или ссылка</Label>
+            <div className="relative mt-2">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="external-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="pl-9"
+                placeholder="Ark Nova или BGG URL"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label>Тип</Label>
+            <Select value={type} onValueChange={setType}>
+              <SelectTrigger className="mt-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {itemTypeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Цель импорта</Label>
+            <Select
+              value={target}
+              onValueChange={(value) =>
+                setTarget(
+                  value as NonNullable<ImportExternalItemRequest["target"]>,
+                )
+              }
+            >
+              <SelectTrigger className="mt-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {targetOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-end gap-2">
+            <Button type="submit" disabled={loading} className="min-w-28">
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+              Найти
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={reset}
+              title="Сбросить"
+            >
+              <RotateCcw className="h-4 w-4" />
+              <span className="sr-only">Сбросить</span>
+            </Button>
+          </div>
+        </form>
+
+        {externalWarning ? (
+          <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+            {externalWarning}
+          </div>
+        ) : null}
+      </section>
 
       {searched && !loading && results.length === 0 && !error ? (
         <EmptyState
           icon={Search}
           title="Ничего не найдено"
-          description="Попробуйте другое название или вставьте прямую ссылку на BoardGameGeek."
+          description="BoardGameGeek и Tesera не дали результатов. Попробуйте другой запрос или создайте карточку вручную ниже."
         />
       ) : null}
 
       {results.length > 0 ? (
-        <section className="grid gap-3">
+        <section className="grid gap-3" aria-labelledby="search-results-title">
+          <h2 id="search-results-title" className="text-base font-semibold">
+            2. Выбрать найденную игру
+          </h2>
           {results.map((result) => (
             <SearchResultRow
               key={`${result.provider}:${result.externalId}`}
@@ -363,6 +345,36 @@ export function ExternalImportPageClient({
             />
           ))}
         </section>
+      ) : null}
+
+      {searched && !loading && results.length === 0 ? (
+        <section className="grid gap-4">
+          <div>
+            <h2 className="text-base font-semibold tracking-normal">
+              3. Ввести данные вручную
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Ручной ввод доступен после поиска в обоих внешних каталогах.
+            </p>
+          </div>
+          <ManualItemForm
+            itemTypes={itemTypes}
+            selectedType={type}
+            target={target}
+            onTargetChange={setTarget}
+            onError={setError}
+            onSavedAsReference={(title) => {
+              setManualMessage(`Карточка "${title}" создана вручную.`);
+              setError(null);
+            }}
+          />
+        </section>
+      ) : null}
+
+      {manualMessage ? (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-900">
+          {manualMessage}
+        </div>
       ) : null}
     </main>
   );
@@ -389,10 +401,14 @@ function SearchResultRow({
           <h2 className="text-base font-semibold tracking-normal">
             {result.title}
           </h2>
-          {result.year ? <Badge variant="secondary">{result.year}</Badge> : null}
+          {result.year ? (
+            <Badge variant="secondary">{result.year}</Badge>
+          ) : null}
           <Badge variant="outline">{providerLabel(result.provider)}</Badge>
           {result.itemTypeCode ? (
-            <Badge variant="outline">{itemTypeLabel(result.itemTypeCode)}</Badge>
+            <Badge variant="outline">
+              {itemTypeLabel(result.itemTypeCode)}
+            </Badge>
           ) : null}
         </div>
 
@@ -922,7 +938,9 @@ function toExternalImportTarget(
   return target;
 }
 
-function itemTypeLabel(itemTypeCode: NonNullable<ExternalSearchResultDto["itemTypeCode"]>) {
+function itemTypeLabel(
+  itemTypeCode: NonNullable<ExternalSearchResultDto["itemTypeCode"]>,
+) {
   const labels: Record<typeof itemTypeCode, string> = {
     base_game: "Игра",
     expansion: "Дополнение",
