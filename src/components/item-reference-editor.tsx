@@ -1,13 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Pencil,
-  Plus,
-  Save,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 
 import { useToast } from "@/components/toast-provider";
 import { Button } from "@/components/ui/button";
@@ -35,6 +29,7 @@ import {
 type ItemReferenceEditorProps = {
   details: ItemDetailsDto;
   onDetailsChange: (details: ItemDetailsDto) => void;
+  isEditing?: boolean;
 };
 
 type ItemFormState = {
@@ -100,9 +95,12 @@ const emptyLinkForm: LinkFormState = {
 export function ItemReferenceEditor({
   details,
   onDetailsChange,
+  isEditing = true,
 }: ItemReferenceEditorProps) {
   const { toast } = useToast();
-  const [itemTypes, setItemTypes] = React.useState(details.item.type ? [details.item.type] : []);
+  const [itemTypes, setItemTypes] = React.useState(
+    details.item.type ? [details.item.type] : [],
+  );
   const [itemForm, setItemForm] = React.useState(() => toItemForm(details));
   const [referenceForm, setReferenceForm] =
     React.useState<ExternalReferenceFormState>(emptyReferenceForm);
@@ -187,7 +185,8 @@ export function ItemReferenceEditor({
       onDetailsChange(updated);
       toast({
         title: "Справочник обновлен",
-        description: "Поля Item сохранены без изменения пользовательского состояния.",
+        description:
+          "Поля Item сохранены без изменения пользовательского состояния.",
         variant: "success",
       });
     } catch (error) {
@@ -213,12 +212,16 @@ export function ItemReferenceEditor({
             editingReferenceId,
             payload,
           )
-        : await apiClient.items.createExternalReference(details.item.id, payload);
+        : await apiClient.items.createExternalReference(
+            details.item.id,
+            payload,
+          );
       onDetailsChange(updated);
       resetReferenceForm();
       toast({
         title: "Идентификатор сохранен",
-        description: "Сохранение прошло локально, без синхронизации с provider.",
+        description:
+          "Сохранение прошло локально, без синхронизации с provider.",
         variant: "success",
       });
     } catch (error) {
@@ -235,8 +238,7 @@ export function ItemReferenceEditor({
     try {
       const payload = {
         type: imageForm.type,
-        provider:
-          imageForm.provider === "__none__" ? null : imageForm.provider,
+        provider: imageForm.provider === "__none__" ? null : imageForm.provider,
         url: nullableText(imageForm.url),
         caption: nullableText(imageForm.caption),
         sortOrder: nullableNumber(imageForm.sortOrder) ?? 0,
@@ -273,7 +275,11 @@ export function ItemReferenceEditor({
         title: nullableText(linkForm.title),
       };
       const updated = editingLinkId
-        ? await apiClient.items.updateLink(details.item.id, editingLinkId, payload)
+        ? await apiClient.items.updateLink(
+            details.item.id,
+            editingLinkId,
+            payload,
+          )
         : await apiClient.items.createLink(details.item.id, payload);
       onDetailsChange(updated);
       resetLinkForm();
@@ -293,7 +299,10 @@ export function ItemReferenceEditor({
     setSavingSection(referenceId);
     try {
       onDetailsChange(
-        await apiClient.items.deleteExternalReference(details.item.id, referenceId),
+        await apiClient.items.deleteExternalReference(
+          details.item.id,
+          referenceId,
+        ),
       );
     } catch (error) {
       showSaveError(toast, error);
@@ -305,7 +314,9 @@ export function ItemReferenceEditor({
   async function deleteImage(imageId: string) {
     setSavingSection(imageId);
     try {
-      onDetailsChange(await apiClient.items.deleteImage(details.item.id, imageId));
+      onDetailsChange(
+        await apiClient.items.deleteImage(details.item.id, imageId),
+      );
     } catch (error) {
       showSaveError(toast, error);
     } finally {
@@ -316,7 +327,9 @@ export function ItemReferenceEditor({
   async function deleteLink(linkId: string) {
     setSavingSection(linkId);
     try {
-      onDetailsChange(await apiClient.items.deleteLink(details.item.id, linkId));
+      onDetailsChange(
+        await apiClient.items.deleteLink(details.item.id, linkId),
+      );
     } catch (error) {
       showSaveError(toast, error);
     } finally {
@@ -324,7 +337,9 @@ export function ItemReferenceEditor({
     }
   }
 
-  function startReferenceEdit(reference: ItemDetailsDto["externalReferences"][number]) {
+  function startReferenceEdit(
+    reference: ItemDetailsDto["externalReferences"][number],
+  ) {
     setEditingReferenceId(reference.id);
     setReferenceForm({
       provider: reference.provider,
@@ -366,6 +381,67 @@ export function ItemReferenceEditor({
   function resetLinkForm() {
     setEditingLinkId(null);
     setLinkForm(emptyLinkForm);
+  }
+
+  if (!isEditing) {
+    return (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="rounded-lg border bg-card p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide">
+            Об игре
+          </h2>
+          <p className="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+            {details.item.description ?? "Описание пока не добавлено."}
+          </p>
+          {details.item.categories.length || details.item.mechanics.length ? (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {[...details.item.categories, ...details.item.mechanics].map(
+                (value) => (
+                  <span
+                    key={value}
+                    className="rounded-md bg-secondary px-2.5 py-1 text-xs text-secondary-foreground"
+                  >
+                    {value}
+                  </span>
+                ),
+              )}
+            </div>
+          ) : null}
+        </section>
+        <section className="rounded-lg border bg-card p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide">
+            Характеристики
+          </h2>
+          <dl className="mt-5 grid gap-4 text-sm">
+            <ReadOnlyRow label="Тип" value={details.item.type.name} />
+            <ReadOnlyRow
+              label="Год выпуска"
+              value={displayValue(details.item.year)}
+            />
+            <ReadOnlyRow
+              label="Дизайнеры"
+              value={displayList(details.item.designers)}
+            />
+            <ReadOnlyRow
+              label="Художники"
+              value={displayList(details.item.artists)}
+            />
+            <ReadOnlyRow
+              label="Издатели"
+              value={displayList(details.item.publishers)}
+            />
+            <ReadOnlyRow
+              label="Сложность"
+              value={
+                details.item.complexity
+                  ? `${details.item.complexity}/5`
+                  : "Не указана"
+              }
+            />
+          </dl>
+        </section>
+      </div>
+    );
   }
 
   return (
@@ -667,7 +743,9 @@ export function ItemReferenceEditor({
               />
               <Input
                 value={linkForm.title}
-                onChange={(event) => updateLinkForm("title", event.target.value)}
+                onChange={(event) =>
+                  updateLinkForm("title", event.target.value)
+                }
                 placeholder="Название"
               />
               <FormActions
@@ -690,6 +768,23 @@ export function ItemReferenceEditor({
       </section>
     </div>
   );
+}
+
+function ReadOnlyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-medium">{value}</dd>
+    </div>
+  );
+}
+
+function displayList(values: string[]) {
+  return values.length ? values.join(", ") : "Не указано";
+}
+
+function displayValue(value?: number | null) {
+  return value === null || value === undefined ? "Не указано" : String(value);
 }
 
 function TextInput({

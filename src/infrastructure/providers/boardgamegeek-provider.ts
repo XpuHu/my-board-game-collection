@@ -10,6 +10,7 @@ import type {
   ItemProviderFilters,
   ProviderItem,
 } from "./item-provider";
+import { getBggRequestHeaders } from "./bgg-request";
 
 const BGG_BASE_URL = "https://boardgamegeek.com";
 const BGG_XML_API_URL = `${BGG_BASE_URL}/xmlapi2`;
@@ -78,22 +79,14 @@ export const boardGameGeekProvider = new BoardGameGeekProvider();
 
 async function fetchBggXml(path: string) {
   const response = await fetch(`${BGG_XML_API_URL}${path}`, {
-    headers: {
-      accept: "application/xml,text/xml",
-      "user-agent": "BoardGameCollection/1.0",
-    },
+    headers: getBggRequestHeaders(),
   });
 
   if (!response.ok) {
-    throw new ApiError(
-      502,
-      "PROVIDER_ERROR",
-      "BoardGameGeek request failed",
-      {
-        provider: PROVIDER_CODE,
-        status: response.status,
-      },
-    );
+    throw new ApiError(502, "PROVIDER_ERROR", "BoardGameGeek request failed", {
+      provider: PROVIDER_CODE,
+      status: response.status,
+    });
   }
 
   return response.text();
@@ -203,19 +196,19 @@ function bggTypeToItemTypeCode(type?: string): ItemTypeCode | null {
 function isItemTypeCode(value?: string): value is ItemTypeCode {
   return Boolean(
     value &&
-      [
-        "base_game",
-        "expansion",
-        "promo",
-        "accessory",
-        "organizer",
-        "component",
-        "miniature",
-        "playmat",
-        "sleeves",
-        "dice",
-        "other",
-      ].includes(value),
+    [
+      "base_game",
+      "expansion",
+      "promo",
+      "accessory",
+      "organizer",
+      "component",
+      "miniature",
+      "playmat",
+      "sleeves",
+      "dice",
+      "other",
+    ].includes(value),
   );
 }
 
@@ -262,9 +255,7 @@ function getElementBlocks(xml: string, tagName: string) {
 
 function getSelfClosingElements(xml: string, tagName: string) {
   const regexp = new RegExp(`<${tagName}\\b([^>]*)\\/>`, "g");
-  return [...xml.matchAll(regexp)].map((match) =>
-    parseAttrs(match[1] ?? ""),
-  );
+  return [...xml.matchAll(regexp)].map((match) => parseAttrs(match[1] ?? ""));
 }
 
 function getElementAttr(
@@ -273,7 +264,10 @@ function getElementAttr(
   attrName: string,
   predicate?: (attrs: Record<string, string>) => boolean,
 ) {
-  const regexp = new RegExp(`<${tagName}\\b([^>]*)\\/?>(?:<\\/${tagName}>)?`, "g");
+  const regexp = new RegExp(
+    `<${tagName}\\b([^>]*)\\/?>(?:<\\/${tagName}>)?`,
+    "g",
+  );
 
   for (const match of xml.matchAll(regexp)) {
     const attrs = parseAttrs(match[1] ?? "");
@@ -304,10 +298,7 @@ function parseAttrs(source: string) {
   return attrs;
 }
 
-function linkValuesByType(
-  links: Record<string, string>[],
-  type: string,
-) {
+function linkValuesByType(links: Record<string, string>[], type: string) {
   return unique(
     links
       .filter((link) => link.type === type)

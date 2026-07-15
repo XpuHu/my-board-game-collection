@@ -3,13 +3,17 @@
 import * as React from "react";
 import Link from "next/link";
 import {
-  ArrowLeft,
-  BookOpen,
   CalendarPlus,
+  Clock3,
   ExternalLink,
+  Gamepad2,
+  Pencil,
   Star,
+  Users,
+  X,
 } from "lucide-react";
 
+import { BggAttribution } from "@/components/bgg-attribution";
 import { ErrorState, LoadingState } from "@/components/ui-state";
 import { ItemReferenceEditor } from "@/components/item-reference-editor";
 import { UserItemEditor } from "@/components/user-item-editor";
@@ -22,26 +26,19 @@ import {
   type UserItemDto,
 } from "@/shared/api";
 
-type CollectionItemPageClientProps = {
-  itemId: string;
-};
-
-export function CollectionItemPageClient({
-  itemId,
-}: CollectionItemPageClientProps) {
+export function CollectionItemPageClient({ itemId }: { itemId: string }) {
   const [details, setDetails] = React.useState<CollectionItemDetailsDto | null>(
     null,
   );
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [isEditing, setIsEditing] = React.useState(false);
 
   const loadDetails = React.useCallback(async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const response = await apiClient.collection.get(itemId);
-      setDetails(response);
+      setDetails(await apiClient.collection.get(itemId));
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -55,34 +52,23 @@ export function CollectionItemPageClient({
 
   React.useEffect(() => {
     let isActive = true;
-
     apiClient.collection
       .get(itemId)
       .then((response) => {
-        if (!isActive) {
-          return;
-        }
-
-        setDetails(response);
-        setError(null);
+        if (isActive) setDetails(response);
       })
       .catch((loadError: unknown) => {
-        if (!isActive) {
-          return;
+        if (isActive) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Не удалось загрузить карточку коллекции",
+          );
         }
-
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Не удалось загрузить карточку коллекции",
-        );
       })
       .finally(() => {
-        if (isActive) {
-          setLoading(false);
-        }
+        if (isActive) setLoading(false);
       });
-
     return () => {
       isActive = false;
     };
@@ -102,19 +88,12 @@ export function CollectionItemPageClient({
   }
 
   function applyUserItemUpdate(userItem: UserItemDto) {
-    setDetails((current) =>
-      current
-        ? {
-            ...current,
-            userItem,
-          }
-        : current,
-    );
+    setDetails((current) => (current ? { ...current, userItem } : current));
   }
 
   if (loading) {
     return (
-      <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <LoadingState
           title="Загружаем карточку"
           description="Получаем компактные данные владельца."
@@ -125,7 +104,7 @@ export function CollectionItemPageClient({
 
   if (error || !details) {
     return (
-      <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <ErrorState
           description={error ?? "Карточка коллекции не найдена"}
           onRetry={loadDetails}
@@ -134,44 +113,129 @@ export function CollectionItemPageClient({
     );
   }
 
+  const cover = [...details.images]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .find((image) => image.url ?? image.path);
+  const isPoweredByBgg =
+    details.externalReferences.some(
+      (reference) => reference.provider === "boardgamegeek",
+    ) || details.images.some((image) => image.provider === "boardgamegeek");
   const referenceUrl =
     details.externalReferences.find((reference) => reference.url)?.url ??
     details.links.find((link) => link.type === "official")?.url ??
     null;
-  const totalValue = formatPurchases(details.purchases);
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-col gap-4">
-        <Button asChild variant="ghost" className="w-fit px-0">
-          <Link href="/collection">
-            <ArrowLeft className="h-4 w-4" />
-            Назад к коллекции
-          </Link>
+    <main className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 pb-10 sm:px-6 lg:px-8">
+      <nav
+        className="flex items-center gap-2 text-sm text-muted-foreground"
+        aria-label="Хлебные крошки"
+      >
+        <Link href="/collection" className="hover:text-foreground">
+          Моя коллекция
+        </Link>
+        <span>/</span>
+        <span className="text-foreground">{details.item.title}</span>
+      </nav>
+
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          variant={isEditing ? "secondary" : "outline"}
+          onClick={() => setIsEditing((value) => !value)}
+        >
+          {isEditing ? (
+            <X className="h-4 w-4" />
+          ) : (
+            <Pencil className="h-4 w-4" />
+          )}
+          {isEditing ? "Закончить редактирование" : "Редактировать"}
         </Button>
+      </div>
 
-        <div className="flex flex-col justify-between gap-4 rounded-lg border bg-card p-4 sm:flex-row sm:items-start">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-normal">
-                {details.item.title}
-              </h1>
-              {details.userItem.owned ? (
-                <Badge>Есть</Badge>
-              ) : (
-                <Badge variant="secondary">Не owned</Badge>
-              )}
+      <section className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)_340px]">
+        <div className="aspect-square overflow-hidden rounded-xl border bg-card shadow-xl shadow-black/20">
+          {cover ? (
+            // URLs обложек приходят от разных внешних провайдеров.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={cover.url ?? cover.path ?? ""}
+              alt={cover.caption ?? `Обложка ${details.item.title}`}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="grid h-full place-items-center text-muted-foreground">
+              <Gamepad2 className="h-16 w-16" />
             </div>
-            <div className="mt-2 flex flex-wrap gap-2 text-sm text-muted-foreground">
-              <span>{details.item.type.name}</span>
-              {details.item.year ? <span>{details.item.year}</span> : null}
-              {details.userItem.location ? (
-                <span>{details.userItem.location}</span>
-              ) : null}
-            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 py-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight">
+              {details.item.title}
+            </h1>
+            <Badge variant="secondary">{details.item.type.name}</Badge>
           </div>
+          {details.item.originalTitle ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {details.item.originalTitle}
+            </p>
+          ) : null}
+          {isPoweredByBgg ? <BggAttribution className="mt-4" compact /> : null}
+          <div className="mt-5 flex items-center gap-3">
+            <Stars rating={details.item.rating} />
+            <span className="font-semibold">{details.item.rating ?? "—"}</span>
+          </div>
+          <div className="mt-7 grid max-w-2xl grid-cols-2 gap-5 sm:grid-cols-4">
+            <Fact
+              icon={<Users />}
+              label="Игроки"
+              value={playerRange(details)}
+            />
+            <Fact icon={<Clock3 />} label="Минут" value={timeRange(details)} />
+            <Fact
+              icon={<Users />}
+              label="Возраст"
+              value={details.item.minAge ? `${details.item.minAge}+` : "—"}
+            />
+            <Fact
+              icon={<Gamepad2 />}
+              label="Сложность"
+              value={
+                details.item.complexity ? `${details.item.complexity}/5` : "—"
+              }
+            />
+          </div>
+          <div className="mt-7 flex flex-wrap gap-2">
+            {details.item.mechanics.slice(0, 5).map((mechanic) => (
+              <span
+                key={mechanic}
+                className="rounded-md bg-secondary px-3 py-1.5 text-xs"
+              >
+                {mechanic}
+              </span>
+            ))}
+          </div>
+        </div>
 
-          <div className="flex flex-wrap gap-2">
+        <aside className="rounded-xl border bg-card p-5">
+          <dl className="grid gap-5 text-sm">
+            <SummaryRow label="Статус">
+              <Badge>
+                {details.userItem.owned ? "Есть в коллекции" : "Не в коллекции"}
+              </Badge>
+            </SummaryRow>
+            <SummaryRow label="Место хранения">
+              {details.userItem.location ?? "Не указано"}
+            </SummaryRow>
+            <SummaryRow label="Личная оценка">
+              {details.userItem.personalRating
+                ? `${details.userItem.personalRating}/10`
+                : "Без оценки"}
+            </SummaryRow>
+          </dl>
+          <div className="mt-6 grid gap-3 border-t pt-5">
             <Button asChild>
               <Link href={`/plays?itemId=${encodeURIComponent(itemId)}`}>
                 <CalendarPlus className="h-4 w-4" />
@@ -182,145 +246,160 @@ export function CollectionItemPageClient({
               <Button asChild variant="outline">
                 <a href={referenceUrl} target="_blank" rel="noreferrer">
                   <ExternalLink className="h-4 w-4" />
-                  Справочная информация
+                  Информация об игре
                 </a>
               </Button>
-            ) : (
-              <Button type="button" variant="outline" disabled>
-                <BookOpen className="h-4 w-4" />
-                Справочная информация
-              </Button>
-            )}
+            ) : null}
           </div>
-        </div>
-      </div>
-
-      <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          label="Личная оценка"
-          value={
-            details.userItem.personalRating
-              ? `${details.userItem.personalRating}/10`
-              : "Нет"
-          }
-          icon={<Star className="h-4 w-4" />}
-        />
-        <MetricCard
-          label="Последняя партия"
-          value={formatDate(details.playSummary.lastPlayedAt)}
-        />
-        <MetricCard
-          label="Всего партий"
-          value={String(details.playSummary.playsCount)}
-        />
-        <MetricCard label="Стоимость" value={totalValue} />
+        </aside>
       </section>
 
-      <ItemReferenceEditor
-        details={details}
-        onDetailsChange={applyItemDetailsUpdate}
-      />
+      {isEditing ? (
+        <div className="grid gap-5">
+          <ItemReferenceEditor
+            details={details}
+            onDetailsChange={applyItemDetailsUpdate}
+            isEditing
+          />
+          <UserItemEditor
+            userItem={details.userItem}
+            onUserItemChange={applyUserItemUpdate}
+            isEditing
+          />
+        </div>
+      ) : (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,.7fr)]">
+          <ItemReferenceEditor
+            details={details}
+            onDetailsChange={applyItemDetailsUpdate}
+            isEditing={false}
+          />
+          <UserItemEditor
+            userItem={details.userItem}
+            onUserItemChange={applyUserItemUpdate}
+            isEditing={false}
+          />
+        </div>
+      )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
-        <section className="rounded-lg border bg-card">
-          <div className="border-b px-4 py-3">
-            <h2 className="text-base font-semibold">Последние партии</h2>
+      <section className="rounded-xl border bg-card">
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <h2 className="font-semibold">Последние партии</h2>
+          <Link
+            href={`/plays?itemId=${encodeURIComponent(itemId)}`}
+            className="text-sm text-primary hover:underline"
+          >
+            Все партии ({details.playSummary.playsCount})
+          </Link>
+        </div>
+        {details.recentPlays.length ? (
+          <div className="divide-y">
+            {details.recentPlays.map((play) => (
+              <div
+                key={play.id}
+                className="grid gap-2 px-5 py-4 text-sm sm:grid-cols-[1fr_auto_auto_auto] sm:items-center"
+              >
+                <span className="font-medium">{formatDate(play.playedAt)}</span>
+                <span className="text-muted-foreground">
+                  {play.playersCount
+                    ? `${play.playersCount} игроков`
+                    : "Игроки не указаны"}
+                </span>
+                <span className="text-muted-foreground">
+                  {play.durationMinutes ? `${play.durationMinutes} мин` : "—"}
+                </span>
+                {play.result ? (
+                  <Badge variant="secondary">{play.result}</Badge>
+                ) : (
+                  <span />
+                )}
+              </div>
+            ))}
           </div>
-          {details.recentPlays.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-muted-foreground">
-              Партий пока нет.
-            </div>
-          ) : (
-            <div className="divide-y">
-              {details.recentPlays.map((play) => (
-                <div
-                  key={play.id}
-                  className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <div className="text-sm font-medium">
-                      {formatDate(play.playedAt)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {play.playersCount
-                        ? `${play.playersCount} игроков`
-                        : "Игроки не указаны"}
-                      {play.durationMinutes
-                        ? `, ${play.durationMinutes} минут`
-                        : ""}
-                    </div>
-                  </div>
-                  {play.result ? (
-                    <Badge variant="secondary">{play.result}</Badge>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <UserItemEditor
-          userItem={details.userItem}
-          onUserItemChange={applyUserItemUpdate}
-        />
-      </div>
+        ) : (
+          <p className="px-5 py-8 text-sm text-muted-foreground">
+            Партий пока нет.
+          </p>
+        )}
+      </section>
     </main>
   );
 }
 
-function MetricCard({
+function Fact({
+  icon,
   label,
   value,
-  icon,
 }: {
+  icon: React.ReactElement<{ className?: string }>;
   label: string;
   value: string;
-  icon?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
-        {icon}
-        {label}
+    <div className="flex gap-3">
+      {React.cloneElement(icon, { className: "h-5 w-5 text-primary" })}
+      <div>
+        <div className="font-semibold">{value}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{label}</div>
       </div>
-      <div className="mt-2 text-xl font-semibold">{value}</div>
     </div>
   );
 }
 
-function formatDate(value?: string | null) {
-  if (!value) {
-    return "Не было";
-  }
-
-  return new Intl.DateTimeFormat("ru", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
+function SummaryRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[1fr_auto] items-center gap-4">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="text-right font-medium">{children}</dd>
+    </div>
+  );
 }
 
-function formatPurchases(purchases: CollectionItemDetailsDto["purchases"]) {
-  if (purchases.length === 0) {
-    return "Нет";
-  }
-
-  const totals = purchases.reduce<Record<string, number>>(
-    (accumulator, item) => {
-      accumulator[item.currency] =
-        (accumulator[item.currency] ?? 0) + item.totalPrice;
-      return accumulator;
-    },
-    {},
+function Stars({ rating }: { rating?: number | null }) {
+  const filled = rating ? Math.round(rating / 2) : 0;
+  return (
+    <div
+      className="flex gap-0.5"
+      aria-label={rating ? `Рейтинг ${rating} из 10` : "Нет рейтинга"}
+    >
+      {Array.from({ length: 5 }, (_, index) => (
+        <Star
+          key={index}
+          className={`h-5 w-5 ${index < filled ? "fill-primary text-primary" : "text-muted-foreground"}`}
+        />
+      ))}
+    </div>
   );
+}
 
-  return Object.entries(totals)
-    .map(([currency, amount]) =>
-      new Intl.NumberFormat("ru", {
-        style: "currency",
-        currency,
-        maximumFractionDigits: 0,
-      }).format(amount),
-    )
-    .join(", ");
+function playerRange(details: CollectionItemDetailsDto) {
+  const { minPlayers, maxPlayers } = details.item;
+  if (!minPlayers && !maxPlayers) return "—";
+  return minPlayers === maxPlayers
+    ? String(minPlayers ?? maxPlayers)
+    : `${minPlayers ?? "?"}–${maxPlayers ?? "?"}`;
+}
+
+function timeRange(details: CollectionItemDetailsDto) {
+  const { minPlayTime, maxPlayTime } = details.item;
+  if (!minPlayTime && !maxPlayTime) return "—";
+  return minPlayTime === maxPlayTime
+    ? String(minPlayTime ?? maxPlayTime)
+    : `${minPlayTime ?? "?"}–${maxPlayTime ?? "?"}`;
+}
+
+function formatDate(value?: string | null) {
+  return value
+    ? new Intl.DateTimeFormat("ru", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }).format(new Date(value))
+    : "Не было";
 }

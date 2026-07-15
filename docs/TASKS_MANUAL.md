@@ -312,7 +312,7 @@
 
 * не использовать HTML scraping как основной путь;
 * не использовать библиотеку без поддержки `Authorization`;
-* будущий BGG client должен принимать `BGG_APPLICATION_TOKEN`;
+* будущий BGG client должен принимать `BGG_TOKEN`;
 * добавить тест на заголовок `Authorization: Bearer ...`.
 
 Результат:
@@ -420,7 +420,7 @@
 
 Задачи:
 
-* получить и настроить `BGG_APPLICATION_TOKEN`;
+* получить и настроить `BGG_TOKEN`;
 * добавить `Authorization` header;
 * включить внешний поиск через feature flag;
 * включить BGG play sync через feature flag;
@@ -646,7 +646,7 @@
 
 Реализовать только после появления токенов:
 
-1. M-0603: будущий BGG client с `BGG_APPLICATION_TOKEN`.
+1. M-0603: будущий BGG client с `BGG_TOKEN`.
 2. M-1001: BGG search/sync через `Authorization: Bearer ...`.
 3. M-1002: Tesera как optional best-effort provider.
 4. Rate limiting и cache для внешних запросов.

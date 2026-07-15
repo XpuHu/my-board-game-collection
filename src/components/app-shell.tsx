@@ -16,6 +16,7 @@ import {
   Settings,
 } from "lucide-react";
 
+import { BggAttribution } from "@/components/bgg-attribution";
 import { cn } from "@/shared/lib/utils";
 
 const navItems = [
@@ -52,7 +53,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </aside>
 
-        <div className="min-w-0">
+        <div className="flex min-h-screen min-w-0 flex-col">
           <header className="sticky top-0 z-40 border-b border-white/10 bg-background/88 backdrop-blur-xl lg:border-b-0">
             <div className="flex items-center gap-3 px-4 py-4 sm:px-6 lg:justify-end lg:px-8 lg:py-8">
               <Link href="/" className="flex items-center gap-3 lg:hidden">
@@ -93,7 +94,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          {children}
+          <div className="flex-1">{children}</div>
+
+          <footer className="border-t border-white/10 px-4 py-6 sm:px-6 lg:px-8">
+            <div className="mx-auto flex w-full max-w-7xl items-center justify-center sm:justify-end">
+              <BggAttribution />
+            </div>
+          </footer>
         </div>
       </div>
     </div>

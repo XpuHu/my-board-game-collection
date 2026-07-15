@@ -13,6 +13,7 @@ import {
   Star,
 } from "lucide-react";
 
+import { BggAttribution } from "@/components/bgg-attribution";
 import { ErrorState, LoadingState } from "@/components/ui-state";
 import { ItemReferenceEditor } from "@/components/item-reference-editor";
 import { UserItemEditor } from "@/components/user-item-editor";
@@ -251,6 +252,10 @@ export function WishlistItemPageClient({
   }
 
   const mainImage = details.images.find((image) => image.url)?.url ?? null;
+  const isPoweredByBgg =
+    details.externalReferences.some(
+      (reference) => reference.provider === "boardgamegeek",
+    ) || details.images.some((image) => image.provider === "boardgamegeek");
   const externalLinks = [
     ...details.externalReferences
       .filter((reference) => reference.url)
@@ -311,10 +316,16 @@ export function WishlistItemPageClient({
                   <span>{details.externalReferences.length} источников</span>
                 ) : null}
               </div>
+              {isPoweredByBgg ? (
+                <BggAttribution className="mt-4" compact />
+              ) : null}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Metric label="Рейтинг" value={formatRating(details.item.rating)} />
+              <Metric
+                label="Рейтинг"
+                value={formatRating(details.item.rating)}
+              />
               <Metric label="Игроки" value={formatPlayers(details)} />
               <Metric label="Время" value={formatPlayTime(details)} />
               <Metric label="Возраст" value={formatAge(details.item.minAge)} />
@@ -327,7 +338,9 @@ export function WishlistItemPageClient({
                 disabled={saving || details.userItem.owned}
               >
                 <Boxes className="h-4 w-4" />
-                {details.userItem.owned ? "Уже в коллекции" : "Добавить в коллекцию"}
+                {details.userItem.owned
+                  ? "Уже в коллекции"
+                  : "Добавить в коллекцию"}
               </Button>
               <Button
                 type="button"
@@ -361,7 +374,10 @@ export function WishlistItemPageClient({
           </InfoSection>
 
           <InfoSection title="Механики">
-            <TokenList values={details.item.mechanics} empty="Механики не указаны." />
+            <TokenList
+              values={details.item.mechanics}
+              empty="Механики не указаны."
+            />
           </InfoSection>
 
           <InfoSection title="Категории">
@@ -590,13 +606,7 @@ function InfoSection({
   );
 }
 
-function Metric({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
       <div className="text-xs text-muted-foreground">{label}</div>
@@ -657,7 +667,9 @@ function LinkList({
           rel="noreferrer"
           className="inline-flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm hover:bg-secondary"
         >
-          <span className="truncate">{link.title ?? linkTypeLabel(link.type)}</span>
+          <span className="truncate">
+            {link.title ?? linkTypeLabel(link.type)}
+          </span>
           <ExternalLink className="h-4 w-4 shrink-0" />
         </a>
       ))}

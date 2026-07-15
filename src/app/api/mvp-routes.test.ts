@@ -32,6 +32,7 @@ describe("MVP API flows", () => {
     vi.restoreAllMocks();
     process.env.EXTERNAL_PROVIDERS_ENABLED = "true";
     process.env.BGG_SYNC_ENABLED = "true";
+    delete process.env.BGG_TOKEN;
     delete process.env.BGG_APPLICATION_TOKEN;
     await clearDomainData();
   });
@@ -263,7 +264,10 @@ describe("MVP API flows", () => {
     );
     const updatedLinkBody = await updatedLinkResponse.json();
 
-    await deleteReferenceRoute(jsonRequest({}), referenceContext(item.id, referenceId));
+    await deleteReferenceRoute(
+      jsonRequest({}),
+      referenceContext(item.id, referenceId),
+    );
     await deleteImageRoute(jsonRequest({}), imageContext(item.id, imageId));
     const deleteLinkResponse = await deleteLinkRoute(
       jsonRequest({}),

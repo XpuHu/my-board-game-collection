@@ -1,5 +1,7 @@
 import { ApiError } from "@/server/api/errors";
 
+import { getBggRequestHeaders } from "./bgg-request";
+
 const BGG_XML_API_URL = "https://boardgamegeek.com/xmlapi2";
 const PROVIDER_CODE = "boardgamegeek";
 const MAX_PAGES = 50;
@@ -126,10 +128,7 @@ async function fetchBggPlaysPage(
 async function fetchBggXml(path: string) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const response = await fetch(`${BGG_XML_API_URL}${path}`, {
-      headers: {
-        accept: "application/xml,text/xml",
-        "user-agent": "BoardGameCollection/1.0",
-      },
+      headers: getBggRequestHeaders(),
     });
 
     if (response.status === 202 && attempt < 3) {
@@ -169,7 +168,10 @@ function parsePlaysPage(xml: string) {
   const plays = getElementBlocks(xml, "play")
     .map(parsePlay)
     .filter((play): play is RawBggPlay => Boolean(play));
-  const totalPages = Math.max(page, Math.ceil(total / Math.max(plays.length, 1)));
+  const totalPages = Math.max(
+    page,
+    Math.ceil(total / Math.max(plays.length, 1)),
+  );
 
   return {
     total,

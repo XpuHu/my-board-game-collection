@@ -29,6 +29,7 @@ const NO_INTEREST = "__none__";
 type UserItemEditorProps = {
   userItem: UserItemDto;
   onUserItemChange: (userItem: UserItemDto) => void;
+  isEditing?: boolean;
 };
 
 type UserItemFormState = {
@@ -46,10 +47,62 @@ type UserItemFormState = {
 export function UserItemEditor({
   userItem,
   onUserItemChange,
+  isEditing = true,
 }: UserItemEditorProps) {
   const { toast } = useToast();
   const [saving, setSaving] = React.useState(false);
   const [form, setForm] = React.useState(() => toUserItemForm(userItem));
+
+  if (!isEditing) {
+    return (
+      <section className="rounded-lg border bg-card p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide">
+          Моя коллекция
+        </h2>
+        <dl className="mt-5 grid gap-4 text-sm">
+          <ReadOnlyRow label="Статус" value={statusLabel(userItem.status)} />
+          <ReadOnlyRow
+            label="Место хранения"
+            value={userItem.location ?? "Не указано"}
+          />
+          <ReadOnlyRow
+            label="Личная оценка"
+            value={
+              userItem.personalRating
+                ? `${userItem.personalRating}/10`
+                : "Без оценки"
+            }
+          />
+          <ReadOnlyRow
+            label="Интерес"
+            value={
+              userItem.interestLevel
+                ? `${userItem.interestLevel}/5`
+                : "Не указан"
+            }
+          />
+          <ReadOnlyRow
+            label="Теги"
+            value={
+              userItem.tags.length
+                ? userItem.tags.map((tag) => tag.name).join(", ")
+                : "Нет"
+            }
+          />
+        </dl>
+        {userItem.notes ? (
+          <div className="mt-5 border-t pt-4">
+            <div className="text-xs text-muted-foreground">
+              Заметки владельца
+            </div>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+              {userItem.notes}
+            </p>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
 
   function updateForm<K extends keyof UserItemFormState>(
     key: K,
@@ -233,9 +286,7 @@ export function UserItemEditor({
         <Textarea
           id="user-item-decision-notes"
           value={form.decisionNotes}
-          onChange={(event) =>
-            updateForm("decisionNotes", event.target.value)
-          }
+          onChange={(event) => updateForm("decisionNotes", event.target.value)}
           className="mt-2"
         />
       </div>
@@ -245,6 +296,15 @@ export function UserItemEditor({
         {saving ? "Сохраняем" : "Сохранить состояние"}
       </Button>
     </form>
+  );
+}
+
+function ReadOnlyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-medium">{value}</dd>
+    </div>
   );
 }
 
