@@ -15,4 +15,3 @@ pnpm-debug.log*
 uploads/
 dev.db
 dev.db-journal
-docs/

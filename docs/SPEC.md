@@ -1,664 +1,873 @@
 # SPEC.md
 
-# Board Game Collection
+# Board Game Collection — продуктовые и API-контракты
 
-**Версия:** 2.1  
-**Статус:** Draft
-
----
-
-# 1. Описание проекта
-
-Board Game Collection - персональное веб-приложение для управления настольными играми, предзаказами, wishlist и историей партий.
-
-Приложение разделено на две самостоятельные пользовательские области:
-
-* **Моя коллекция** - игры и связанные объекты, которые уже есть у пользователя.
-* **Wishlist** - игры, которые пользователь хочет попробовать, изучить, купить или оформить в предзаказ.
-
-Эти области используют общую доменную модель, но решают разные задачи и поэтому показывают разный объем информации.
-
-**Моя коллекция** отвечает на вопрос: "Во что я играю?"  
-Она должна быть компактной, быстрой и ориентированной на ежедневные действия: добавить партию, посмотреть последнюю игру, изменить личные данные, проверить предзаказ.
-
-**Wishlist** отвечает на вопрос: "Во что стоит поиграть или купить?"  
-Он должен показывать максимум справочной информации: описание, характеристики, фото, механики, категории, авторов, рейтинги, видео, похожие игры, внешние ссылки и цены.
+**Версия:** 3.0
+**Статус:** Approved for implementation
+**Дата фиксации:** 2026-07-15
+**Связанный план:** [UI_IMPLEMENTATION_PLAN.md](UI_IMPLEMENTATION_PLAN.md), этап 0
 
 ---
 
-# 2. Основные пользовательские сценарии
+# 1. Назначение и границы
 
-Главные сценарии первой версии:
+Board Game Collection — однопользовательское веб-приложение для управления
+настольными играми, wishlist, партиями, покупками и предзаказами.
+
+Документ фиксирует продуктовые правила и целевые контракты API до изменения
+Prisma-схемы и UI. Persistence-модель описана в [DATABASE.md](DATABASE.md).
+Текущая реализация может временно отличаться от целевого контракта; такие
+отличия устраняются этапами 1–8 плана внедрения.
+
+Основные сценарии первой версии:
 
 1. Добавить партию.
-2. Изменить предзаказ, в первую очередь ожидаемую дату доставки.
-3. Добавить игру в коллекцию.
-4. Добавить игру в wishlist.
+2. Изменить предзаказ, прежде всего ожидаемую дату.
+3. Добавить Item в коллекцию.
+4. Добавить Item в wishlist.
 
-Все остальные возможности должны поддерживать эти сценарии, но не усложнять их.
-
----
-
-# 3. Основная модель
-
-Приложение строится вокруг пары `Item` и `UserItem`.
-
-`Item` - локальный кэш справочных данных об объекте из внешних источников или ручного ввода:
-
-* базовая настольная игра;
-* дополнение;
-* промо-набор;
-* аксессуар;
-* органайзер;
-* набор компонентов;
-* игровое поле;
-* миниатюры;
-* расходные материалы;
-* любой другой связанный объект.
-
-Приложение не вводит отдельные доменные сущности для базовых игр, дополнений и аксессуаров. Различия задаются типом `Item`.
-
-Справочные поля хранятся непосредственно в `Item`: `title`, `description`, `year`, `min_players`, `max_players`, `min_play_time`, `max_play_time`, `min_age`, `complexity`, `rating` и другие нормализованные данные.
-
-`UserItem` хранит пользовательское состояние конкретного `Item`: `owned`, `wishlist`, личную оценку, место хранения, заметки, уровень интереса и теги.
-
-Типы `Item`:
-
-* `base_game`;
-* `expansion`;
-* `promo`;
-* `accessory`;
-* `organizer`;
-* `component`;
-* `miniature`;
-* `playmat`;
-* `sleeves`;
-* `dice`;
-* `other`.
-
-Тип влияет на отображение, фильтры, связи и применимость партий, но не меняет базовую модель.
+В первую версию не входят многопользовательский режим, полноценное сравнение
+цен, уведомления, календарь релизов и сложная рекомендательная система.
 
 ---
 
-# 4. Два каталога
+# 2. Доменная модель
 
-## 4.1 Моя коллекция
+## 2.1 Item
 
-Раздел "Моя коллекция" содержит `Item`, которые уже есть у пользователя или относятся к его текущей коллекции.
+`Item` — единственная основная сущность для справочного объекта. Ею может быть
+базовая игра, дополнение, промо, аксессуар, органайзер, компонент или другой
+связанный объект. Коллекция и wishlist не создают копии `Item`.
 
-Цель раздела - быстро выполнять действия владельца.
+Справочные поля `Item` могут обновляться providers и ручным вводом:
 
-В списке коллекции показывается минимум информации:
+- название, оригинальное название и описание;
+- тип, год, параметры игроков, времени и возраста;
+- сложность и рейтинг сообщества;
+- механики, категории, создатели и издатели;
+- справочные изображения, ссылки, внешние идентификаторы и связи.
 
-* название;
-* основное изображение или компактная заглушка;
-* личная оценка;
-* наличие;
-* количество партий;
-* дата последней партии;
-* активный предзаказ, если он важен;
-* короткие пользовательские метки.
+Системные коды типов:
 
-В списке коллекции не показываются длинное описание, подробные правила, все механики, все категории и энциклопедическая справка.
+```text
+base_game | expansion | promo | accessory | organizer | component
+miniature | playmat | sleeves | dice | other
+```
 
-Карточка `Item` в коллекции показывает:
+## 2.2 UserItem
 
-* личную оценку;
-* статус наличия;
-* последнюю партию;
-* общее количество партий;
-* последний или активный предзаказ;
-* стоимость покупки;
-* место хранения;
-* заметки;
-* пользовательские фото;
-* быстрые действия.
+`UserItem` — пользовательское состояние одного `Item`. Для локального MVP
+существует не более одного `UserItem` на `Item`.
 
-Главное действие карточки коллекции - **Добавить партию**.
+К пользовательским данным относятся:
 
-Справочная информация доступна отдельным действием "Открыть справочную информацию", чтобы не перегружать рабочий экран.
+- принадлежность к коллекции и wishlist;
+- дата добавления в коллекцию и признак избранного;
+- lifecycle-статус;
+- личная оценка, место хранения и заметки;
+- уровень интереса и заметки о решении;
+- покупки, предзаказы, партии, пользовательские изображения и теги.
 
----
+Provider sync никогда не изменяет пользовательские данные.
 
-## 4.2 Wishlist
+## 2.3 Два каталога
 
-Wishlist содержит `Item`, которые пользователь хочет изучить, попробовать, купить или оформить в предзаказ.
+«Моя коллекция» — выборка `UserItem.owned = true`. Она компактна и
+ориентирована на действия владельца. Главное действие — «Добавить партию».
 
-Цель раздела - помочь принять решение.
+Wishlist — выборка `UserItem.wishlist = true AND UserItem.owned = false`. Она
+показывает больше справочных данных и помогает принять решение. Главные
+действия — добавить в коллекцию и оформить предзаказ.
 
-Карточка wishlist показывает максимум доступной информации:
-
-* название и оригинальное название;
-* год выпуска;
-* рейтинг BGG и другие рейтинги;
-* количество игроков;
-* время партии;
-* возраст;
-* сложность, если источник ее предоставляет;
-* описание;
-* фото и обложки;
-* механики;
-* категории;
-* авторов и художников;
-* издателей и локализации;
-* видео и обзоры;
-* похожие игры;
-* связи с дополнениями и версиями;
-* внешние ссылки;
-* цены в магазинах, если доступны;
-* заметки пользователя о покупке или пробной партии.
-
-Основные действия wishlist:
-
-* добавить в коллекцию;
-* оформить предзаказ;
-* удалить из wishlist;
-* обновить справочную информацию;
-* открыть внешние источники.
-
-При добавлении из wishlist в коллекцию `Item` не дублируется. Меняется `UserItem`: элемент становится частью коллекции, сохраняя внешние идентификаторы, заметки, ссылки и историю решений.
+При переносе из wishlist в коллекцию используется тот же `Item`, выставляется
+`owned = true`, сбрасывается `wishlist = false` и устанавливается `ownedAt`,
+если его ещё нет. Внешние идентификаторы, история и пользовательские данные
+сохраняются.
 
 ---
 
-# 5. Состояние UserItem
+# 3. Сохранённое и вычисляемое состояние UserItem
 
-Один `UserItem` может находиться в одном или нескольких пользовательских состояниях:
+## 3.1 Lifecycle-статус
 
-* `owned` - есть в коллекции;
-* `wishlist` - находится в wishlist;
-* `preordered` - есть активный предзаказ;
-* `played` - есть история партий;
-* `for_sale` - пользователь хочет продать;
-* `sold` - продан;
-* `archived` - скрыт из основных списков.
+`UserItem.status` хранит только жизненный цикл пользовательской записи:
 
-Для основных каталогов используются правила:
+```ts
+type UserItemLifecycleStatus =
+  | "active"
+  | "for_sale"
+  | "sold"
+  | "archived";
+```
 
-* "Моя коллекция" по умолчанию показывает `owned = true`.
-* Wishlist по умолчанию показывает `wishlist = true` и `owned = false`.
-* Предзаказ может существовать как для wishlist, так и для коллекции.
-* История партий может существовать для owned-игры и для игры, которую пользователь только попробовал.
+Семантика:
 
----
+- `active` — обычная активная запись; это значение по умолчанию;
+- `for_sale` — owned-объект выставлен пользователем на продажу;
+- `sold` — объект продан и больше не считается owned;
+- `archived` — запись скрыта из основных каталогов, но история сохранена.
 
-# 6. Разделение данных
+Значения `owned`, `wishlist`, `preordered` и `played` не являются
+lifecycle-статусами и после миграции не записываются в `UserItem.status`.
 
-Все данные делятся на две категории.
+## 3.2 Вычисляемые состояния
 
-## 6.1 Справочные данные
+API возвращает множество состояний:
 
-Получаются из внешних источников или вводятся вручную.
+```ts
+type UserItemState =
+  | "owned"
+  | "wishlist"
+  | "preordered"
+  | "played"
+  | "for_sale"
+  | "sold"
+  | "archived";
+```
 
-Примеры:
+Правила resolver-а:
 
-* название;
-* оригинальное название;
-* тип элемента;
-* описание;
-* год выпуска;
-* количество игроков;
-* время партии;
-* возраст;
-* сложность;
-* механики;
-* категории;
-* авторы или дизайнеры;
-* художники;
-* издатели;
-* локализации;
-* изображения;
-* рейтинг сообщества;
-* внешние ссылки;
-* связи с другими элементами.
+- `owned` добавляется при `UserItem.owned = true`;
+- `wishlist` добавляется при `UserItem.wishlist = true`;
+- `preordered` добавляется при наличии предзаказа со статусом `planned`,
+  `ordered`, `paid` или `shipped`;
+- `played` добавляется при наличии хотя бы одной `PlaySession`;
+- `for_sale`, `sold`, `archived` проецируются из `UserItem.status`;
+- `active` не добавляется в `states`, потому что означает отсутствие
+  специального lifecycle-badge.
 
-Справочные данные могут обновляться синхронизацией.
+`states` вычисляется на сервере. UI не собирает его самостоятельно и не пишет
+вычисляемые состояния обратно в базу.
 
----
+## 3.3 Инварианты и переходы
 
-## 6.2 Пользовательские данные
+- `owned` и `wishlist` не могут одновременно быть `true` после успешной
+  команды изменения каталога.
+- `for_sale` допустим только при `owned = true`.
+- переход в `sold` устанавливает `owned = false` и `wishlist = false`;
+- переход в `archived` исключает запись из коллекции и wishlist без удаления
+  связанной истории;
+- добавление в коллекцию переводит `sold`/`archived` обратно в `active`;
+- активный предзаказ или история партий могут существовать при `owned = false`;
+- удаление из wishlist не удаляет `Item`, если у него есть история, предзаказ,
+  покупка или иная пользовательская связь.
 
-Создаются и изменяются пользователем.
+Все переходы выполняются application services. Generic update пользовательских
+полей обязан валидировать итоговую комбинацию, а команды добавления/удаления из
+каталогов применяют инварианты атомарно.
 
-Примеры:
+## 3.4 Совместимость legacy-статусов
 
-* принадлежность к коллекции;
-* принадлежность к wishlist;
-* статус;
-* личная оценка;
-* место хранения;
-* цена покупки;
-* магазин;
-* предзаказы;
-* история партий;
-* пользовательские фотографии;
-* заметки;
-* теги.
+До миграции встречаются `owned`, `wishlist`, `preordered` и `played` в поле
+`status`. Они читаются как `active`; соответствующие состояния определяются
+только флагами и связями. `for_sale`, `sold`, `archived` сохраняют смысл.
 
-Пользовательские данные никогда не изменяются автоматической синхронизацией справочников.
+Backfill:
 
----
-
-# 7. Источники данных
-
-## 7.1 BoardGameGeek
-
-BoardGameGeek используется как основной международный источник справочных данных и как источник синхронизации истории партий.
-
-Справочные данные:
-
-* название;
-* оригинальное название;
-* тип объекта;
-* описание;
-* год выпуска;
-* количество игроков;
-* время партии;
-* возраст;
-* сложность и weight, если доступны;
-* механики;
-* категории;
-* дизайнеры;
-* художники;
-* издатели;
-* рейтинг;
-* изображения;
-* связи с базовыми играми, дополнениями и версиями.
-
-История партий:
-
-* импорт партий пользователя из BGG;
-* сопоставление партий с локальными `Item`;
-* сохранение внешнего идентификатора партии;
-* повторная синхронизация без создания дублей;
-* защита локально отредактированных пользовательских полей.
+```text
+owned | wishlist | preordered | played → active
+for_sale | sold | archived             → без изменения
+неизвестное значение                   → active + migration warning
+```
 
 ---
 
-## 7.2 Tesera
+# 4. Новые пользовательские поля
 
-Tesera используется как основной русскоязычный источник.
+## 4.1 Дата добавления в коллекцию
 
-Данные:
+`UserItem.ownedAt: ISODateTime | null` — момент первого актуального перехода
+`owned: false → true`.
 
-* русское название;
-* тип объекта;
-* локализации;
-* описание;
-* ссылки;
-* изображения;
-* связи с другими объектами.
+- обычное редактирование не меняет `ownedAt`;
+- при снятии `owned` поле сохраняется для истории;
+- повторное добавление восстанавливает прежнее значение, если оно существует;
+- для существующих owned-записей backfill использует `UserItem.createdAt`;
+- recently added и сортировка `added` используют `ownedAt`, не `updatedAt`;
+- JSON backup обязан сохранять поле.
+
+## 4.2 Избранное
+
+`UserItem.favorite: boolean` имеет default `false`, изменяется только
+пользователем через UserItem service и не затрагивается provider sync.
+
+## 4.3 Дополнительные поля партии
+
+После включения соответствующего этапа `PlaySession` получает:
+
+```ts
+startedAt?: ISODateTime | null;
+personalRating?: number | null; // целое 1..10
+```
+
+`startedAt` — необязательное точное время начала и не заменяет обязательную
+дату `playedAt`. BGG sync не перезаписывает локальную `personalRating`.
 
 ---
 
-## 7.3 Nastolio
+# 5. Предзаказы
 
-Nastolio используется как дополнительный источник.
+## 5.1 Канонические статусы
 
-Данные:
-
-* ссылка на объект;
-* информация о локализациях;
-* дополнительная справочная информация при наличии.
-
----
-
-# 8. Добавление игры в коллекцию
+```ts
+type PreorderStatus =
+  | "planned"
+  | "ordered"
+  | "paid"
+  | "shipped"
+  | "received"
+  | "cancelled";
+```
 
 Основной поток:
 
-1. Пользователь выбирает "Добавить игру".
-2. Вводит название или ссылку.
-3. Приложение ищет совпадения во внешних источниках.
-4. Пользователь выбирает результат.
-5. Приложение загружает справочные данные.
-6. Создается или обновляется `Item`.
-7. Устанавливается `owned = true`.
-8. Если элемент был в wishlist, он остается тем же `Item`, но больше не считается только желаемым.
-9. Пользователь может сразу указать покупку, место хранения, личную оценку и заметки.
+```text
+planned → ordered → paid → shipped → received
+                                  ↘ cancelled
+```
 
-Если объект отсутствует во внешних источниках, пользователь может создать `Item` вручную.
+`cancelled` допустим из любого активного статуса. Возврат из `received` или
+`cancelled` в активный статус требует явной пользовательской команды и события
+`status_changed`.
 
----
+## 5.2 Точность ожидаемой даты
 
-# 9. Добавление игры в wishlist
+```ts
+type ExpectedDatePrecision = "day" | "month" | "quarter" | "unknown";
+```
 
-Основной поток:
+Пара `expectedDate` + `expectedDatePrecision` является единым значением:
 
-1. Пользователь открывает Wishlist или внешний поиск.
-2. Вводит название или ссылку.
-3. Приложение ищет игру во внешних источниках.
-4. Пользователь открывает подробную карточку.
-5. Изучает описание, характеристики, фото, механики, рейтинги, обзоры и цены.
-6. Нажимает "Добавить в wishlist".
-7. Создается или обновляется `Item`.
-8. Устанавливается `wishlist = true`.
+| Precision | Хранимое значение `expectedDate` | Отображение |
+|---|---|---|
+| `day` | точная дата | день, месяц, год; допустим относительный срок |
+| `month` | первый день месяца | месяц и год |
+| `quarter` | первый день квартала | квартал и год |
+| `unknown` | `null` | «Дата неизвестна» |
 
-Wishlist не требует заполнения пользовательских данных о владении.
+Application service нормализует month/quarter до начала периода. Для `day`
+время нормализуется к началу календарного дня в принятой сервером временной
+зоне. API передаёт дату как ISO 8601 и не выводит precision из формата строки.
 
----
+## 5.3 UI-статус предзаказа
 
-# 10. Добавление партии
+```ts
+type PreorderUiStatus = "active" | "delayed" | "received" | "cancelled";
+```
 
-Партия - отдельная запись истории игры.
+- `received` и `cancelled` определяются каноническим статусом;
+- остальные канонические статусы дают `active`, пока срок не прошёл;
+- `delayed` вычисляется только для активного предзаказа: для `day` прошёл день,
+  для `month` — последний день месяца, для `quarter` — последний день квартала;
+- `unknown` не бывает delayed;
+- относительный текст «через N дней»/«N дней назад» используется только для
+  `day`.
 
-Основной поток:
+## 5.4 Событие изменения ожидаемой даты
 
-1. Пользователь нажимает "Добавить партию" на главной, в коллекции или в карточке игры.
-2. Выбирает игру, если она еще не выбрана контекстом.
-3. Заполняет минимальные поля.
-4. Сохраняет запись.
-5. Коллекция обновляет количество партий и дату последней партии.
+Новая запись `expected_date_changed` сохраняет дату и precision вместе в
+`oldValue`/`newValue` как JSON:
 
-Поля партии:
+```ts
+type ExpectedDateEventValue = {
+  expectedDate: string | null;
+  expectedDatePrecision: ExpectedDatePrecision;
+};
+```
 
-* игра;
-* дата;
-* количество игроков;
-* длительность;
-* победа или поражение;
-* счет, если нужен;
-* сложность или сценарий;
-* использованные дополнения;
-* игроки;
-* комментарий;
-* внешний идентификатор BGG, если партия импортирована.
+Пример сериализованного значения:
 
-Форма добавления партии должна открываться быстро и помещаться в одно окно.
+```json
+{"expectedDate":"2026-10-01T00:00:00.000Z","expectedDatePrecision":"month"}
+```
 
----
+Legacy-значение является ISO-строкой без JSON. Reader обязан поддерживать:
 
-# 11. История партий и синхронизация с BGG
+1. JSON-объект нового формата;
+2. ISO-строку старого формата как `{ expectedDate: value,
+   expectedDatePrecision: "day" }`;
+3. `null` как `{ expectedDate: null, expectedDatePrecision: "unknown" }`.
 
-Приложение должно вести локальную историю партий.
-
-История партий нужна для:
-
-* списка последних партий;
-* карточки игры в коллекции;
-* статистики;
-* синхронизации с BoardGameGeek;
-* понимания, во что пользователь реально играет.
-
-Синхронизация с BGG должна поддерживать:
-
-* подключение BGG username;
-* импорт партий пользователя;
-* сохранение `bggPlayId`;
-* повторный импорт без дублей;
-* сопоставление `bggThingId` с локальным `Item`;
-* создание wishlist/played-записи при импорте партии для игры, которой нет в коллекции;
-* отметку даты последней синхронизации;
-* ручной запуск синхронизации;
-* понятные ошибки при недоступности BGG.
-
-При конфликте локальных и BGG-данных пользовательские локальные изменения имеют приоритет, если поле было изменено вручную.
+Новый writer записывает только JSON-формат. API изменения даты принимает
+`expectedDate`, `expectedDatePrecision`, `reason`, `comment` и возвращает
+обновлённый предзаказ вместе с созданным событием.
 
 ---
 
-# 12. Предзаказы
+# 6. Партии, покупки и синхронизация
 
-Предзаказ может быть связан с любым `Item`.
+`PlaySession` хранит игру, дату, необязательное время начала, игроков,
+длительность, результат, счёт, сценарий, использованные Item, заметку, источник
+и локальную оценку партии.
 
-Основной поток изменения предзаказа:
+- `playerNames` — нормализованный массив непустых имён;
+- `usedItemIds` — уникальный массив существующих UUID без основного `itemId`;
+- `bggPlayId` уникален, если задан;
+- повторный BGG import идемпотентен;
+- локально изменённые поля не перезаписываются без явного merge-правила;
+- manual- и BGG-партии одинаково участвуют в статистике.
 
-1. Пользователь открывает главную или раздел "Предзаказы".
-2. Видит список ближайших активных предзаказов.
-3. Нажимает действие изменения даты.
-4. Меняет ожидаемую дату доставки.
-5. При необходимости указывает причину и комментарий.
-6. Сохраняет изменение.
-
-Главный сценарий предзаказов - быстро изменить дату доставки.
-
-Предзаказ содержит:
-
-* магазин или площадку;
-* стоимость;
-* валюту;
-* дату оформления;
-* ожидаемую дату получения;
-* фактическую дату получения;
-* статус;
-* трек-номер;
-* комментарий.
-
-Изменения важных полей предзаказа должны сохраняться как история событий, чтобы пользователь видел, как переносились сроки.
+Для одного `Item` допустимо несколько `Purchase` и `Preorder`. Денежные суммы
+в API всегда передаются числом вместе с трёхбуквенным кодом валюты; суммы разных
+валют не складываются без отдельного правила конвертации.
 
 ---
 
-# 13. Покупки
+# 7. Общие правила API
 
-Для каждого `Item` можно хранить несколько покупок.
+- Идентификаторы — UUID strings.
+- DateTime — ISO 8601 UTC strings; календарные query-даты — `YYYY-MM-DD`.
+- Nullable-поля возвращаются явно как `null`; обязательные массивы — как `[]`.
+- Деньги возвращаются как `{ amount: number, currency: string }`.
+- Списки используют общий envelope `PaginatedDto<T>`.
+- Неизвестный query-параметр игнорируется UI adapter-ом, но API валидирует
+  известные параметры и возвращает `400` для неверного значения.
+- Отсутствующая запись возвращает `404`, конфликт инвариантов — `409`.
 
-Покупка содержит:
+```ts
+type PaginatedDto<T> = {
+  data: T[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+};
 
-* магазин;
-* цену;
-* валюту;
-* стоимость доставки;
-* скидку;
-* итоговую стоимость;
-* дату покупки;
-* комментарий.
+type MoneyDto = { amount: number; currency: string };
 
-Покупки учитываются в стоимости коллекции.
+type ItemTypeDto = {
+  id: string;
+  code: ItemTypeCode;
+  name: string;
+};
 
----
-
-# 14. Карточки и отображение
-
-## 14.1 Карточка в коллекции
-
-Карточка коллекции компактная.
-
-Она показывает только сведения, полезные владельцу:
-
-* личная оценка;
-* наличие;
-* последняя партия;
-* всего партий;
-* активный предзаказ;
-* стоимость;
-* заметки;
-* место хранения;
-* быстрые действия.
-
-Главная кнопка - "Добавить партию".
-
----
-
-## 14.2 Карточка wishlist
-
-Карточка wishlist подробная.
-
-Она показывает справочную информацию и материалы для решения:
-
-* описание;
-* изображения;
-* характеристики;
-* механики;
-* категории;
-* авторов;
-* видео;
-* похожие игры;
-* цены;
-* внешние ссылки.
-
-Главные кнопки - "Добавить в коллекцию" и "Оформить предзаказ".
+type ImageCompactDto = {
+  id: string;
+  url?: string | null;
+  path?: string | null;
+  alt: string;
+};
+```
 
 ---
 
-# 15. Поиск и фильтрация
+# 8. Утверждённые DTO
 
-## 15.1 Поиск в коллекции
+## 8.1 ItemCompactDto
 
-Поиск в коллекции оптимизирован для быстрого нахождения своих игр.
+```ts
+type ItemCompactDto = {
+  id: string;
+  title: string;
+  originalTitle?: string | null;
+  type: ItemTypeDto;
+  year?: number | null;
+  cover?: ImageCompactDto | null;
+  minPlayers?: number | null;
+  maxPlayers?: number | null;
+  minPlayTime?: number | null;
+  maxPlayTime?: number | null;
+  communityRating?: number | null;
+};
+```
 
-Ищет по:
+Compact DTO не содержит description, полные taxonomy-массивы, все изображения,
+покупки, партии или предзаказы.
 
-* названию;
-* оригинальному названию;
-* типу;
-* месту хранения;
-* тегам;
-* заметкам;
-* игрокам и партиям, если применимо.
+Общие вложенные DTO detail-контрактов:
 
-Фильтры коллекции:
+```ts
+type TagDto = {
+  id: string;
+  name: string;
+  color?: string | null;
+};
 
-* есть в наличии;
-* тип;
-* личная оценка;
-* количество партий;
-* дата последней партии;
-* место хранения;
-* активный предзаказ;
-* теги.
+type ImageDto = {
+  id: string;
+  type: "reference" | "user";
+  provider?: string | null;
+  url?: string | null;
+  path?: string | null;
+  caption?: string | null;
+  sortOrder: number;
+};
+
+type ExternalReferenceDto = {
+  id: string;
+  provider: string;
+  externalId: string;
+  url?: string | null;
+  lastSync?: string | null;
+};
+
+type LinkDto = {
+  id: string;
+  type: "official" | "rules" | "kickstarter" | "gamefound" | "youtube" |
+    "review" | "publisher" | "shop" | "other";
+  url: string;
+  title?: string | null;
+};
+
+type ItemRelationDto = {
+  id: string;
+  direction: "parent" | "child";
+  relationType: "requires" | "expands" | "compatible_with" | "contains" |
+    "part_of" | "localized_version_of" | "alternative_to" | "related";
+  relatedItem: ItemCompactDto;
+  comment?: string | null;
+};
+
+type PurchaseDto = {
+  id: string;
+  shop: string;
+  price: MoneyDto;
+  deliveryCost?: MoneyDto | null;
+  discount?: MoneyDto | null;
+  totalPrice: MoneyDto;
+  purchaseDate?: string | null;
+  comment?: string | null;
+};
+
+type NoteDto = {
+  id: string;
+  title?: string | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+## 8.2 CollectionCardDto
+
+```ts
+type CollectionCardDto = {
+  item: ItemCompactDto;
+  userItem: {
+    states: UserItemState[];
+    ownedAt: string;
+    favorite: boolean;
+    personalRating?: number | null;
+    location?: string | null;
+    tags: { id: string; name: string; color?: string | null }[];
+  };
+  plays: {
+    count: number;
+    lastPlayedAt?: string | null;
+    lastResult?: "win" | "loss" | "score" | "unknown" | null;
+  };
+  expansionsCount: number;
+  imagesCount: number;
+  activePreorder?: PreorderSummaryDto | null;
+  purchaseTotal?: MoneyDto | null;
+};
+```
+
+`ownedAt` обязателен для записи, попавшей в collection response. Во время
+переходной миграции mapper использует документированный backfill fallback.
+
+## 8.3 WishlistCardDto
+
+```ts
+type WishlistCardDto = {
+  item: ItemCompactDto & {
+    minAge?: number | null;
+    complexity?: number | null;
+  };
+  userItem: {
+    states: UserItemState[];
+    interestLevel?: number | null;
+    decisionNotes?: string | null;
+    tags: { id: string; name: string; color?: string | null }[];
+  };
+  mechanics: string[];
+  categories: string[];
+  priceSignal?: MoneyDto | null;
+  activePreorder?: PreorderSummaryDto | null;
+};
+```
+
+Collection и wishlist используют разные DTO; единый перегруженный list DTO не
+допускается.
+
+## 8.4 PlayListItemDto
+
+```ts
+type PlayListItemDto = {
+  id: string;
+  item: ItemCompactDto;
+  playedAt: string;
+  startedAt?: string | null;
+  playersCount?: number | null;
+  durationMinutes?: number | null;
+  result?: "win" | "loss" | "score" | "unknown" | null;
+  score?: string | null;
+  scenario?: string | null;
+  playerNames: string[];
+  usedItems: ItemCompactDto[];
+  personalRating?: number | null;
+  notes?: string | null;
+  source: "manual" | "boardgamegeek";
+};
+```
+
+## 8.5 PreorderListItemDto
+
+```ts
+type PreorderSummaryDto = {
+  id: string;
+  status: PreorderStatus;
+  uiStatus: PreorderUiStatus;
+  expectedDate?: string | null;
+  expectedDatePrecision: ExpectedDatePrecision;
+};
+
+type PreorderListItemDto = PreorderSummaryDto & {
+  item: ItemCompactDto;
+  shop: string;
+  price: MoneyDto;
+  orderDate?: string | null;
+  receivedDate?: string | null;
+  trackingNumber?: string | null;
+  comment?: string | null;
+  updatedAt: string;
+};
+
+type PreorderExpectedDateChangedEventDto = {
+  id: string;
+  type: "expected_date_changed";
+  oldValue?: ExpectedDateEventValue | null;
+  newValue?: ExpectedDateEventValue | null;
+  reason?: string | null;
+  comment?: string | null;
+  createdAt: string;
+  legacyFormat: boolean;
+};
+
+type PreorderStatusChangedEventDto = {
+  id: string;
+  type: "status_changed";
+  oldValue?: PreorderStatus | null;
+  newValue?: PreorderStatus | null;
+  reason?: string | null;
+  comment?: string | null;
+  createdAt: string;
+};
+
+type PreorderEventDto =
+  | PreorderExpectedDateChangedEventDto
+  | PreorderStatusChangedEventDto;
+
+type UpdatePreorderExpectedDateResponse = {
+  preorder: PreorderListItemDto;
+  event: PreorderEventDto;
+};
+```
+
+## 8.6 Detail DTO
+
+```ts
+type ItemReferenceDetailDto = ItemCompactDto & {
+  description?: string | null;
+  minAge?: number | null;
+  complexity?: number | null;
+  mechanics: { id: string; name: string }[];
+  categories: { id: string; name: string }[];
+  designers: { id: string; name: string }[];
+  artists: { id: string; name: string }[];
+  publishers: { id: string; name: string }[];
+  images: ImageDto[];
+  externalReferences: ExternalReferenceDto[];
+  links: LinkDto[];
+  relations: ItemRelationDto[];
+};
+
+type UserItemDetailDto = {
+  id: string;
+  states: UserItemState[];
+  lifecycleStatus: UserItemLifecycleStatus;
+  owned: boolean;
+  wishlist: boolean;
+  ownedAt?: string | null;
+  favorite: boolean;
+  location?: string | null;
+  personalRating?: number | null;
+  notes?: string | null;
+  interestLevel?: number | null;
+  decisionNotes?: string | null;
+  tags: TagDto[];
+};
+
+type ItemDetailDto = {
+  item: ItemReferenceDetailDto;
+  userItem?: UserItemDetailDto | null;
+};
+
+type CollectionItemDetailDto = ItemDetailDto & {
+  userItem: UserItemDetailDto;
+  playSummary: {
+    count: number;
+    lastPlayedAt?: string | null;
+    totalDurationMinutes: number;
+  };
+  recentPlays: PlayListItemDto[];
+  purchases: PurchaseDto[];
+  preorders: PreorderListItemDto[];
+  notes: NoteDto[];
+  primaryAction: "add_play";
+};
+
+type WishlistItemDetailDto = ItemDetailDto & {
+  userItem: UserItemDetailDto;
+  shopLinks: LinkDto[];
+  videos: LinkDto[];
+  similarItems: ItemCompactDto[];
+  primaryActions: ("add_to_collection" | "create_preorder")[];
+};
+```
+
+`ImageDto`, `ExternalReferenceDto`, `LinkDto`, `ItemRelationDto`, `TagDto`,
+`PurchaseDto` и `NoteDto` являются shared DTO и не содержат Prisma-типов.
+Collection detail остаётся owner-first; длинная справка находится в
+`item` и может загружаться отдельной секцией.
+
+## 8.7 DashboardDto
+
+```ts
+type DashboardDto = {
+  recentPlays: PlayListItemDto[];             // максимум 4
+  upcomingPreorders: PreorderListItemDto[];   // максимум 3
+  recentlyAdded: CollectionCardDto[];         // максимум 4
+  monthSummary: {
+    playsCount: number;
+    uniqueItemsCount: number;
+    totalDurationMinutes: number;
+    averagePersonalRating?: number | null;
+    winsCount: number;
+  };
+  favoriteItem?: CollectionCardDto | null;
+  activity: { date: string; playsCount: number }[];
+};
+```
+
+`GET /api/dashboard` возвращает один `DashboardDto`. Все агрегаты вычисляются
+application service; React-компоненты их не достраивают.
 
 ---
 
-## 15.2 Поиск в wishlist
+# 9. Целевые read endpoints
 
-Поиск в wishlist и каталоге оптимизирован для изучения новых игр.
+```text
+GET /api/dashboard                 → DashboardDto
+GET /api/collection                → PaginatedDto<CollectionCardDto>
+GET /api/collection/:itemId        → CollectionItemDetailDto
+GET /api/wishlist                  → PaginatedDto<WishlistCardDto>
+GET /api/wishlist/:itemId          → WishlistItemDetailDto
+GET /api/plays                     → PaginatedDto<PlayListItemDto>
+GET /api/preorders                 → PaginatedDto<PreorderListItemDto>
+```
 
-Ищет по:
-
-* названию;
-* оригинальному названию;
-* автору;
-* издателю;
-* механике;
-* категории;
-* количеству игроков;
-* времени партии;
-* возрасту;
-* рейтингу;
-* внешнему идентификатору;
-* ссылке.
-
-Фильтры wishlist:
-
-* рейтинг;
-* количество игроков;
-* время партии;
-* сложность;
-* механики;
-* категории;
-* доступность локализации;
-* наличие цены;
-* наличие видео или обзора;
-* статус интереса.
+List endpoints выполняют фильтрацию, сортировку, pagination и агрегаты на
+сервере. Они не загружают полные дочерние коллекции для последующей обработки в
+браузере.
 
 ---
 
-# 16. Статистика
+# 10. URL query contracts
 
-Статистика строится вокруг партий и коллекции.
+## 10.1 Общие правила сериализации
 
-Минимальные показатели:
+- ключи и enum-значения чувствительны к регистру и записываются lowercase;
+- пробелы кодируются стандартным `URLSearchParams`;
+- boolean записывается как `true` или `false`;
+- даты фильтров записываются как `YYYY-MM-DD`;
+- массивы используют повторяемый ключ, например `mechanic=deck-building&mechanic=drafting`;
+- пустые значения и значения по умолчанию удаляются из URL;
+- изменение любого фильтра или sort сбрасывает `page=1`;
+- `page` и `pageSize` — положительные целые;
+- browser Back/Forward полностью восстанавливает состояние страницы.
 
-* всего партий;
-* партий за месяц;
-* любимая игра;
-* самые часто играемые игры;
-* последние партии;
-* количество партий по годам и месяцам;
-* средняя длительность партии;
-* самые частые игроки;
-* количество игр в коллекции;
-* стоимость коллекции;
-* стоимость активных предзаказов;
-* недавно добавленные игры.
+## 10.2 Collection
+
+Путь: `/collection` и `GET /api/collection`.
+
+```ts
+type CollectionQuery = {
+  q?: string;
+  type?: ItemTypeCode;
+  personalRating?: number; // 1..10
+  playsMin?: number;
+  playsMax?: number;
+  lastPlayedFrom?: string;
+  lastPlayedTo?: string;
+  hasExpansions?: boolean;
+  hasActivePreorder?: boolean;
+  neverPlayed?: boolean;
+  notPlayedSince?: string;
+  location?: string;
+  tag?: string[]; // repeatable tag id
+  favorite?: boolean;
+  sort?: "added" | "lastPlayed" | "plays" | "rating" | "title";
+  direction?: "asc" | "desc";
+  page?: number;
+  pageSize?: 24;
+};
+```
+
+Defaults: `sort=added`, `direction=desc`, `page=1`, `pageSize=24`.
+`neverPlayed=true` и фильтры последней партии взаимоисключающие; конфликт даёт
+`400` в API и снимается последним действием в UI.
+
+## 10.3 Wishlist
+
+Путь: `/wishlist` и `GET /api/wishlist`.
+
+```ts
+type WishlistQuery = {
+  q?: string;
+  type?: ItemTypeCode;
+  ratingMin?: number;
+  players?: number;
+  playTimeMax?: number;
+  complexityMin?: number;
+  complexityMax?: number;
+  mechanic?: string[]; // repeatable id/code
+  category?: string[]; // repeatable id/code
+  hasLocalization?: boolean;
+  hasPrice?: boolean;
+  interestLevel?: number; // 1..5
+  sort?: "interest" | "rating" | "year" | "title" | "updated";
+  direction?: "asc" | "desc";
+  page?: number;
+  pageSize?: 24;
+};
+```
+
+Defaults: `sort=interest`, `direction=desc`, `page=1`, `pageSize=24`.
+
+## 10.4 Plays
+
+Путь: `/plays` и `GET /api/plays`.
+
+```ts
+type PlaysQuery = {
+  itemId?: string;
+  from?: string;
+  to?: string;
+  result?: "win" | "loss" | "score" | "unknown";
+  player?: string;
+  playersMin?: number;
+  playersMax?: number;
+  durationMin?: number;
+  durationMax?: number;
+  usedItemId?: string;
+  source?: "manual" | "boardgamegeek";
+  sort?: "playedAt" | "duration" | "rating";
+  direction?: "asc" | "desc";
+  page?: number;
+  pageSize?: number;
+};
+```
+
+Defaults: `sort=playedAt`, `direction=desc`, `page=1`, `pageSize=24`;
+максимальный `pageSize` — 100. JSON-фильтры допустимо временно применять в
+application service только к ограниченной выборке заданного периода.
+
+## 10.5 Preorders
+
+Путь: `/preorders` и `GET /api/preorders`.
+
+```ts
+type PreorderQuery = {
+  group?: "all" | "active" | "received" | "cancelled";
+  itemId?: string;
+  expectedFrom?: string;
+  expectedTo?: string;
+  page?: number;
+  pageSize?: number;
+};
+```
+
+Defaults: `group=all`, `page=1`, `pageSize=24`; максимальный `pageSize` — 100.
+`active` включает UI-группы `active` и `delayed`.
+
+## 10.6 Detail tabs и statistics
+
+Collection detail `/collection/:itemId`:
+
+```ts
+type CollectionDetailQuery = {
+  tab?: "overview" | "expansions" | "plays" | "photos" | "purchases" |
+    "notes" | "relations";
+};
+```
+
+Default `tab=overview`. Wishlist detail использует `tab=overview | photos |
+relations | links`; default также `overview`.
+
+Statistics сохраняет период в URL:
+
+```ts
+type StatisticsQuery = {
+  period?: "month" | "quarter" | "year" | "all" | "custom";
+  from?: string;
+  to?: string;
+};
+```
+
+`from` и `to` обязательны только при `period=custom`.
 
 ---
 
-# 17. Интерфейс
+# 11. Импорт, экспорт и совместимость
 
-Основные страницы:
+JSON backup включает `Item`, `UserItem`, партии, покупки, предзаказы и события,
+изображения, ссылки, связи, заметки, теги и внешние идентификаторы.
 
-* Главная;
-* Моя коллекция;
-* Wishlist;
-* Предзаказы;
-* Партии;
-* Статистика;
-* Настройки.
+Следующая версия backup schema обязана добавить:
 
-Главная показывает:
+- `UserItem.ownedAt` и `UserItem.favorite`;
+- lifecycle-семантику `UserItem.status`;
+- `Preorder.expectedDatePrecision` и новый event value format;
+- `PlaySession.startedAt` и `PlaySession.personalRating` после их миграции.
 
-* во что можно сыграть сегодня;
-* ближайшие предзаказы;
-* последние партии;
-* быстрые действия.
-
-Быстрые действия:
-
-* добавить партию;
-* изменить предзаказ;
-* добавить игру в коллекцию;
-* добавить игру в wishlist.
-
-Интерфейс коллекции и wishlist должен намеренно отличаться: коллекция компактная, wishlist подробный.
+Importer принимает предыдущую версию и применяет defaults из разделов 3–5.
+Обязателен round-trip test `export → import → export`; импорт не создаёт дубли
+`ExternalReference`, `bggPlayId` и `ItemRelation`.
 
 ---
 
-# 18. Импорт, экспорт и синхронизация
+# 12. Архитектурные требования
 
-Поддерживается:
+Поток данных:
 
-* экспорт JSON;
-* импорт JSON;
-* синхронизация справочных данных `Item`;
-* синхронизация истории партий с BGG.
+```text
+Page / Feature
+    ↓
+frontend query hook / adapter
+    ↓
+REST API
+    ↓
+Application Service
+    ↓
+Prisma / Provider abstraction
+```
 
-Экспорт должен включать:
+UI-компоненты получают готовые props/view models, не импортируют Prisma-типы и
+не обращаются к providers. Mock и REST adapters реализуют один интерфейс.
 
-* `Item`;
-* типы;
-* справочные поля `Item`;
-* `UserItem`;
-* wishlist-состояние;
-* покупки;
-* предзаказы;
-* историю изменений предзаказов;
-* партии;
-* связи;
-* ссылки;
-* теги.
+Справочные обновления не изменяют `UserItem`. Синхронизация BGG остаётся
+идемпотентной. Collection и wishlist всегда используют один `Item`.
 
 ---
 
-# 19. Архитектурные требования
+# 13. Критерии готовности этапа 0
 
-Приложение должно разделять:
-
-* справочные данные;
-* пользовательское состояние `UserItem`;
-* события истории партий;
-* события истории предзаказов.
-
-Обновление справочной информации не должно изменять `UserItem`.
-
-Синхронизация партий с BGG не должна создавать дубли и не должна перезаписывать локально измененные пользовательские поля без явного правила.
-
-В доменной модели не должно быть отдельных основных сущностей для базовой игры, дополнения или аксессуара.
-
-Wishlist и коллекция не являются разными типами `Item`. Это разные пользовательские представления `UserItem` для одного `Item`.
-
----
-
-# 20. MVP
-
-MVP зафиксирован как список пользовательских сценариев в [MVP.md](MVP.md).
-
-Первая версия считается готовой, когда пользователь может:
-
-* вести две области: коллекцию и wishlist;
-* добавлять партию;
-* видеть историю партий;
-* синхронизировать партии с BGG;
-* менять дату предзаказа;
-* добавлять игру в коллекцию;
-* добавлять игру в wishlist;
-* получать компактную карточку для своих игр;
-* получать подробную карточку для игр wishlist.
+- Новые поля и их backfill-семантика зафиксированы.
+- `UserItem.status` отделён от вычисляемых `states`.
+- Точность ожидаемой даты и legacy event reader утверждены.
+- Compact, detail и dashboard DTO имеют однозначные формы.
+- URL-фильтры, вкладки, sort и pagination имеют стабильные имена и defaults.
+- Все изменения migration/API/UI должны ссылаться на эти контракты.
