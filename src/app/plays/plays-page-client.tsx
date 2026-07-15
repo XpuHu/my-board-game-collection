@@ -33,13 +33,16 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/toast-provider";
 import {
-  apiClient,
   type CreatePlaySessionRequest,
   type ItemListDto,
+  type PlayListItemDto,
   type PlayResult,
-  type PlaySessionDto,
-  type PlaysQuery,
 } from "@/shared/api";
+import {
+  legacyApiClient as apiClient,
+  type LegacyPlaysQuery as PlaysQuery,
+} from "@/shared/api/legacy";
+import { playsRestAdapter } from "@/features/plays/api";
 
 const ALL_VALUE = "__all__";
 const NONE_VALUE = "__none__";
@@ -76,7 +79,7 @@ const emptyForm: PlayFormState = {
 
 export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
   const { toast } = useToast();
-  const [plays, setPlays] = React.useState<PlaySessionDto[]>([]);
+  const [plays, setPlays] = React.useState<PlayListItemDto[]>([]);
   const [collectionItems, setCollectionItems] = React.useState<ItemListDto[]>(
     [],
   );
@@ -86,7 +89,7 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
   const [error, setError] = React.useState<string | null>(null);
   const [hasImportedPlays, setHasImportedPlays] = React.useState(false);
   const [dialogOpen, setDialogOpen] = React.useState(Boolean(initialItemId));
-  const [editingPlay, setEditingPlay] = React.useState<PlaySessionDto | null>(
+  const [editingPlay, setEditingPlay] = React.useState<PlayListItemDto | null>(
     null,
   );
   const [filters, setFilters] = React.useState({
@@ -105,12 +108,12 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
     let isActive = true;
 
     Promise.all([
-      apiClient.plays.list({
+      playsRestAdapter.load({
         ...toPlaysQuery(appliedFilters),
         pageSize: 100,
       }),
       apiClient.collection.list({ pageSize: 100 }),
-      apiClient.plays.list({ source: "boardgamegeek", pageSize: 1 }),
+      playsRestAdapter.load({ source: "boardgamegeek", pageSize: 1 }),
     ])
       .then(([playsResponse, collectionResponse, importedResponse]) => {
         if (!isActive) {
@@ -183,10 +186,10 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
     setDialogOpen(true);
   }
 
-  function openEditDialog(play: PlaySessionDto) {
+  function openEditDialog(play: PlayListItemDto) {
     setEditingPlay(play);
     setForm({
-      itemId: play.itemId,
+      itemId: play.item.id,
       playedAt: toDateInputValue(play.playedAt),
       playersCount: play.playersCount ? String(play.playersCount) : "",
       durationMinutes: play.durationMinutes ? String(play.durationMinutes) : "",
@@ -194,7 +197,7 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
       score: play.score ?? "",
       scenario: play.scenario ?? "",
       playerNames: play.playerNames.join(", "),
-      usedItemIds: play.usedItemIds,
+      usedItemIds: play.usedItems.map((item) => item.id),
       notes: play.notes ?? "",
     });
     setDialogOpen(true);
@@ -261,7 +264,7 @@ export function PlaysPageClient({ initialItemId }: PlaysPageClientProps) {
     }
   }
 
-  async function deletePlay(play: PlaySessionDto) {
+  async function deletePlay(play: PlayListItemDto) {
     if (!window.confirm(`Удалить партию ${formatDate(play.playedAt)}?`)) {
       return;
     }
@@ -623,9 +626,9 @@ function PlayRow({
   onEdit,
   onDelete,
 }: {
-  play: PlaySessionDto;
-  onEdit: (play: PlaySessionDto) => void;
-  onDelete: (play: PlaySessionDto) => void;
+  play: PlayListItemDto;
+  onEdit: (play: PlayListItemDto) => void;
+  onDelete: (play: PlayListItemDto) => void;
 }) {
   return (
     <article className="grid gap-3 px-4 py-3 md:grid-cols-[10rem_1fr_auto] md:items-center">
@@ -638,10 +641,10 @@ function PlayRow({
 
       <div className="min-w-0">
         <Link
-          href={`/collection/${play.itemId}`}
+          href={`/collection/${play.item.id}`}
           className="font-medium hover:underline"
         >
-          {play.itemTitle}
+          {play.item.title}
         </Link>
         <div className="mt-1 flex flex-wrap gap-2 text-sm text-muted-foreground">
           {play.playersCount ? <span>{play.playersCount} игроков</span> : null}

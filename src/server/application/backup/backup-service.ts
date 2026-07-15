@@ -9,6 +9,8 @@ import type {
   JsonImportReportDto,
 } from "@/shared/api";
 import type { JsonBackupInput } from "@/shared/api/schemas";
+import { resolveLifecycleStatus } from "@/server/application/items/user-item-state";
+import { resolveUserItemTransition } from "@/server/application/items/user-item-transition";
 
 const SCHEMA_VERSION = 1;
 
@@ -500,10 +502,13 @@ async function importUserItems(
       where: { itemId },
       select: { id: true },
     });
-    const data = {
+    const next = resolveUserItemTransition(null, {
       owned: userItem.owned,
-      wishlist: userItem.wishlist,
-      status: userItem.status,
+      wishlist: userItem.owned ? false : userItem.wishlist,
+      status: resolveLifecycleStatus(userItem.status),
+    });
+    const data = {
+      ...next,
       location: userItem.location,
       personalRating: userItem.personalRating,
       notes: userItem.notes,

@@ -19,11 +19,11 @@ import { UserItemEditor } from "@/components/user-item-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  apiClient,
   type CollectionItemDetailsDto,
   type ItemDetailsDto,
   type UserItemDto,
 } from "@/shared/api";
+import { legacyApiClient as apiClient } from "@/shared/api/legacy";
 
 export function CollectionItemPageClient({ itemId }: { itemId: string }) {
   const [details, setDetails] = React.useState<CollectionItemDetailsDto | null>(

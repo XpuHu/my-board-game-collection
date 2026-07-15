@@ -21,11 +21,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  apiClient,
   type JsonBackupDto,
   type JsonImportReportDto,
   type SyncBggPlaysResponse,
 } from "@/shared/api";
+import { legacyApiClient as apiClient } from "@/shared/api/legacy";
 import type { IntegrationFeatureFlags } from "@/server/config/feature-flags";
 
 const BGG_USERNAME_KEY = "board-game-collection:bgg-username";

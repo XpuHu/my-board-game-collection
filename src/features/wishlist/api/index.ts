@@ -2,10 +2,13 @@ import {
   createMockQueryAdapter,
   createRestQueryAdapter,
 } from "@/shared/api/query-adapter";
-import type { PaginatedResponse, WishlistCardDto } from "@/shared/api/types";
-import type { WishlistQuery } from "@/shared/api/client";
+import type {
+  PaginatedResponse,
+  WishlistCardDto,
+  WishlistQueryDto,
+} from "@/shared/api/types";
 
-export type WishlistListQuery = WishlistQuery;
+export type WishlistListQuery = WishlistQueryDto;
 export type WishlistListResult = PaginatedResponse<WishlistCardDto>;
 
 export const wishlistRestAdapter = createRestQueryAdapter<

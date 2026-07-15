@@ -17,12 +17,12 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  apiClient,
   type ItemListDto,
   type MoneyAmountDto,
   type PlaySessionDto,
   type StatisticsSummaryDto,
 } from "@/shared/api";
+import { legacyApiClient as apiClient } from "@/shared/api/legacy";
 
 export function StatisticsPageClient() {
   const [summary, setSummary] = React.useState<StatisticsSummaryDto | null>(

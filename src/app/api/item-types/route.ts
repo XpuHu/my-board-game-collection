@@ -25,12 +25,10 @@ function mapItemType(itemType: {
   id: string;
   code: string;
   name: string;
-  isSystem: boolean;
 }): ItemTypeDto {
   return {
     id: itemType.id,
     code: itemType.code as ItemTypeDto["code"],
     name: itemType.name,
-    isSystem: itemType.isSystem,
   };
 }

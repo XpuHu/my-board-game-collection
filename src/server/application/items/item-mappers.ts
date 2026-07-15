@@ -24,10 +24,8 @@ import type {
   ItemDto,
   ItemListDto,
   ItemRelationDto,
-  ItemStatus,
   ItemTypeCode,
   ItemTypeDto,
-  LegacyPreorderEventDto,
   LinkDto,
   LinkType,
   NoteDto,
@@ -35,7 +33,6 @@ import type {
   PlayResult,
   PlaySessionDto,
   PlaySummaryDto,
-  PreorderDto,
   PreorderEventDto,
   PreorderListItemDto,
   PreorderSummaryDto,
@@ -52,6 +49,7 @@ import {
   resolveLifecycleStatus,
   resolveUserItemStates,
 } from "@/server/application/items/user-item-state";
+import { getPreorderUiStatus } from "@/server/application/preorders/preorder-status";
 
 export type ItemForDetails = Item & {
   type: ItemType;
@@ -182,13 +180,25 @@ export function mapItemDetails(item: ItemForDetails): ItemDetailsDto {
     links: item.links.map(mapLink),
     purchases: item.purchases.map(mapPurchase),
     preorders: item.preorders.map((preorder) =>
-      mapPreorder(preorder, item.title),
+      mapPreorderListItem({ ...preorder, item }),
     ),
     playSummary: mapPlaySummary(item.playSessions),
     notes: item.notes.map(mapNote),
     relations: [
-      ...item.parentRelations.map(mapItemRelation),
-      ...item.childRelations.map(mapItemRelation),
+      ...item.parentRelations.map((relation) => ({
+        id: relation.id,
+        direction: "child" as const,
+        relationType: asRelationType(relation.relationType),
+        relatedItem: mapItemCompact(relation.childItem),
+        comment: relation.comment,
+      })),
+      ...item.childRelations.map((relation) => ({
+        id: relation.id,
+        direction: "parent" as const,
+        relationType: asRelationType(relation.relationType),
+        relatedItem: mapItemCompact(relation.parentItem),
+        comment: relation.comment,
+      })),
     ],
   };
 }
@@ -208,7 +218,7 @@ export function mapItemList(userItem: UserItemForList): ItemListDto {
       rating: decimalToNumber(item.rating),
     },
     userItem: {
-      status: userItem.status as ItemStatus,
+      status: resolveLifecycleStatus(userItem.status),
       owned: userItem.owned,
       wishlist: userItem.wishlist,
       personalRating: userItem.personalRating,
@@ -288,7 +298,7 @@ export function mapCollectionCardToLegacy(
       rating: decimalToNumber(userItem.item.rating),
     },
     userItem: {
-      status: userItem.status as ItemStatus,
+      status: resolveLifecycleStatus(userItem.status),
       owned: userItem.owned,
       wishlist: userItem.wishlist,
       personalRating: userItem.personalRating,
@@ -351,7 +361,7 @@ export function mapWishlistCardToLegacy(
       rating: decimalToNumber(userItem.item.rating),
     },
     userItem: {
-      status: userItem.status as ItemStatus,
+      status: resolveLifecycleStatus(userItem.status),
       owned: userItem.owned,
       wishlist: userItem.wishlist,
       personalRating: userItem.personalRating,
@@ -374,7 +384,7 @@ export function mapUserItem(userItem: UserItemWithTags): UserItemDto {
   return {
     id: userItem.id,
     itemId: userItem.itemId,
-    status: userItem.status as ItemStatus,
+    status: resolveLifecycleStatus(userItem.status),
     owned: userItem.owned,
     wishlist: userItem.wishlist,
     location: userItem.location,
@@ -477,14 +487,12 @@ function mapTag(tag: Tag): TagDto {
 function mapImage(image: Image): ImageDto {
   return {
     id: image.id,
-    itemId: image.itemId,
     type: image.type as ImageDto["type"],
     provider: image.provider as ProviderCode | null,
     url: image.url,
     path: image.path,
     caption: image.caption,
     sortOrder: image.sortOrder,
-    createdAt: image.createdAt.toISOString(),
   };
 }
 
@@ -502,7 +510,6 @@ function mapExternalReference(
 ): ExternalReferenceDto {
   return {
     id: externalReference.id,
-    itemId: externalReference.itemId,
     provider: externalReference.provider as ProviderCode,
     externalId: externalReference.externalId,
     url: externalReference.url,
@@ -513,7 +520,6 @@ function mapExternalReference(
 function mapLink(link: Link): LinkDto {
   return {
     id: link.id,
-    itemId: link.itemId,
     type: link.type as LinkType,
     url: link.url,
     title: link.title,
@@ -523,40 +529,19 @@ function mapLink(link: Link): LinkDto {
 export function mapPurchase(purchase: Purchase): PurchaseDto {
   return {
     id: purchase.id,
-    itemId: purchase.itemId,
     shop: purchase.shop,
-    price: decimalToNumber(purchase.price) ?? 0,
-    currency: purchase.currency,
-    deliveryCost: decimalToNumber(purchase.deliveryCost),
-    discount: decimalToNumber(purchase.discount),
-    totalPrice: decimalToNumber(purchase.totalPrice) ?? 0,
+    price: money(purchase.price, purchase.currency),
+    deliveryCost:
+      purchase.deliveryCost == null
+        ? null
+        : money(purchase.deliveryCost, purchase.currency),
+    discount:
+      purchase.discount == null
+        ? null
+        : money(purchase.discount, purchase.currency),
+    totalPrice: money(purchase.totalPrice, purchase.currency),
     purchaseDate: purchase.purchaseDate?.toISOString() ?? null,
     comment: purchase.comment,
-    createdAt: purchase.createdAt.toISOString(),
-    updatedAt: purchase.updatedAt.toISOString(),
-  };
-}
-
-export function mapPreorder(
-  preorder: Preorder & { events: PreorderEvent[] },
-  itemTitle: string,
-): PreorderDto {
-  return {
-    id: preorder.id,
-    itemId: preorder.itemId,
-    itemTitle,
-    shop: preorder.shop,
-    price: decimalToNumber(preorder.price) ?? 0,
-    currency: preorder.currency,
-    orderDate: preorder.orderDate?.toISOString() ?? null,
-    expectedDate: preorder.expectedDate?.toISOString() ?? null,
-    receivedDate: preorder.receivedDate?.toISOString() ?? null,
-    trackingNumber: preorder.trackingNumber,
-    status: preorder.status as PreorderStatus,
-    comment: preorder.comment,
-    events: preorder.events.map(mapLegacyPreorderEvent),
-    createdAt: preorder.createdAt.toISOString(),
-    updatedAt: preorder.updatedAt.toISOString(),
   };
 }
 
@@ -575,7 +560,13 @@ export function mapPreorderListItem(
     receivedDate: preorder.receivedDate?.toISOString() ?? null,
     trackingNumber: preorder.trackingNumber,
     status: preorder.status as PreorderStatus,
-    uiStatus: getPreorderUiStatus(preorder, now),
+    uiStatus: getPreorderUiStatus(
+      {
+        ...preorder,
+        expectedDatePrecision: preorder.expectedDate ? "day" : "unknown",
+      },
+      now,
+    ),
     comment: preorder.comment,
     updatedAt: preorder.updatedAt.toISOString(),
   };
@@ -588,41 +579,15 @@ export function mapPreorderSummary(
   return {
     id: preorder.id,
     status: preorder.status as PreorderStatus,
-    uiStatus: getPreorderUiStatus(preorder, now),
+    uiStatus: getPreorderUiStatus(
+      {
+        ...preorder,
+        expectedDatePrecision: preorder.expectedDate ? "day" : "unknown",
+      },
+      now,
+    ),
     expectedDate: preorder.expectedDate?.toISOString() ?? null,
     expectedDatePrecision: preorder.expectedDate ? "day" : "unknown",
-  };
-}
-
-function getPreorderUiStatus(
-  preorder: Pick<Preorder, "status" | "expectedDate">,
-  now: Date,
-) {
-  if (preorder.status === "received") {
-    return "received" as const;
-  }
-
-  if (preorder.status === "cancelled") {
-    return "cancelled" as const;
-  }
-
-  if (preorder.expectedDate && preorder.expectedDate < now) {
-    return "delayed" as const;
-  }
-
-  return "active" as const;
-}
-
-function mapLegacyPreorderEvent(event: PreorderEvent): LegacyPreorderEventDto {
-  return {
-    id: event.id,
-    preorderId: event.preorderId,
-    type: event.type,
-    oldValue: event.oldValue,
-    newValue: event.newValue,
-    reason: event.reason,
-    comment: event.comment,
-    createdAt: event.createdAt.toISOString(),
   };
 }
 
@@ -683,32 +648,11 @@ export function mapCollectionItemDetail(
       ),
     },
     recentPlays,
-    purchases: item.purchases.map((purchase) => ({
-      id: purchase.id,
-      shop: purchase.shop,
-      price: money(purchase.price, purchase.currency),
-      deliveryCost:
-        purchase.deliveryCost == null
-          ? null
-          : money(purchase.deliveryCost, purchase.currency),
-      discount:
-        purchase.discount == null
-          ? null
-          : money(purchase.discount, purchase.currency),
-      totalPrice: money(purchase.totalPrice, purchase.currency),
-      purchaseDate: purchase.purchaseDate?.toISOString() ?? null,
-      comment: purchase.comment,
-    })),
+    purchases: item.purchases.map(mapPurchase),
     preorders: item.preorders.map((preorder) =>
       mapPreorderListItem({ ...preorder, item }),
     ),
-    notes: item.notes.map(({ itemId: _itemId, ...note }) => ({
-      id: note.id,
-      title: note.title,
-      body: note.body,
-      createdAt: note.createdAt.toISOString(),
-      updatedAt: note.updatedAt.toISOString(),
-    })),
+    notes: item.notes.map(mapNote),
     primaryAction: "add_play",
   };
 }
@@ -718,12 +662,7 @@ export function mapWishlistItemDetail(
   similarItems: ItemForCompact[] = [],
 ): WishlistItemDetailDto {
   if (!item.userItem) throw new Error("Wishlist detail requires a UserItem");
-  const links = item.links.map(({ itemId: _itemId, ...link }) => ({
-    id: link.id,
-    type: link.type as LinkType,
-    url: link.url,
-    title: link.title,
-  }));
+  const links = item.links.map(mapLink);
 
   return {
     item: mapItemReferenceDetail(item),
@@ -740,11 +679,6 @@ export function mapWishlistItemDetail(
 function mapItemReferenceDetail(item: ItemForDetails) {
   const taxonomy = (value: unknown) =>
     jsonStringArray(value).map((name) => ({ id: name, name }));
-  const withoutItemId = <T extends { itemId: string }>(value: T) => {
-    const { itemId: _itemId, ...rest } = value;
-    return rest;
-  };
-
   return {
     ...mapItemCompact(item),
     description: item.description,
@@ -755,23 +689,21 @@ function mapItemReferenceDetail(item: ItemForDetails) {
     designers: taxonomy(item.designers),
     artists: taxonomy(item.artists),
     publishers: taxonomy(item.publishers),
-    images: item.images.map((image) => withoutItemId(mapImage(image))),
-    externalReferences: item.externalReferences.map((reference) =>
-      withoutItemId(mapExternalReference(reference)),
-    ),
-    links: item.links.map((link) => withoutItemId(mapLink(link))),
+    images: item.images.map(mapImage),
+    externalReferences: item.externalReferences.map(mapExternalReference),
+    links: item.links.map(mapLink),
     relations: [
       ...item.parentRelations.map((relation) => ({
         id: relation.id,
         direction: "child" as const,
-        relationType: relation.relationType,
+        relationType: asRelationType(relation.relationType),
         relatedItem: mapItemCompact(relation.childItem),
         comment: relation.comment,
       })),
       ...item.childRelations.map((relation) => ({
         id: relation.id,
         direction: "parent" as const,
-        relationType: relation.relationType,
+        relationType: asRelationType(relation.relationType),
         relatedItem: mapItemCompact(relation.parentItem),
         comment: relation.comment,
       })),
@@ -807,23 +739,10 @@ function mapUserItemDetail(
 function mapNote(note: Note): NoteDto {
   return {
     id: note.id,
-    itemId: note.itemId,
     title: note.title,
     body: note.body,
     createdAt: note.createdAt.toISOString(),
     updatedAt: note.updatedAt.toISOString(),
-  };
-}
-
-function mapItemRelation(relation: ItemRelation): ItemRelationDto {
-  return {
-    id: relation.id,
-    parentItemId: relation.parentItemId,
-    childItemId: relation.childItemId,
-    relationType: relation.relationType,
-    comment: relation.comment,
-    createdAt: relation.createdAt.toISOString(),
-    updatedAt: relation.updatedAt.toISOString(),
   };
 }
 
@@ -942,4 +861,21 @@ function asPreorderStatus(value: string | null): PreorderStatus | null {
   )
     ? (value as PreorderStatus)
     : null;
+}
+
+const relationTypes: ItemRelationDto["relationType"][] = [
+  "requires",
+  "expands",
+  "compatible_with",
+  "contains",
+  "part_of",
+  "localized_version_of",
+  "alternative_to",
+  "related",
+];
+
+function asRelationType(value: string): ItemRelationDto["relationType"] {
+  return relationTypes.includes(value as ItemRelationDto["relationType"])
+    ? (value as ItemRelationDto["relationType"])
+    : "related";
 }

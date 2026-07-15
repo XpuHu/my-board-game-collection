@@ -27,6 +27,19 @@ describe("foundation target and legacy contracts", () => {
         usedItemIds: [],
       },
     });
+    await prisma.image.create({
+      data: { itemId: item.id, type: "user", url: "https://example.com/game.jpg" },
+    });
+    await prisma.purchase.create({
+      data: {
+        itemId: item.id,
+        shop: "Shop",
+        price: 90,
+        currency: "USD",
+        totalPrice: 100,
+        deliveryCost: 10,
+      },
+    });
 
     const target = await json(getCollection(request("/api/collection")));
     const legacy = await json(
@@ -40,7 +53,7 @@ describe("foundation target and legacy contracts", () => {
         favorite: false,
       },
       plays: { count: 1, lastResult: "win" },
-      imagesCount: 0,
+      imagesCount: 1,
     });
     expect(target.data[0].userItem.ownedAt).toMatch(/^\d{4}-/);
     expect(target.data[0]).not.toHaveProperty("playsCount");
@@ -58,6 +71,18 @@ describe("foundation target and legacy contracts", () => {
       favorite: false,
     });
     expect(detail.playSummary).toMatchObject({ count: 1 });
+    expect(detail.item.images[0]).toMatchObject({
+      type: "user",
+      url: "https://example.com/game.jpg",
+    });
+    expect(detail.item.images[0]).not.toHaveProperty("itemId");
+    expect(detail.item.images[0]).not.toHaveProperty("createdAt");
+    expect(detail.purchases[0]).toMatchObject({
+      price: { amount: 90, currency: "USD" },
+      deliveryCost: { amount: 10, currency: "USD" },
+      totalPrice: { amount: 100, currency: "USD" },
+    });
+    expect(detail.purchases[0]).not.toHaveProperty("itemId");
   });
 
   it("returns 400 for invalid enums, ranges, dates and conflicting filters", async () => {

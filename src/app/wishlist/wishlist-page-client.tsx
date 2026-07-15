@@ -23,7 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiClient, type ItemListDto, type WishlistQuery } from "@/shared/api";
+import type { WishlistCardDto, WishlistQueryDto } from "@/shared/api";
+import { wishlistRestAdapter } from "@/features/wishlist/api";
 
 const ANY_VALUE = "__any__";
 
@@ -36,7 +37,7 @@ const ratingOptions = [
 ];
 
 export function WishlistPageClient() {
-  const [items, setItems] = React.useState<ItemListDto[]>([]);
+  const [items, setItems] = React.useState<WishlistCardDto[]>([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -56,9 +57,9 @@ export function WishlistPageClient() {
     setError(null);
 
     try {
-      const response = await apiClient.wishlist.list({
+      const response = await wishlistRestAdapter.load({
         ...toWishlistQuery(appliedFilters),
-        pageSize: 50,
+        pageSize: 24,
       });
       setItems(response.data);
       setTotal(response.pagination.total);
@@ -76,10 +77,10 @@ export function WishlistPageClient() {
   React.useEffect(() => {
     let isActive = true;
 
-    apiClient.wishlist
-      .list({
+    wishlistRestAdapter
+      .load({
         ...toWishlistQuery(appliedFilters),
-        pageSize: 50,
+        pageSize: 24,
       })
       .then((response) => {
         if (!isActive) {
@@ -318,14 +319,14 @@ export function WishlistPageClient() {
   );
 }
 
-function WishlistCard({ entry }: { entry: ItemListDto }) {
+function WishlistCard({ entry }: { entry: WishlistCardDto }) {
   return (
     <article className="grid min-h-52 grid-cols-[7rem_1fr] gap-4 rounded-lg border bg-card p-4">
       <div className="overflow-hidden rounded-md border bg-secondary">
-        {entry.mainImage?.url ? (
+        {entry.item.cover?.url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={entry.mainImage.url}
+            src={entry.item.cover.url}
             alt=""
             className="h-full min-h-44 w-full object-cover"
           />
@@ -349,10 +350,10 @@ function WishlistCard({ entry }: { entry: ItemListDto }) {
             {entry.item.year ? (
               <Badge variant="outline">{entry.item.year}</Badge>
             ) : null}
-            {entry.activePreordersCount > 0 ? (
+            {entry.activePreorder ? (
               <Badge>
                 <ShoppingBag className="mr-1 h-3 w-3" />
-                {entry.activePreordersCount}
+                Предзаказ
               </Badge>
             ) : null}
           </div>
@@ -361,7 +362,11 @@ function WishlistCard({ entry }: { entry: ItemListDto }) {
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
           <InfoValue
             label="BGG"
-            value={entry.item.rating ? entry.item.rating.toFixed(1) : "Нет"}
+            value={
+              entry.item.communityRating
+                ? entry.item.communityRating.toFixed(1)
+                : "Нет"
+            }
           />
           <InfoValue
             label="Интерес"
@@ -392,17 +397,17 @@ function InfoValue({ label, value }: { label: string; value: string }) {
   );
 }
 
-function toWishlistQuery(filters: Record<string, string>): WishlistQuery {
+function toWishlistQuery(filters: Record<string, string>): WishlistQueryDto {
   return {
     q: filters.q.trim() || undefined,
-    minRating:
+    ratingMin:
       filters.minRating === ANY_VALUE ? undefined : Number(filters.minRating),
     players: filters.players ? Number(filters.players) : undefined,
-    maxPlayTime: filters.maxPlayTime
+    playTimeMax: filters.maxPlayTime
       ? Number(filters.maxPlayTime)
       : undefined,
-    mechanics: splitFilterValues(filters.mechanics),
-    categories: splitFilterValues(filters.categories),
+    mechanic: splitFilterValues(filters.mechanics),
+    category: splitFilterValues(filters.categories),
     hasPrice:
       filters.hasPrice === ANY_VALUE ? undefined : filters.hasPrice === "true",
   };

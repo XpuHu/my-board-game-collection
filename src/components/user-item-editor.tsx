@@ -16,12 +16,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  apiClient,
   itemStatuses,
   type ItemStatus,
   type TagDto,
   type UserItemDto,
 } from "@/shared/api";
+import { legacyApiClient as apiClient } from "@/shared/api/legacy";
 
 const NO_RATING = "__none__";
 const NO_INTEREST = "__none__";
@@ -373,10 +373,7 @@ function nullableText(value: string) {
 
 function statusLabel(status: ItemStatus) {
   const labels: Record<ItemStatus, string> = {
-    owned: "В коллекции",
-    wishlist: "Wishlist",
-    preordered: "Предзаказ",
-    played: "Сыграно",
+    active: "Активно",
     for_sale: "На продажу",
     sold: "Продано",
     archived: "Архив",

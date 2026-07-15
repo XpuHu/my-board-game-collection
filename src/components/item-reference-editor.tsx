@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  apiClient,
   linkTypes,
   providerCodes,
   type ImageDto,
@@ -25,6 +24,7 @@ import {
   type LinkType,
   type ProviderCode,
 } from "@/shared/api";
+import { legacyApiClient as apiClient } from "@/shared/api/legacy";
 
 type ItemReferenceEditorProps = {
   details: ItemDetailsDto;

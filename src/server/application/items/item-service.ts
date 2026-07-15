@@ -4,7 +4,6 @@ import { z } from "zod";
 import { prisma } from "@/infrastructure/database/prisma";
 import {
   addToCollectionRequestSchema,
-  itemStatusSchema,
   providerCodeSchema,
   type AddToCollectionInput,
   type CreateExternalReferenceInput,
@@ -24,6 +23,11 @@ import {
   type ItemForDetails,
   type UserItemWithTags,
 } from "./item-mappers";
+import {
+  collectionTransition,
+  resolveUserItemTransition,
+  wishlistTransition,
+} from "./user-item-transition";
 
 const createItemSchema = z
   .object({
@@ -126,7 +130,7 @@ export async function createItem(input: CreateItemInput) {
         create: {
           owned: false,
           wishlist: false,
-          status: "wishlist",
+          status: "active",
         },
       },
     },
@@ -358,7 +362,7 @@ export async function getItemDetails(itemId: string) {
         itemId,
         owned: false,
         wishlist: false,
-        status: "wishlist",
+        status: "active",
       },
     });
 
@@ -374,49 +378,45 @@ export async function updateUserItem(
 ) {
   await assertItemExists(itemId);
 
-  const status = input.status ?? inferStatus(input.owned, input.wishlist);
-
-  const userItem = await prisma.userItem.upsert({
-    where: {
-      itemId,
-    },
-    create: {
-      itemId,
-      status,
-      owned: input.owned ?? false,
-      wishlist: input.wishlist ?? false,
-      location: input.location,
-      personalRating: input.personalRating,
-      notes: input.notes,
-      interestLevel: input.interestLevel,
-      decisionNotes: input.decisionNotes,
-    },
-    update: {
-      status: input.status,
-      owned: input.owned,
-      wishlist: input.wishlist,
-      location: input.location,
-      personalRating: input.personalRating,
-      notes: input.notes,
-      interestLevel: input.interestLevel,
-      decisionNotes: input.decisionNotes,
-    },
-  });
-
-  if (input.tagIds) {
-    await prisma.item.update({
-      where: {
-        id: itemId,
+  const userItemId = await prisma.$transaction(async (tx) => {
+    const current = await tx.userItem.findUnique({ where: { itemId } });
+    const next = resolveUserItemTransition(current, input);
+    const userItem = await tx.userItem.upsert({
+      where: { itemId },
+      create: {
+        itemId,
+        ...next,
+        location: input.location,
+        personalRating: input.personalRating,
+        notes: input.notes,
+        interestLevel: input.interestLevel,
+        decisionNotes: input.decisionNotes,
       },
-      data: {
-        tags: {
-          set: input.tagIds.map((id) => ({ id })),
-        },
+      update: {
+        ...next,
+        location: input.location,
+        personalRating: input.personalRating,
+        notes: input.notes,
+        interestLevel: input.interestLevel,
+        decisionNotes: input.decisionNotes,
       },
     });
-  }
 
-  return getUserItemDto(userItem.id);
+    if (input.tagIds) {
+      await tx.item.update({
+        where: { id: itemId },
+        data: {
+          tags: {
+            set: input.tagIds.map((id) => ({ id })),
+          },
+        },
+      });
+    }
+
+    return userItem.id;
+  });
+
+  return getUserItemDto(userItemId);
 }
 
 export async function addItemToCollection(
@@ -427,22 +427,20 @@ export async function addItemToCollection(
   await assertItemExists(itemId);
 
   await prisma.$transaction(async (tx) => {
+    const next = resolveUserItemTransition(null, collectionTransition());
     await tx.userItem.upsert({
       where: {
         itemId,
       },
       create: {
         itemId,
-        owned: true,
-        wishlist: false,
-        status: "owned",
+        ...next,
         location: input.location,
         personalRating: input.personalRating,
         notes: input.notes,
       },
       update: {
-        owned: true,
-        status: "owned",
+        ...next,
         location: input.location,
         personalRating: input.personalRating,
         notes: input.notes,
@@ -480,29 +478,21 @@ export async function addItemToCollection(
 export async function addItemToWishlist(itemId: string) {
   await assertItemExists(itemId);
 
-  const existing = await prisma.userItem.findUnique({
-    where: {
-      itemId,
-    },
+  const userItemId = await prisma.$transaction(async (tx) => {
+    const current = await tx.userItem.findUnique({ where: { itemId } });
+    const next = resolveUserItemTransition(
+      current,
+      wishlistTransition(current),
+    );
+    const userItem = await tx.userItem.upsert({
+      where: { itemId },
+      create: { itemId, ...next },
+      update: next,
+    });
+    return userItem.id;
   });
 
-  const userItem = await prisma.userItem.upsert({
-    where: {
-      itemId,
-    },
-    create: {
-      itemId,
-      owned: false,
-      wishlist: true,
-      status: "wishlist",
-    },
-    update: {
-      wishlist: true,
-      status: existing?.owned ? undefined : "wishlist",
-    },
-  });
-
-  return getUserItemDto(userItem.id);
+  return getUserItemDto(userItemId);
 }
 
 async function assertItemExists(itemId: string) {
@@ -566,18 +556,6 @@ async function getUserItemDto(userItemId: string) {
   }
 
   return mapUserItem(userItem as UserItemWithTags);
-}
-
-function inferStatus(owned?: boolean, wishlist?: boolean) {
-  if (owned) {
-    return itemStatusSchema.parse("owned");
-  }
-
-  if (wishlist) {
-    return itemStatusSchema.parse("wishlist");
-  }
-
-  return itemStatusSchema.parse("wishlist");
 }
 
 export const itemDetailsInclude = {

@@ -32,11 +32,13 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/toast-provider";
 import {
-  apiClient,
   type CreatePurchaseRequest,
   type ItemListDto,
-  type PurchaseDto,
 } from "@/shared/api";
+import {
+  legacyApiClient as apiClient,
+  type LegacyPurchaseDto as PurchaseDto,
+} from "@/shared/api/legacy";
 
 type PurchaseFormState = {
   itemId: string;

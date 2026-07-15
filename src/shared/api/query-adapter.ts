@@ -1,4 +1,4 @@
-import { ApiClientError, type QueryValue } from "@/shared/api/client";
+import { ApiClientError, type QueryValue } from "@/shared/api/http";
 
 export type QueryContext = {
   signal?: AbortSignal;

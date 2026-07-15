@@ -3,13 +3,17 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/infrastructure/database/prisma";
 import type {
   CreatePurchaseInput,
-  PurchaseDto,
   UpdatePurchaseInput,
 } from "@/shared/api";
+import type { LegacyPurchaseDto } from "@/shared/api/legacy";
 import { ApiError } from "@/server/api/errors";
-import { mapPurchase } from "@/server/application/items/item-mappers";
+import { mapLegacyPurchase } from "@/server/api/legacy";
+import {
+  collectionTransition,
+  resolveUserItemTransition,
+} from "@/server/application/items/user-item-transition";
 
-export async function listPurchases(): Promise<PurchaseDto[]> {
+export async function listPurchases(): Promise<LegacyPurchaseDto[]> {
   const purchases = await prisma.purchase.findMany({
     where: {
       item: {
@@ -26,13 +30,13 @@ export async function listPurchases(): Promise<PurchaseDto[]> {
     ],
   });
 
-  return purchases.map(mapPurchase);
+  return purchases.map(mapLegacyPurchase);
 }
 
 export async function createPurchase(
   itemId: string,
   input: CreatePurchaseInput,
-): Promise<PurchaseDto> {
+): Promise<LegacyPurchaseDto> {
   await assertItemExists(itemId);
 
   const purchase = await prisma.$transaction(async (tx) => {
@@ -50,32 +54,29 @@ export async function createPurchase(
       },
     });
 
+    const current = await tx.userItem.findUnique({ where: { itemId } });
+    const next = resolveUserItemTransition(current, collectionTransition());
     await tx.userItem.upsert({
       where: {
         itemId,
       },
       create: {
         itemId,
-        owned: true,
-        wishlist: false,
-        status: "owned",
+        ...next,
       },
-      update: {
-        owned: true,
-        status: "owned",
-      },
+      update: next,
     });
 
     return created;
   });
 
-  return mapPurchase(purchase);
+  return mapLegacyPurchase(purchase);
 }
 
 export async function updatePurchase(
   purchaseId: string,
   input: UpdatePurchaseInput,
-): Promise<PurchaseDto> {
+): Promise<LegacyPurchaseDto> {
   const existing = await getPurchaseOrThrow(purchaseId);
   const price = input.price ?? Number(existing.price);
   const deliveryCost =
@@ -106,7 +107,7 @@ export async function updatePurchase(
     },
   });
 
-  return mapPurchase(purchase);
+  return mapLegacyPurchase(purchase);
 }
 
 export async function deletePurchase(purchaseId: string) {

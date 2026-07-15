@@ -37,13 +37,13 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  apiClient,
   type CreatePreorderRequest,
   type ItemDetailsDto,
   type PreorderStatus,
   type UserItemDto,
   type WishlistItemDetailsDto,
 } from "@/shared/api";
+import { legacyApiClient as apiClient } from "@/shared/api/legacy";
 
 type WishlistItemPageClientProps = {
   itemId: string;

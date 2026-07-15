@@ -31,12 +31,14 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  apiClient,
-  type CreateItemRequest,
   type ExternalSearchResultDto,
   type ImportExternalItemRequest,
   type ItemTypeDto,
 } from "@/shared/api";
+import {
+  legacyApiClient as apiClient,
+  type CreateItemRequest,
+} from "@/shared/api/legacy";
 
 const ANY_VALUE = "__any__";
 

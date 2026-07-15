@@ -97,7 +97,6 @@ describe("MVP component contracts", () => {
           id: "type-1",
           code: "base_game",
           name: "Игра",
-          isSystem: true,
         },
         title: "Test Game",
         description: "Description",
@@ -113,7 +112,7 @@ describe("MVP component contracts", () => {
       userItem: {
         id: "user-item-1",
         itemId: "item-1",
-        status: "wishlist",
+        status: "active",
         owned: false,
         wishlist: true,
         tags: [],

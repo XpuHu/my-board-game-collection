@@ -36,12 +36,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/toast-provider";
 import {
-  apiClient,
   type CreatePreorderRequest,
   type ItemListDto,
-  type PreorderDto,
+  type PreorderListItemDto as PreorderDto,
   type PreorderStatus,
 } from "@/shared/api";
+import {
+  legacyApiClient as apiClient,
+} from "@/shared/api/legacy";
+import { preordersRestAdapter } from "@/features/preorders/api";
 
 const activeStatuses: PreorderStatus[] = [
   "planned",
@@ -121,7 +124,7 @@ export function PreordersPageClient({ initialItemId }: PreordersPageClientProps)
     let isActive = true;
 
     Promise.all([
-      apiClient.preorders.list(),
+      preordersRestAdapter.load({ page: 1, pageSize: 100 }),
       apiClient.collection.list({ pageSize: 100 }),
       apiClient.wishlist.list({ pageSize: 100 }),
     ])
@@ -130,7 +133,7 @@ export function PreordersPageClient({ initialItemId }: PreordersPageClientProps)
           return;
         }
 
-        setPreorders(preorderResponse);
+        setPreorders(preorderResponse.data);
         setItems(mergeItems(collectionResponse.data, wishlistResponse.data));
         setError(null);
       })
@@ -187,10 +190,10 @@ export function PreordersPageClient({ initialItemId }: PreordersPageClientProps)
   function openEditDialog(preorder: PreorderDto) {
     setEditingPreorder(preorder);
     setPreorderForm({
-      itemId: preorder.itemId,
+      itemId: preorder.item.id,
       shop: preorder.shop,
-      price: String(preorder.price),
-      currency: preorder.currency,
+      price: String(preorder.price.amount),
+      currency: preorder.price.currency,
       orderDate: toDateInputValue(preorder.orderDate),
       expectedDate: toDateInputValue(preorder.expectedDate),
       receivedDate: toDateInputValue(preorder.receivedDate),
@@ -294,7 +297,7 @@ export function PreordersPageClient({ initialItemId }: PreordersPageClientProps)
   }
 
   async function deletePreorderItem(preorder: PreorderDto) {
-    if (!window.confirm(`Удалить предзаказ ${preorder.itemTitle}?`)) {
+    if (!window.confirm(`Удалить предзаказ ${preorder.item.title}?`)) {
       return;
     }
 
@@ -342,7 +345,7 @@ export function PreordersPageClient({ initialItemId }: PreordersPageClientProps)
   }
 
   async function cancelPreorder(preorder: PreorderDto) {
-    if (!window.confirm(`Отменить предзаказ ${preorder.itemTitle}?`)) {
+    if (!window.confirm(`Отменить предзаказ ${preorder.item.title}?`)) {
       return;
     }
 
@@ -470,7 +473,7 @@ export function PreordersPageClient({ initialItemId }: PreordersPageClientProps)
           <DialogHeader>
             <DialogTitle>Изменить дату доставки</DialogTitle>
             <DialogDescription>
-              {datePreorder?.itemTitle ?? "Предзаказ"}
+              {datePreorder?.item.title ?? "Предзаказ"}
             </DialogDescription>
           </DialogHeader>
 
@@ -736,19 +739,17 @@ function PreorderRow({
     <article className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_10rem_10rem_auto] lg:items-center">
       <div className="min-w-0">
         <Link
-          href={`/collection/${preorder.itemId}`}
+          href={`/collection/${preorder.item.id}`}
           className="font-medium hover:underline"
         >
-          {preorder.itemTitle}
+          {preorder.item.title}
         </Link>
         <div className="mt-1 flex flex-wrap gap-2 text-sm text-muted-foreground">
           <span>{preorder.shop}</span>
           {preorder.trackingNumber ? (
             <span>{preorder.trackingNumber}</span>
           ) : null}
-          {preorder.events.length > 0 ? (
-            <span>{preorder.events.length} изменений даты</span>
-          ) : null}
+          <span>Точность: {preorder.expectedDatePrecision}</span>
         </div>
       </div>
 
@@ -760,7 +761,7 @@ function PreorderRow({
       <div>
         <div className="text-xs text-muted-foreground">Стоимость</div>
         <div className="font-medium">
-          {formatMoney(preorder.price, preorder.currency)}
+          {formatMoney(preorder.price.amount, preorder.price.currency)}
         </div>
       </div>
 

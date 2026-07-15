@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { itemTypeCodes, playResults } from "@/shared/api";
+import { legacyResponseViewSchema } from "@/shared/api/legacy/schemas";
 
 const integer = z.coerce.number().int();
 const positiveInteger = integer.positive();
@@ -14,7 +15,9 @@ const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
   "Expected a valid YYYY-MM-DD date",
 );
 const direction = z.enum(["asc", "desc"]);
-const viewSchema = z.enum(["target", "compact", "legacy"]).default("target");
+const viewSchema = z
+  .union([z.enum(["target", "compact"]), legacyResponseViewSchema])
+  .default("target");
 
 const collectionSchema = z
   .object({

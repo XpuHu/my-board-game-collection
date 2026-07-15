@@ -4,24 +4,29 @@ import { prisma } from "@/infrastructure/database/prisma";
 import type {
   CreatePreorderInput,
   PaginatedResponse,
-  PreorderDto,
   PreorderListItemDto,
   PreorderQueryDto,
+  UpdatePreorderExpectedDateResponse,
   UpdatePreorderExpectedDateInput,
 } from "@/shared/api";
+import type { LegacyPreorderDto } from "@/shared/api/legacy";
 import { ApiError } from "@/server/api/errors";
 import type { PaginationInput } from "@/server/api/pagination";
 import {
-  mapPreorder,
   mapPreorderEvent,
   mapPreorderListItem,
 } from "@/server/application/items/item-mappers";
+import { mapLegacyPreorder } from "@/server/api/legacy";
+import {
+  collectionTransition,
+  resolveUserItemTransition,
+} from "@/server/application/items/user-item-transition";
 
 type UpdatePreorderInput = Partial<CreatePreorderInput>;
 
 const activeStatuses = ["planned", "ordered", "paid", "shipped"];
 
-export async function listPreorders(): Promise<PreorderDto[]> {
+export async function listPreorders(): Promise<LegacyPreorderDto[]> {
   const preorders = await prisma.preorder.findMany({
     where: {
       item: {
@@ -41,7 +46,7 @@ export async function listPreorders(): Promise<PreorderDto[]> {
 
   return preorders
     .sort((left, right) => Number(isActive(right)) - Number(isActive(left)))
-    .map((preorder) => mapPreorder(preorder, preorder.item.title));
+    .map((preorder) => mapLegacyPreorder(preorder, preorder.item.title));
 }
 
 export async function listPreorderItems(
@@ -75,7 +80,7 @@ export async function listPreorderItems(
 export async function createPreorder(
   itemId: string,
   input: CreatePreorderInput,
-): Promise<PreorderDto> {
+): Promise<LegacyPreorderDto> {
   await assertItemExists(itemId);
 
   const preorder = await prisma.$transaction(async (tx) => {
@@ -103,23 +108,21 @@ export async function createPreorder(
         itemId,
         owned: false,
         wishlist: false,
-        status: "preordered",
+        status: "active",
       },
-      update: {
-        status: "preordered",
-      },
+      update: {},
     });
 
     return created;
   });
 
-  return mapPreorder(preorder, preorder.item.title);
+  return mapLegacyPreorder(preorder, preorder.item.title);
 }
 
 export async function updatePreorder(
   preorderId: string,
   input: UpdatePreorderInput,
-): Promise<PreorderDto> {
+): Promise<LegacyPreorderDto> {
   const existing = await getPreorderOrThrow(preorderId);
   const nextExpectedDate =
     "expectedDate" in input ? toDate(input.expectedDate) : undefined;
@@ -176,20 +179,19 @@ export async function updatePreorder(
     }
 
     if (input.status === "received") {
+      const current = await tx.userItem.findUnique({
+        where: { itemId: existing.itemId },
+      });
+      const next = resolveUserItemTransition(current, collectionTransition());
       await tx.userItem.upsert({
         where: {
           itemId: existing.itemId,
         },
         create: {
           itemId: existing.itemId,
-          owned: true,
-          wishlist: false,
-          status: "owned",
+          ...next,
         },
-        update: {
-          owned: true,
-          status: "owned",
-        },
+        update: next,
       });
     }
 
@@ -206,7 +208,7 @@ export async function updatePreorder(
             itemId: existing.itemId,
           },
           data: {
-            status: userItem.wishlist ? "wishlist" : "archived",
+            status: userItem.wishlist ? "active" : "archived",
           },
         });
       }
@@ -221,23 +223,47 @@ export async function updatePreorder(
 export async function updatePreorderExpectedDate(
   preorderId: string,
   input: UpdatePreorderExpectedDateInput,
-): Promise<PreorderDto> {
-  const existing = await getPreorderOrThrow(preorderId);
-  const precision = input.expectedDatePrecision ??
-    (input.expectedDate ? "day" : "unknown");
-  const expectedDate = normalizeExpectedDate(input.expectedDate, precision);
+): Promise<LegacyPreorderDto> {
+  await updatePreorderExpectedDateCommand(preorderId, input);
+  return getPreorderDto(preorderId);
+}
 
-  await prisma.$transaction(async (tx) => {
-    await tx.preorder.update({
-      where: {
-        id: preorderId,
-      },
-      data: {
-        expectedDate,
-      },
+export async function updatePreorderExpectedDateTarget(
+  preorderId: string,
+  input: UpdatePreorderExpectedDateInput,
+): Promise<UpdatePreorderExpectedDateResponse> {
+  const { preorder, event, precision } = await updatePreorderExpectedDateCommand(
+    preorderId,
+    input,
+  );
+  return {
+    preorder: {
+      ...mapPreorderListItem(preorder),
+      expectedDatePrecision: precision,
+    },
+    event: mapPreorderEvent(event),
+  };
+}
+
+async function updatePreorderExpectedDateCommand(
+  preorderId: string,
+  input: UpdatePreorderExpectedDateInput,
+) {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.preorder.findUnique({
+      where: { id: preorderId },
     });
+    if (!existing) throw preorderNotFound();
 
-    await tx.preorderEvent.create({
+    const precision = input.expectedDatePrecision ??
+      (input.expectedDate ? "day" : "unknown");
+    const expectedDate = normalizeExpectedDate(input.expectedDate, precision);
+    const preorder = await tx.preorder.update({
+      where: { id: preorderId },
+      data: { expectedDate },
+      select: preorderListSelect,
+    });
+    const event = await tx.preorderEvent.create({
       data: {
         preorderId,
         type: "expected_date_changed",
@@ -253,31 +279,9 @@ export async function updatePreorderExpectedDate(
         comment: input.comment,
       },
     });
+
+    return { preorder, event, precision };
   });
-
-  return getPreorderDto(preorderId);
-}
-
-export async function updatePreorderExpectedDateTarget(
-  preorderId: string,
-  input: UpdatePreorderExpectedDateInput,
-) {
-  await updatePreorderExpectedDate(preorderId, input);
-  const [preorder, event] = await Promise.all([
-    prisma.preorder.findUnique({
-      where: { id: preorderId },
-      select: preorderListSelect,
-    }),
-    prisma.preorderEvent.findFirst({
-      where: { preorderId, type: "expected_date_changed" },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    }),
-  ]);
-  if (!preorder || !event) throw preorderNotFound();
-  return {
-    preorder: mapPreorderListItem(preorder),
-    event: mapPreorderEvent(event),
-  };
 }
 
 export async function deletePreorder(preorderId: string) {
@@ -302,7 +306,7 @@ async function getPreorderDto(preorderId: string) {
     throw preorderNotFound();
   }
 
-  return mapPreorder(preorder, preorder.item.title);
+  return mapLegacyPreorder(preorder, preorder.item.title);
 }
 
 async function getPreorderOrThrow(preorderId: string) {

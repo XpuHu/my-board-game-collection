@@ -280,7 +280,13 @@ const backupUserItemSchema = z
   .object({
     id: uuidSchema,
     itemId: uuidSchema,
-    status: itemStatusSchema,
+    status: z.enum([
+      ...itemStatuses,
+      "owned",
+      "wishlist",
+      "preordered",
+      "played",
+    ]),
     owned: z.boolean(),
     wishlist: z.boolean(),
     location: z.string().nullable().optional(),

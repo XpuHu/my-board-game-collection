@@ -34,6 +34,7 @@ import {
   listPreorderItems,
   updatePreorder,
   updatePreorderExpectedDate,
+  updatePreorderExpectedDateTarget,
 } from "@/server/application/preorders/preorder-service";
 import {
   createPurchase,
@@ -81,8 +82,8 @@ describe("MVP service flows", () => {
     });
 
     expect(userItem.owned).toBe(true);
-    expect(userItem.wishlist).toBe(true);
-    expect(userItem.status).toBe("owned");
+    expect(userItem.wishlist).toBe(false);
+    expect(userItem.status).toBe("active");
     expect(userItem.location).toBe("Shelf B");
   });
 
@@ -101,7 +102,7 @@ describe("MVP service flows", () => {
 
     expect(userItem.owned).toBe(false);
     expect(userItem.wishlist).toBe(true);
-    expect(userItem.status).toBe("wishlist");
+    expect(userItem.status).toBe("active");
   });
 
   it("updates the full manual UserItem state with tags", async () => {
@@ -114,8 +115,8 @@ describe("MVP service flows", () => {
 
     const userItem = await updateUserItem(item.id, {
       owned: true,
-      wishlist: true,
-      status: "preordered",
+      wishlist: false,
+      status: "active",
       location: "Shelf A",
       personalRating: 9,
       notes: "Keep shrink until campaign",
@@ -126,8 +127,8 @@ describe("MVP service flows", () => {
 
     expect(userItem).toMatchObject({
       owned: true,
-      wishlist: true,
-      status: "preordered",
+      wishlist: false,
+      status: "active",
       location: "Shelf A",
       personalRating: 9,
       notes: "Keep shrink until campaign",
@@ -140,6 +141,28 @@ describe("MVP service flows", () => {
       }),
     ]);
     await expect(prisma.userItem.count()).resolves.toBe(1);
+  });
+
+  it("rejects a contradictory generic UserItem patch without partial writes", async () => {
+    const item = await createTestItem({ owned: true, wishlist: false });
+
+    await expect(
+      updateUserItem(item.id, {
+        wishlist: true,
+        location: "Must not be written",
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "USER_ITEM_STATE_CONFLICT",
+    });
+
+    await expect(
+      prisma.userItem.findUniqueOrThrow({ where: { itemId: item.id } }),
+    ).resolves.toMatchObject({
+      owned: true,
+      wishlist: false,
+      location: null,
+    });
   });
 
   it("creates a manual item with reference lists, image URL and link URL", async () => {
@@ -505,6 +528,36 @@ describe("MVP service flows", () => {
     await expect(prisma.preorderEvent.count()).resolves.toBe(1);
   });
 
+  it("returns the event created by each concurrent expected-date command", async () => {
+    const item = await createTestItem({ wishlist: true });
+    const preorder = await createPreorder(item.id, {
+      shop: "Parallel shop",
+      price: 100,
+      currency: "USD",
+      expectedDate: "2026-08-01T00:00:00.000Z",
+      status: "ordered",
+    });
+
+    const [october, november] = await Promise.all([
+      updatePreorderExpectedDateTarget(preorder.id, {
+        expectedDate: "2026-10-01T00:00:00.000Z",
+      }),
+      updatePreorderExpectedDateTarget(preorder.id, {
+        expectedDate: "2026-11-01T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(october.event).toMatchObject({
+      type: "expected_date_changed",
+      newValue: { expectedDate: "2026-10-01T00:00:00.000Z" },
+    });
+    expect(november.event).toMatchObject({
+      type: "expected_date_changed",
+      newValue: { expectedDate: "2026-11-01T00:00:00.000Z" },
+    });
+    expect(october.event.id).not.toBe(november.event.id);
+  });
+
   it("marks a preorder as received and moves the item into collection", async () => {
     const item = await createTestItem({ wishlist: true });
     const preorder = await createPreorder(item.id, {
@@ -535,7 +588,8 @@ describe("MVP service flows", () => {
       }),
     ]);
     expect(userItem.owned).toBe(true);
-    expect(userItem.status).toBe("owned");
+    expect(userItem.wishlist).toBe(false);
+    expect(userItem.status).toBe("active");
   });
 
   it("manages purchases manually and includes them in statistics", async () => {

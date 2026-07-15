@@ -23,17 +23,27 @@ export const itemTypeCodes = [
 
 export type ItemTypeCode = (typeof itemTypeCodes)[number];
 
-export const itemStatuses = [
-  "owned",
-  "wishlist",
-  "preordered",
-  "played",
+export const userItemLifecycleStatuses = [
+  "active",
   "for_sale",
   "sold",
   "archived",
 ] as const;
 
-export type ItemStatus = (typeof itemStatuses)[number];
+export const itemStatuses = userItemLifecycleStatuses;
+
+export type UserItemLifecycleStatus =
+  (typeof userItemLifecycleStatuses)[number];
+
+export type StoredUserItemStatus =
+  | UserItemLifecycleStatus
+  | "owned"
+  | "wishlist"
+  | "preordered"
+  | "played";
+
+/** @deprecated Use UserItemLifecycleStatus. */
+export type ItemStatus = UserItemLifecycleStatus;
 
 export const playResults = ["win", "loss", "score", "unknown"] as const;
 
@@ -93,12 +103,12 @@ export type MoneyAmountDto = {
   currency: string;
 };
 
+export type MoneyDto = MoneyAmountDto;
+
 export type ItemTypeDto = {
   id: string;
   code: ItemTypeCode;
   name: string;
-  /** Present only in legacy mutation/detail responses. */
-  isSystem?: boolean;
 };
 
 export type TagDto = {
@@ -114,14 +124,12 @@ export type CreateTagRequest = {
 
 export type ImageDto = {
   id: string;
-  itemId: string;
   type: "reference" | "user";
   provider?: ProviderCode | null;
   url?: string | null;
   path?: string | null;
   caption?: string | null;
   sortOrder: number;
-  createdAt: string;
 };
 
 export type ImageCompactDto = {
@@ -147,7 +155,6 @@ export type ItemCompactDto = {
 
 export type ExternalReferenceDto = {
   id: string;
-  itemId: string;
   provider: ProviderCode;
   externalId: string;
   url?: string | null;
@@ -156,7 +163,6 @@ export type ExternalReferenceDto = {
 
 export type LinkDto = {
   id: string;
-  itemId: string;
   type: LinkType;
   url: string;
   title?: string | null;
@@ -164,17 +170,13 @@ export type LinkDto = {
 
 export type PurchaseDto = {
   id: string;
-  itemId: string;
   shop: string;
-  price: number;
-  currency: string;
-  deliveryCost?: number | null;
-  discount?: number | null;
-  totalPrice: number;
+  price: MoneyDto;
+  deliveryCost?: MoneyDto | null;
+  discount?: MoneyDto | null;
+  totalPrice: MoneyDto;
   purchaseDate?: string | null;
   comment?: string | null;
-  createdAt: string;
-  updatedAt: string;
 };
 
 export type CreatePurchaseRequest = {
@@ -240,7 +242,6 @@ export type UpdateLinkRequest = Partial<CreateLinkRequest>;
 
 export type NoteDto = {
   id: string;
-  itemId: string;
   title?: string | null;
   body: string;
   createdAt: string;
@@ -249,12 +250,18 @@ export type NoteDto = {
 
 export type ItemRelationDto = {
   id: string;
-  parentItemId: string;
-  childItemId: string;
-  relationType: string;
+  direction: "parent" | "child";
+  relationType:
+    | "requires"
+    | "expands"
+    | "compatible_with"
+    | "contains"
+    | "part_of"
+    | "localized_version_of"
+    | "alternative_to"
+    | "related";
+  relatedItem: ItemCompactDto;
   comment?: string | null;
-  createdAt: string;
-  updatedAt: string;
 };
 
 export type ItemDto = {
@@ -294,12 +301,6 @@ export type UserItemDto = {
   decisionNotes?: string | null;
   tags: TagDto[];
 };
-
-export type UserItemLifecycleStatus =
-  | "active"
-  | "for_sale"
-  | "sold"
-  | "archived";
 
 export type UserItemState =
   | "owned"
@@ -386,7 +387,7 @@ export type ItemDetailsDto = {
   images: ImageDto[];
   links: LinkDto[];
   purchases: PurchaseDto[];
-  preorders: PreorderDto[];
+  preorders: PreorderListItemDto[];
   playSummary: PlaySummaryDto;
   notes: NoteDto[];
   relations: ItemRelationDto[];
@@ -413,16 +414,10 @@ export type ItemReferenceDetailDto = ItemCompactDto & {
   designers: { id: string; name: string }[];
   artists: { id: string; name: string }[];
   publishers: { id: string; name: string }[];
-  images: Omit<ImageDto, "itemId" | "createdAt">[];
-  externalReferences: Omit<ExternalReferenceDto, "itemId">[];
-  links: Omit<LinkDto, "itemId">[];
-  relations: {
-    id: string;
-    direction: "parent" | "child";
-    relationType: string;
-    relatedItem: ItemCompactDto;
-    comment?: string | null;
-  }[];
+  images: ImageDto[];
+  externalReferences: ExternalReferenceDto[];
+  links: LinkDto[];
+  relations: ItemRelationDto[];
 };
 
 export type UserItemDetailDto = {
@@ -446,17 +441,6 @@ export type ItemDetailDto = {
   userItem?: UserItemDetailDto | null;
 };
 
-export type PurchaseViewDto = {
-  id: string;
-  shop: string;
-  price: MoneyAmountDto;
-  deliveryCost?: MoneyAmountDto | null;
-  discount?: MoneyAmountDto | null;
-  totalPrice: MoneyAmountDto;
-  purchaseDate?: string | null;
-  comment?: string | null;
-};
-
 export type CollectionItemDetailDto = ItemDetailDto & {
   userItem: UserItemDetailDto;
   playSummary: {
@@ -465,16 +449,16 @@ export type CollectionItemDetailDto = ItemDetailDto & {
     totalDurationMinutes: number;
   };
   recentPlays: PlayListItemDto[];
-  purchases: PurchaseViewDto[];
+  purchases: PurchaseDto[];
   preorders: PreorderListItemDto[];
-  notes: Omit<NoteDto, "itemId">[];
+  notes: NoteDto[];
   primaryAction: "add_play";
 };
 
 export type WishlistItemDetailDto = ItemDetailDto & {
   userItem: UserItemDetailDto;
-  shopLinks: Omit<LinkDto, "itemId">[];
-  videos: Omit<LinkDto, "itemId">[];
+  shopLinks: LinkDto[];
+  videos: LinkDto[];
   similarItems: ItemCompactDto[];
   primaryActions: ("add_to_collection" | "create_preorder")[];
 };
@@ -593,24 +577,6 @@ export type SyncBggPlaysResponse = {
   warnings?: ProviderWarningDto[];
 };
 
-export type PreorderDto = {
-  id: string;
-  itemId: string;
-  itemTitle: string;
-  shop: string;
-  price: number;
-  currency: string;
-  orderDate?: string | null;
-  expectedDate?: string | null;
-  receivedDate?: string | null;
-  trackingNumber?: string | null;
-  status: PreorderStatus;
-  comment?: string | null;
-  events: LegacyPreorderEventDto[];
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type PreorderUiStatus = "active" | "delayed" | "received" | "cancelled";
 
 export type ExpectedDatePrecision = "day" | "month" | "quarter" | "unknown";
@@ -639,17 +605,6 @@ export type PreorderListItemDto = PreorderSummaryDto & {
   updatedAt: string;
 };
 
-export type LegacyPreorderEventDto = {
-  id: string;
-  preorderId: string;
-  type: "expected_date_changed" | string;
-  oldValue?: string | null;
-  newValue?: string | null;
-  reason?: string | null;
-  comment?: string | null;
-  createdAt: string;
-};
-
 export type PreorderExpectedDateChangedEventDto = {
   id: string;
   type: "expected_date_changed";
@@ -674,6 +629,11 @@ export type PreorderStatusChangedEventDto = {
 export type PreorderEventDto =
   | PreorderExpectedDateChangedEventDto
   | PreorderStatusChangedEventDto;
+
+export type UpdatePreorderExpectedDateResponse = {
+  preorder: PreorderListItemDto;
+  event: PreorderEventDto;
+};
 
 export type CreatePreorderRequest = {
   shop: string;
@@ -862,7 +822,8 @@ export type BackupItemDto = {
   deletedAt?: string | null;
 };
 
-export type BackupUserItemDto = Omit<UserItemDto, "tags"> & {
+export type BackupUserItemDto = Omit<UserItemDto, "tags" | "status"> & {
+  status: StoredUserItemStatus;
   createdAt: string;
   updatedAt: string;
 };
@@ -881,6 +842,77 @@ export type BackupItemTagDto = {
   tagId: string;
 };
 
+export type BackupExternalReferenceDto = ExternalReferenceDto & {
+  itemId: string;
+};
+
+export type BackupImageDto = ImageDto & {
+  itemId: string;
+  createdAt: string;
+};
+
+export type BackupLinkDto = LinkDto & {
+  itemId: string;
+};
+
+export type BackupPurchaseDto = {
+  id: string;
+  itemId: string;
+  shop: string;
+  price: number;
+  currency: string;
+  deliveryCost?: number | null;
+  discount?: number | null;
+  totalPrice: number;
+  purchaseDate?: string | null;
+  comment?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BackupPreorderEventDto = {
+  id: string;
+  preorderId: string;
+  type: string;
+  oldValue?: string | null;
+  newValue?: string | null;
+  reason?: string | null;
+  comment?: string | null;
+  createdAt: string;
+};
+
+export type BackupPreorderDto = {
+  id: string;
+  itemId: string;
+  itemTitle: string;
+  shop: string;
+  price: number;
+  currency: string;
+  orderDate?: string | null;
+  expectedDate?: string | null;
+  receivedDate?: string | null;
+  trackingNumber?: string | null;
+  status: PreorderStatus;
+  comment?: string | null;
+  events: BackupPreorderEventDto[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BackupNoteDto = NoteDto & {
+  itemId: string;
+};
+
+export type BackupItemRelationDto = {
+  id: string;
+  parentItemId: string;
+  childItemId: string;
+  relationType: string;
+  comment?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type JsonBackupDto = {
   schemaVersion: 1;
   exportedAt: string;
@@ -888,14 +920,14 @@ export type JsonBackupDto = {
     itemTypes: BackupItemTypeDto[];
     items: BackupItemDto[];
     userItems: BackupUserItemDto[];
-    externalReferences: ExternalReferenceDto[];
-    images: ImageDto[];
-    links: LinkDto[];
-    purchases: PurchaseDto[];
-    preorders: PreorderDto[];
+    externalReferences: BackupExternalReferenceDto[];
+    images: BackupImageDto[];
+    links: BackupLinkDto[];
+    purchases: BackupPurchaseDto[];
+    preorders: BackupPreorderDto[];
     playSessions: BackupPlaySessionDto[];
-    notes: NoteDto[];
-    relations: ItemRelationDto[];
+    notes: BackupNoteDto[];
+    relations: BackupItemRelationDto[];
     tags: BackupTagDto[];
     itemTags: BackupItemTagDto[];
   };

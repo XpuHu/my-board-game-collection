@@ -122,6 +122,7 @@ describe("MVP API flows", () => {
     const response = await updateExpectedDateRoute(
       jsonRequest({
         expectedDate: "2026-10-01T00:00:00.000Z",
+        expectedDatePrecision: "month",
         reason: "Доставка",
         comment: "Новая волна",
       }),
@@ -131,14 +132,23 @@ describe("MVP API flows", () => {
 
     expect(response.status).toBe(200);
     expect(body.preorder.expectedDate).toBe("2026-10-01T00:00:00.000Z");
+    expect(body.preorder.expectedDatePrecision).toBe("month");
     expect(body.event).toMatchObject({
       type: "expected_date_changed",
       legacyFormat: false,
     });
     await expect(prisma.preorderEvent.count()).resolves.toBe(1);
+    await expect(
+      prisma.preorderEvent.findUnique({ where: { id: body.event.id } }),
+    ).resolves.toMatchObject({
+      newValue: JSON.stringify({
+        expectedDate: "2026-10-01T00:00:00.000Z",
+        expectedDatePrecision: "month",
+      }),
+    });
   });
 
-  it("adds an item to collection and wishlist through route handlers", async () => {
+  it("rejects adding an owned item to wishlist through route handlers", async () => {
     const item = await createTestItem({ owned: false, wishlist: false });
 
     const collectionResponse = await addToCollectionRoute(
@@ -154,7 +164,7 @@ describe("MVP API flows", () => {
     );
 
     expect(collectionResponse.status).toBe(200);
-    expect(wishlistResponse.status).toBe(200);
+    expect(wishlistResponse.status).toBe(409);
     await expect(prisma.item.count()).resolves.toBe(1);
     await expect(prisma.userItem.count()).resolves.toBe(1);
 
@@ -162,7 +172,8 @@ describe("MVP API flows", () => {
       where: { itemId: item.id },
     });
     expect(userItem.owned).toBe(true);
-    expect(userItem.wishlist).toBe(true);
+    expect(userItem.wishlist).toBe(false);
+    expect(userItem.status).toBe("active");
   });
 
   it("updates item reference fields without changing the user item", async () => {
