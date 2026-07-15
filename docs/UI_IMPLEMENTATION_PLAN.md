@@ -744,8 +744,6 @@ features/statistics/api
   только у форм, modal и читаемых текстовых блоков.
 - [x] Убрать literal colors и сильные тени из AppShell/shared UI. Page-specific
   legacy literals удалять при миграции страниц, начиная с dashboard этапа 4.
-- [ ] Проверить AppShell на 1280/1024/768/430/390 px, включая safe-area,
-  mobile menu, keyboard focus и единственный BGG attribution.
 
   Автоматические проверки safe-area, focus styles и единственного attribution
   добавлены; интерактивная viewport-проверка ожидает доступного browser runtime.
@@ -775,6 +773,87 @@ features/statistics/api
 Результат: target DTO и query contracts совпадают с `SPEC.md`, legacy API остается
 работоспособным, foundation проверен вертикальным dashboard/collection срезом, а
 этапы 3–4 не наследуют расхождения контрактов и заведомо дорогие read queries.
+
+## Этап 2.2. Устранение расхождений foundation и изоляция legacy
+
+Зависимости: этап 2.1. Этап является обязательным corrective gate перед этапом 3:
+доменные команды, target DTO и тестовые критерии должны соответствовать `SPEC.md`,
+а legacy-код — остаться только на явно обозначенной границе совместимости.
+
+### 2.2.1 Инварианты каталога и атомарные переходы
+
+- [ ] Вынести вычисление и проверку итогового состояния `UserItem` в единый
+  application-level transition/validator; запретить `owned = true` одновременно с
+  `wishlist = true` и `for_sale` при `owned = false` во всех командах записи.
+- [ ] Исправить добавление в коллекцию и переход предзаказа в `received`: атомарно
+  устанавливать `owned = true`, `wishlist = false` и актуальный lifecycle status;
+  существующие пользовательские данные и история должны сохраняться.
+- [ ] Для попытки добавить уже owned Item в wishlist возвращать `409 Conflict` без
+  изменения записи; обычное добавление в wishlist устанавливает `owned = false`,
+  `wishlist = true` и канонический lifecycle status.
+- [ ] Generic update должен загружать текущее состояние, объединять его с patch,
+  валидировать итоговую комбинацию и только затем выполнять запись; изменение
+  флагов, lifecycle status и связанных данных проводить в одной транзакции.
+- [ ] Заменить route-тест, допускающий `owned = true` и `wishlist = true`, матрицей
+  допустимых и запрещённых переходов для collection, wishlist, preorder received,
+  `sold`, `archived`, `for_sale` и generic update.
+
+### 2.2.2 Семантика срока и событий предзаказа
+
+- [ ] Вынести вычисление `PreorderUiStatus` в precision-aware helper: `day`
+  становится delayed только после завершения календарного дня, `unknown` никогда
+  не становится delayed; заложить те же правила границ для `month` и `quarter`.
+- [ ] Использовать единое правило календаря/timezone при сравнении даты на сервере
+  и в UI; не сравнивать date-only значение с текущим временем напрямую.
+- [ ] Обновление ожидаемой даты и создание `expected_date_changed` выполнять в
+  одной транзакции, возвращая созданный `PreorderEvent`, а не повторно запрашивая
+  последнее событие через `findFirst`.
+- [ ] Target и legacy response строить из результата одной команды; добавить
+  канонический `UpdatePreorderExpectedDateResponse` и исключить возможность вернуть
+  событие параллельного запроса.
+
+### 2.2.3 Разделение target и legacy-контрактов
+
+- [ ] Привести канонические `ImageDto`, `ExternalReferenceDto`, `LinkDto`,
+  `ItemRelationDto`, `PurchaseDto`, `NoteDto` и preorder response types к точным
+  формам из `SPEC.md`; удалить target-обходы через `Omit`, inline-типы и
+  `PurchaseViewDto`.
+- [ ] Вынести legacy DTO, schemas, client methods и response mappers в отдельные
+  каталоги `src/shared/api/legacy/` и `src/server/api/legacy/`; legacy-типы должны
+  иметь явный префикс `Legacy` и не экспортироваться из target barrel-файлов.
+- [ ] Оставить актуальные DTO, schemas, adapters и clients в каноническом
+  `src/shared/api/`; заменить импорты старых типов и методов во всём application,
+  feature и frontend-коде на target-контракты.
+- [ ] Переключить все текущие страницы и внутренние вызовы на target adapters.
+  `view=legacy` разрешить только route-level compatibility adapters для реально
+  поддерживаемых старых consumers; запретить импорт `legacy/` из React-компонентов,
+  features и application services.
+- [ ] Зафиксировать `/api/dashboard` как target-only endpoint, поскольку у него нет
+  legacy consumer; для collection, wishlist, plays и preorders сохранить отдельные
+  legacy adapters до явного удаления совместимости.
+- [ ] Удалить legacy aliases и дублирующие преобразования из актуального кода после
+  переключения consumers; добавить статическую проверку направления зависимостей:
+  target-код не зависит от `legacy/`.
+
+### 2.2.4 Regression, contract и query-hook tests
+
+- [ ] Добавить application и route regression tests для всех инвариантов каталога,
+  включая сохранение данных при переходах и отсутствие owned Item в wishlist.
+- [ ] Добавить тесты preorder status на момент до, внутри и после календарной
+  границы для `day`, `month`, `quarter` и `unknown`, а также тест параллельных
+  обновлений ожидаемой даты с проверкой соответствия возвращённого события.
+- [ ] Разделить contract suites на target и legacy: dashboard проверять только как
+  target, а collection, wishlist, plays и preorders — target плюс изолированный
+  legacy response; сохранить проверки `400`/`409` для ошибочных запросов и команд.
+- [ ] Протестировать непосредственно `useAdapterQuery`, а не только transport
+  adapter: abort при unmount/смене params, игнорирование stale response, retry,
+  empty/error/offline states и восстановление URL через Back/Forward.
+- [ ] Выполнить `lint`, `typecheck`, полный набор tests и production build; этап
+  закрывать только после удаления ложных `[x]` и подтверждения всех критериев 2.2.
+
+Результат: все команды сохраняют доменные инварианты, preorder status и event
+response детерминированы, актуальный код использует только target-контракты, а
+legacy физически изолирован и доступен исключительно как временный API adapter.
 
 ## Этап 3. P0-миграция даты коллекции
 
