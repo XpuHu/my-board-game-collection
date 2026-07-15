@@ -17,7 +17,10 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-black/40", className)}
+    className={cn(
+      "fixed inset-0 z-50 bg-black/64 data-[state=closed]:animate-out data-[state=open]:animate-in",
+      className,
+    )}
     {...props}
   />
 ));
@@ -32,13 +35,13 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-card p-6 shadow-lg",
+        "fixed inset-x-0 bottom-0 z-50 grid max-h-[92svh] gap-4 overflow-y-auto rounded-t-xl border bg-card p-5 shadow-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[85vh] sm:w-[calc(100%-2rem)] sm:max-w-2xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-6",
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-md opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring">
+      <DialogPrimitive.Close className="absolute right-4 top-4 z-10 rounded-md p-1 opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring">
         <X className="h-4 w-4" />
         <span className="sr-only">Закрыть</span>
       </DialogPrimitive.Close>
@@ -51,7 +54,10 @@ const DialogHeader = ({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex flex-col gap-2 text-left", className)} {...props} />
+  <div
+    className={cn("flex shrink-0 flex-col gap-2 pr-9", className)}
+    {...props}
+  />
 );
 DialogHeader.displayName = "DialogHeader";
 
@@ -79,11 +85,35 @@ const DialogDescription = React.forwardRef<
 ));
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
+const DialogBody = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn("min-h-0 overflow-y-auto py-1", className)} {...props} />
+);
+DialogBody.displayName = "DialogBody";
+
+const DialogFooter = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn(
+      "sticky bottom-0 -mx-5 -mb-5 flex shrink-0 flex-col-reverse gap-2 border-t bg-card px-5 py-4 sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6",
+      className,
+    )}
+    {...props}
+  />
+);
+DialogFooter.displayName = "DialogFooter";
+
 export {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogBody,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,

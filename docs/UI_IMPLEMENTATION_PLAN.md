@@ -693,11 +693,11 @@ features/statistics/api
 
 ## Этап 2. UI foundation и AppShell
 
-- [ ] Реализовать tokens и общие компоненты.
-- [ ] Перестроить responsive AppShell.
-- [ ] Перенести BGG attribution в sidebar.
-- [ ] Добавить skeleton/error/empty/offline patterns.
-- [ ] Добавить mock/REST adapters.
+- [x] Реализовать tokens и общие компоненты.
+- [x] Перестроить responsive AppShell.
+- [x] Перенести BGG attribution в sidebar.
+- [x] Добавить skeleton/error/empty/offline patterns.
+- [x] Добавить mock/REST adapters.
 
 Результат: единая визуальная и компонентная база.
 

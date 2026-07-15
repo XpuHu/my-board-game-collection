@@ -5,128 +5,153 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
-  Bell,
   Boxes,
   CalendarDays,
-  ChevronDown,
   Heart,
   Home,
+  Menu,
   Package,
-  Search,
   Settings,
 } from "lucide-react";
 
-import { BggAttribution } from "@/components/bgg-attribution";
+import { SidebarBggAttribution } from "@/components/bgg-attribution";
+import { OfflineBanner } from "@/components/offline-banner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { cn } from "@/shared/lib/utils";
 
 const navItems = [
   { href: "/", label: "Главная", icon: Home },
-  { href: "/collection", label: "Моя коллекция", icon: Boxes },
+  {
+    href: "/collection",
+    label: "Моя коллекция",
+    shortLabel: "Коллекция",
+    icon: Boxes,
+  },
   { href: "/wishlist", label: "Wishlist", icon: Heart },
   { href: "/preorders", label: "Предзаказы", icon: Package },
   { href: "/plays", label: "Партии", icon: CalendarDays },
   { href: "/statistics", label: "Статистика", icon: BarChart3 },
   { href: "/settings", label: "Настройки", icon: Settings },
-];
+] as const;
+
+const mobilePrimaryHrefs = ["/", "/collection", "/wishlist", "/preorders"];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
-      <div className="mx-auto grid w-full flex-1 lg:grid-cols-[250px_minmax(0,1fr)]">
-        <aside className="hidden border-r border-white/10 bg-[#08111f]/92 px-4 py-8 shadow-[24px_0_80px_rgba(0,0,0,0.22)] lg:flex lg:flex-col">
-          <Link href="/" className="flex items-center gap-3 px-2">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#7a6dff] text-white shadow-[0_0_28px_rgba(122,109,255,0.42)]">
-              <Boxes className="h-7 w-7" />
-            </div>
-            <div className="min-w-0 text-[19px] font-semibold leading-tight tracking-normal">
-              <div>Board Game</div>
-              <div>Collection</div>
-            </div>
+    <div className="min-h-svh bg-background text-foreground">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[72px] flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-sidebar)] md:flex xl:w-56">
+        <Link
+          href="/"
+          aria-label="Board Game Collection — главная"
+          className="flex h-[72px] items-center justify-center gap-3 px-5 xl:justify-start"
+        >
+          <BrandMark />
+          <span className="hidden min-w-0 text-[15px] font-semibold leading-tight xl:block">
+            Board Game
+            <br />
+            Collection
+          </span>
+        </Link>
+
+        <nav
+          aria-label="Основная навигация"
+          className="grid gap-1.5 px-3 py-4 xl:px-4"
+        >
+          {navItems.map((item) => (
+            <SidebarNavLink key={item.href} item={item} pathname={pathname} />
+          ))}
+        </nav>
+
+        <div className="mt-auto flex justify-center px-3 py-5 xl:justify-start xl:px-5">
+          <SidebarBggAttribution />
+        </div>
+      </aside>
+
+      <div className="min-w-0 md:pl-[72px] xl:pl-56">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/95 px-4 backdrop-blur md:hidden">
+          <Link
+            href="/"
+            className="flex items-center gap-3"
+            aria-label="На главную"
+          >
+            <BrandMark />
+            <span className="text-sm font-semibold leading-tight">
+              Board Game Collection
+            </span>
           </Link>
+          <MobileMenu pathname={pathname} />
+        </header>
 
-          <nav aria-label="Основная навигация" className="mt-9 grid gap-3">
-            {navItems.map((item) => (
-              <NavLink key={item.href} item={item} pathname={pathname} />
-            ))}
-          </nav>
-        </aside>
-
-        <div className="flex min-w-0 flex-col">
-          <header className="sticky top-0 z-40 border-b border-white/10 bg-background/88 backdrop-blur-xl lg:border-b-0">
-            <div className="flex items-center gap-3 px-4 py-4 sm:px-6 lg:justify-end lg:px-8 lg:py-8">
-              <Link href="/" className="flex items-center gap-3 lg:hidden">
-                <span className="grid h-10 w-10 place-items-center rounded-lg bg-[#7a6dff] text-white">
-                  <Boxes className="h-6 w-6" />
-                </span>
-                <span className="text-sm font-semibold leading-tight">
-                  Board Game
-                  <br />
-                  Collection
-                </span>
-              </Link>
-
-              <nav
-                aria-label="Основная навигация"
-                className="order-3 -mx-4 flex gap-2 overflow-x-auto px-4 pt-3 sm:-mx-6 sm:px-6 lg:hidden"
-              >
-                {navItems.map((item) => (
-                  <MobileNavLink
-                    key={item.href}
-                    item={item}
-                    pathname={pathname}
-                  />
-                ))}
-              </nav>
-
-              <div className="ml-auto flex items-center gap-3">
-                <ShellIconButton label="Поиск">
-                  <Search className="h-5 w-5" />
-                </ShellIconButton>
-                <ShellIconButton label="Уведомления">
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-[#7a6dff] text-[11px] font-semibold text-white">
-                    3
-                  </span>
-                </ShellIconButton>
-              </div>
-            </div>
-          </header>
-
-          <div className="flex-1">{children}</div>
-
+        <OfflineBanner />
+        <div className="min-h-svh pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
+          {children}
         </div>
       </div>
 
-      <footer className="w-full border-t border-white/10 px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-center sm:justify-end">
-          <BggAttribution />
-        </div>
-      </footer>
+      <nav
+        aria-label="Мобильная навигация"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border-default)] bg-[var(--bg-sidebar)]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+      >
+        {navItems
+          .filter((item) => mobilePrimaryHrefs.includes(item.href))
+          .map((item) => (
+            <MobileNavLink key={item.href} item={item} pathname={pathname} />
+          ))}
+        <MobileMenu pathname={pathname} bottomNav />
+      </nav>
     </div>
   );
 }
 
 type NavItem = (typeof navItems)[number];
 
-function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const isActive =
-    item.href === "/" ? pathname === item.href : pathname.startsWith(item.href);
+function BrandMark() {
+  return (
+    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary text-white shadow-[0_0_20px_rgba(117,103,248,0.28)]">
+      <Boxes className="h-5 w-5" aria-hidden="true" />
+    </span>
+  );
+}
+
+function isItemActive(href: string, pathname: string) {
+  return href === "/" ? pathname === href : pathname.startsWith(href);
+}
+
+function SidebarNavLink({
+  item,
+  pathname,
+}: {
+  item: NavItem;
+  pathname: string;
+}) {
+  const isActive = isItemActive(item.href, pathname);
 
   return (
     <Link
       href={item.href}
       aria-current={isActive ? "page" : undefined}
+      title={item.label}
       className={cn(
-        "inline-flex h-12 items-center gap-4 rounded-lg px-4 text-[15px] transition-colors",
+        "inline-flex h-11 items-center justify-center gap-3 rounded-lg px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:justify-start",
         isActive
-          ? "bg-[#786dff]/34 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-          : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+          ? "bg-[var(--accent-soft)] text-foreground"
+          : "text-muted-foreground hover:bg-[var(--bg-surface-hover)] hover:text-foreground",
       )}
     >
-      <item.icon className="h-5 w-5 shrink-0" />
-      <span className="truncate">{item.label}</span>
+      <item.icon
+        className={cn("h-5 w-5 shrink-0", isActive && "text-primary")}
+        aria-hidden="true"
+      />
+      <span className="hidden truncate xl:block">{item.label}</span>
     </Link>
   );
 }
@@ -138,41 +163,88 @@ function MobileNavLink({
   item: NavItem;
   pathname: string;
 }) {
-  const isActive =
-    item.href === "/" ? pathname === item.href : pathname.startsWith(item.href);
+  const isActive = isItemActive(item.href, pathname);
 
   return (
     <Link
       href={item.href}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm transition-colors",
+        "flex min-h-16 flex-col items-center justify-center gap-1 rounded-md px-1 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isActive
-          ? "bg-[#786dff]/34 text-white"
-          : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+          ? "text-primary"
+          : "text-muted-foreground hover:text-foreground",
       )}
     >
-      <item.icon className="h-4 w-4" />
-      {item.label}
+      <item.icon className="h-5 w-5" aria-hidden="true" />
+      <span className="max-w-full truncate">
+        {"shortLabel" in item ? item.shortLabel : item.label}
+      </span>
     </Link>
   );
 }
 
-function ShellIconButton({
-  label,
-  children,
+function MobileMenu({
+  pathname,
+  bottomNav = false,
 }: {
-  label: string;
-  children: ReactNode;
+  pathname: string;
+  bottomNav?: boolean;
 }) {
+  const extraItems = navItems.filter(
+    (item) => !mobilePrimaryHrefs.includes(item.href),
+  );
+  const hasActiveExtra = extraItems.some((item) =>
+    isItemActive(item.href, pathname),
+  );
+
   return (
-    <button
-      type="button"
-      className="relative grid h-11 w-11 place-items-center rounded-lg border border-white/12 bg-white/[0.03] text-muted-foreground transition-colors hover:border-white/22 hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={label}
-      title={label}
-    >
-      {children}
-    </button>
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          aria-label="Открыть дополнительные разделы"
+          className={cn(
+            bottomNav
+              ? "flex min-h-16 flex-col items-center justify-center gap-1 rounded-md px-1 text-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              : "grid h-10 w-10 place-items-center rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            hasActiveExtra
+              ? "text-primary"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Menu className="h-5 w-5" aria-hidden="true" />
+          {bottomNav ? <span>Ещё</span> : null}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Разделы</DialogTitle>
+          <DialogDescription>
+            Дополнительные возможности коллекции.
+          </DialogDescription>
+        </DialogHeader>
+        <nav aria-label="Дополнительная навигация" className="grid gap-2 py-2">
+          {extraItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={
+                isItemActive(item.href, pathname) ? "page" : undefined
+              }
+              className={cn(
+                "flex h-12 items-center gap-3 rounded-lg px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                isItemActive(item.href, pathname)
+                  ? "bg-[var(--accent-soft)] text-foreground"
+                  : "text-muted-foreground hover:bg-[var(--bg-surface-hover)] hover:text-foreground",
+              )}
+            >
+              <item.icon className="h-5 w-5" aria-hidden="true" />
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      </DialogContent>
+    </Dialog>
   );
 }

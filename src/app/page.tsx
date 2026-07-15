@@ -142,7 +142,7 @@ const heatmap = [
 
 export default function HomePage() {
   return (
-    <main className="px-4 pb-8 sm:px-6 lg:-mt-[86px] lg:px-8 lg:pb-10">
+    <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="mb-5 max-w-7xl">
         <h1 className="text-3xl font-semibold tracking-normal sm:text-4xl">
           Главная
@@ -451,10 +451,11 @@ function RatingStars({
         return (
           <Star
             key={index}
-            className={`h-3.5 w-3.5 ${isActive || isHalf
-              ? `${activeClassName} fill-current`
-              : "text-muted-foreground"
-              }`}
+            className={`h-3.5 w-3.5 ${
+              isActive || isHalf
+                ? `${activeClassName} fill-current`
+                : "text-muted-foreground"
+            }`}
           />
         );
       })}

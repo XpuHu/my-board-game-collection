@@ -24,9 +24,21 @@ export function BggAttribution({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/powered_by_bgg.webp"
-        alt="Powered by BGG"
-        className={cn("w-auto object-contain", compact ? "h-7" : "h-10")}
+        alt="Powered by BoardGameGeek"
+        className={cn(
+          "h-auto w-auto object-contain",
+          compact ? "max-w-12" : "max-w-12 xl:max-w-[168px]",
+        )}
       />
     </a>
+  );
+}
+
+export function SidebarBggAttribution({
+  className,
+  compact = false,
+}: BggAttributionProps) {
+  return (
+    <BggAttribution compact={compact} className={cn("shrink-0", className)} />
   );
 }

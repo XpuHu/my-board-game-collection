@@ -1,0 +1,27 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+
+import { AppShell } from "@/components/app-shell";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/collection",
+}));
+
+describe("AppShell", () => {
+  it("renders responsive navigation and a single sidebar attribution", () => {
+    const markup = renderToStaticMarkup(
+      <AppShell>
+        <main>Содержимое</main>
+      </AppShell>,
+    );
+
+    expect(markup).toContain("Основная навигация");
+    expect(markup).toContain("Мобильная навигация");
+    expect(markup).toContain('aria-current="page"');
+    expect(markup.match(/Powered by BoardGameGeek/g)).toHaveLength(2);
+    expect(markup.match(/alt="Powered by BoardGameGeek"/g)).toHaveLength(1);
+    expect(markup).not.toContain("<footer");
+    expect(markup).toContain("md:pl-[72px]");
+    expect(markup).toContain("xl:pl-56");
+  });
+});
