@@ -5,6 +5,7 @@ import type {
   BackupItemDto,
   BackupItemTypeDto,
   BackupPlaySessionDto,
+  ExpectedDatePrecision,
   JsonBackupDto,
   JsonImportReportDto,
 } from "@/shared/api";
@@ -115,6 +116,7 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
         owned: userItem.owned,
         wishlist: userItem.wishlist,
         ownedAt: userItem.ownedAt?.toISOString() ?? null,
+        favorite: userItem.favorite,
         location: userItem.location,
         personalRating: userItem.personalRating,
         notes: userItem.notes,
@@ -172,6 +174,9 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
         currency: preorder.currency,
         orderDate: preorder.orderDate?.toISOString() ?? null,
         expectedDate: preorder.expectedDate?.toISOString() ?? null,
+        expectedDatePrecision: (preorder.expectedDate
+          ? preorder.expectedDatePrecision
+          : "unknown") as JsonBackupDto["data"]["preorders"][number]["expectedDatePrecision"],
         receivedDate: preorder.receivedDate?.toISOString() ?? null,
         trackingNumber: preorder.trackingNumber,
         status: preorder.status as JsonBackupDto["data"]["preorders"][number]["status"],
@@ -520,6 +525,7 @@ async function importUserItems(
         userItem.owned && importedOwnedAt === null
           ? toDate(userItem.createdAt)
           : importedOwnedAt,
+      favorite: "favorite" in userItem ? userItem.favorite : false,
       location: userItem.location,
       personalRating: userItem.personalRating,
       notes: userItem.notes,
@@ -761,6 +767,16 @@ async function importPreorders(
       where: { id: preorder.id },
       select: { id: true },
     });
+    const expectedDatePrecision =
+      "expectedDatePrecision" in preorder && preorder.expectedDatePrecision
+        ? preorder.expectedDatePrecision
+        : preorder.expectedDate
+          ? "day"
+          : "unknown";
+    const expectedDate = normalizeImportedExpectedDate(
+      nullableDate(preorder.expectedDate),
+      expectedDatePrecision,
+    );
 
     await tx.preorder.upsert({
       where: { id: preorder.id },
@@ -770,7 +786,8 @@ async function importPreorders(
         price: preorder.price,
         currency: preorder.currency,
         orderDate: nullableDate(preorder.orderDate),
-        expectedDate: nullableDate(preorder.expectedDate),
+        expectedDate,
+        expectedDatePrecision,
         receivedDate: nullableDate(preorder.receivedDate),
         trackingNumber: preorder.trackingNumber,
         status: preorder.status,
@@ -784,7 +801,8 @@ async function importPreorders(
         price: preorder.price,
         currency: preorder.currency,
         orderDate: nullableDate(preorder.orderDate),
-        expectedDate: nullableDate(preorder.expectedDate),
+        expectedDate,
+        expectedDatePrecision,
         receivedDate: nullableDate(preorder.receivedDate),
         trackingNumber: preorder.trackingNumber,
         status: preorder.status,
@@ -1077,6 +1095,19 @@ function toDate(value: string) {
 
 function nullableDate(value?: string | null) {
   return value ? new Date(value) : null;
+}
+
+function normalizeImportedExpectedDate(
+  value: Date | null,
+  precision: ExpectedDatePrecision,
+) {
+  if (!value || precision === "unknown") return null;
+  value.setUTCHours(0, 0, 0, 0);
+  if (precision === "month") value.setUTCDate(1);
+  if (precision === "quarter") {
+    value.setUTCMonth(Math.floor(value.getUTCMonth() / 3) * 3, 1);
+  }
+  return value;
 }
 
 function decimalToNumber(value: unknown) {

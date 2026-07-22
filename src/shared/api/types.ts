@@ -60,6 +60,15 @@ export const preorderStatuses = [
 
 export type PreorderStatus = (typeof preorderStatuses)[number];
 
+export const expectedDatePrecisions = [
+  "day",
+  "month",
+  "quarter",
+  "unknown",
+] as const;
+
+export type ExpectedDatePrecision = (typeof expectedDatePrecisions)[number];
+
 export const linkTypes = [
   "official",
   "rules",
@@ -294,6 +303,7 @@ export type UserItemDto = {
   status: ItemStatus;
   owned: boolean;
   wishlist: boolean;
+  favorite: boolean;
   location?: string | null;
   personalRating?: number | null;
   notes?: string | null;
@@ -467,6 +477,7 @@ export type UpdateUserItemRequest = {
   status?: ItemStatus;
   owned?: boolean;
   wishlist?: boolean;
+  favorite?: boolean;
   location?: string | null;
   personalRating?: number | null;
   notes?: string | null;
@@ -579,8 +590,6 @@ export type SyncBggPlaysResponse = {
 
 export type PreorderUiStatus = "active" | "delayed" | "received" | "cancelled";
 
-export type ExpectedDatePrecision = "day" | "month" | "quarter" | "unknown";
-
 export type ExpectedDateEventValue = {
   expectedDate: string | null;
   expectedDatePrecision: ExpectedDatePrecision;
@@ -641,6 +650,7 @@ export type CreatePreorderRequest = {
   currency: string;
   orderDate?: string | null;
   expectedDate?: string | null;
+  expectedDatePrecision?: ExpectedDatePrecision;
   receivedDate?: string | null;
   trackingNumber?: string | null;
   status: PreorderStatus;
@@ -891,6 +901,7 @@ export type BackupPreorderDto = {
   currency: string;
   orderDate?: string | null;
   expectedDate?: string | null;
+  expectedDatePrecision: ExpectedDatePrecision;
   receivedDate?: string | null;
   trackingNumber?: string | null;
   status: PreorderStatus;

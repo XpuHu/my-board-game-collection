@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "@/components/toast-provider";
+import HomePage from "@/app/page";
 import { ItemReferenceEditor } from "@/components/item-reference-editor";
 import { CollectionPageClient } from "@/app/collection/collection-page-client";
 import { CollectionItemPageClient } from "@/app/collection/[itemId]/collection-item-page-client";
@@ -20,11 +21,16 @@ vi.mock("next/navigation", () => ({
 
 describe("MVP component contracts", () => {
   it("renders the collection list shell with compact filters and loading state", () => {
-    const markup = renderToStaticMarkup(<CollectionPageClient />);
+    const markup = renderToStaticMarkup(
+      <Wrapped>
+        <CollectionPageClient />
+      </Wrapped>,
+    );
 
     expect(markup).toContain("Моя коллекция");
     expect(markup).toContain("Поиск");
     expect(markup).toContain("Добавить игру");
+    expect(markup).toContain("Состояние");
     expect(markup).toContain("Загружаем данные");
   });
 
@@ -62,7 +68,7 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Добавить партию");
     expect(markup).toContain("С даты");
     expect(markup).toContain("По дату");
-    expect(markup).not.toContain("Источник");
+    expect(markup).toContain("Источник");
   });
 
   it("renders the preorder page shell with expected-date workflow entry points", () => {
@@ -76,6 +82,16 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Оформить предзаказ");
     expect(markup).toContain("Загружаем предзаказы");
     expect(markup).toContain("активные ожидания");
+    expect(markup).toContain("Полученные");
+  });
+
+  it("renders dashboard P0 quick actions", () => {
+    const markup = renderToStaticMarkup(<HomePage />);
+
+    expect(markup).toContain("Быстрые действия");
+    expect(markup).toContain("Добавить партию");
+    expect(markup).toContain("Оформить предзаказ");
+    expect(markup).toContain("Добавить фото");
   });
 
   it("renders the wishlist item card loading shell", () => {
@@ -115,6 +131,7 @@ describe("MVP component contracts", () => {
         status: "active",
         owned: false,
         wishlist: true,
+        favorite: false,
         tags: [],
       },
       externalReferences: [],

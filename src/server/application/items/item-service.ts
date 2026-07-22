@@ -386,6 +386,7 @@ export async function updateUserItem(
       create: {
         itemId,
         ...next,
+        favorite: input.favorite,
         location: input.location,
         personalRating: input.personalRating,
         notes: input.notes,
@@ -394,6 +395,7 @@ export async function updateUserItem(
       },
       update: {
         ...next,
+        favorite: input.favorite,
         location: input.location,
         personalRating: input.personalRating,
         notes: input.notes,

@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { CollectionItemPageClient } from "./collection-item-page-client";
 
 type CollectionItemPageProps = {
@@ -11,5 +13,9 @@ export default async function CollectionItemPage({
 }: CollectionItemPageProps) {
   const { itemId } = await params;
 
-  return <CollectionItemPageClient itemId={itemId} />;
+  return (
+    <Suspense>
+      <CollectionItemPageClient itemId={itemId} />
+    </Suspense>
+  );
 }

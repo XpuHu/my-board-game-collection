@@ -247,8 +247,8 @@ function buildCollectionMatchesSql(query: CollectionQuery) {
   if (query.playsMin !== undefined) having.push(Prisma.sql`COUNT(ps.id) >= ${query.playsMin}`);
   if (query.playsMax !== undefined) having.push(Prisma.sql`COUNT(ps.id) <= ${query.playsMax}`);
 
-  if (query.favorite === true) {
-    where.push(Prisma.sql`0 = 1`);
+  if (query.favorite !== undefined) {
+    where.push(Prisma.sql`ui.favorite = ${query.favorite}`);
   }
 
   if (personalRating !== undefined) where.push(Prisma.sql`ui.personal_rating = ${personalRating}`);
@@ -307,6 +307,7 @@ export const userItemCardSelect = {
   status: true,
   owned: true,
   wishlist: true,
+  favorite: true,
   personalRating: true,
   location: true,
   interestLevel: true,
@@ -342,6 +343,7 @@ export const userItemCardSelect = {
           id: true,
           status: true,
           expectedDate: true,
+          expectedDatePrecision: true,
           price: true,
           currency: true,
         },

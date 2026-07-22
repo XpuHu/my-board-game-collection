@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   linkTypes,
+  expectedDatePrecisions,
   itemStatuses,
   itemTypeCodes,
   playResults,
@@ -14,6 +15,7 @@ export const itemTypeCodeSchema = z.enum(itemTypeCodes);
 export const itemStatusSchema = z.enum(itemStatuses);
 export const playResultSchema = z.enum(playResults);
 export const preorderStatusSchema = z.enum(preorderStatuses);
+export const expectedDatePrecisionSchema = z.enum(expectedDatePrecisions);
 
 const nullableStringSchema = z.string().trim().min(1).nullable();
 
@@ -46,6 +48,7 @@ export const updateUserItemRequestSchema = z
     status: itemStatusSchema.optional(),
     owned: z.boolean().optional(),
     wishlist: z.boolean().optional(),
+    favorite: z.boolean().optional(),
     location: nullableStringSchema.optional(),
     personalRating: z.number().int().min(1).max(10).nullable().optional(),
     notes: nullableStringSchema.optional(),
@@ -168,6 +171,7 @@ export const createPreorderRequestSchema = z
     currency: z.string().trim().min(3).max(3),
     orderDate: optionalIsoDateStringSchema,
     expectedDate: optionalIsoDateStringSchema,
+    expectedDatePrecision: expectedDatePrecisionSchema.optional(),
     receivedDate: optionalIsoDateStringSchema,
     trackingNumber: nullableStringSchema.optional(),
     status: preorderStatusSchema,
@@ -178,9 +182,7 @@ export const createPreorderRequestSchema = z
 export const updatePreorderExpectedDateRequestSchema = z
   .object({
     expectedDate: isoDateStringSchema.nullable(),
-    expectedDatePrecision: z
-      .enum(["day", "month", "quarter", "unknown"])
-      .optional(),
+    expectedDatePrecision: expectedDatePrecisionSchema.optional(),
     reason: nullableStringSchema.optional(),
     comment: nullableStringSchema.optional(),
   })
@@ -301,6 +303,7 @@ const backupUserItemV1Schema = z
 
 const backupUserItemV2Schema = backupUserItemV1Schema.extend({
   ownedAt: isoDateStringSchema.nullable(),
+  favorite: z.boolean().optional(),
 });
 
 const backupExternalReferenceSchema = z
@@ -378,6 +381,7 @@ const backupPreorderSchema = z
     currency: z.string().trim().min(3).max(3),
     orderDate: isoDateStringSchema.nullable().optional(),
     expectedDate: isoDateStringSchema.nullable().optional(),
+    expectedDatePrecision: expectedDatePrecisionSchema.optional(),
     receivedDate: isoDateStringSchema.nullable().optional(),
     trackingNumber: z.string().nullable().optional(),
     status: preorderStatusSchema,

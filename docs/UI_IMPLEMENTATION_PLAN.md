@@ -868,20 +868,20 @@ legacy физически изолирован и доступен исключ�
 
 ## Этап 4. Основные пользовательские сценарии P0
 
-- [ ] Главная.
-- [ ] Collection cards и pagination.
-- [ ] Compact collection detail.
-- [ ] Общая AddPlayModal и plays history.
-- [ ] Preorders и быстрое изменение точной даты.
+- [x] Главная.
+- [x] Collection cards и pagination.
+- [x] Compact collection detail.
+- [x] Общая AddPlayModal и plays history.
+- [x] Preorders и быстрое изменение точной даты.
 
 Результат: MVP-01, 02, 07, 08, 09 и 11 работают в новом UI.
 
 ## Этап 5. P1-миграция пользовательских полей
 
-- [ ] Добавить `favorite`.
-- [ ] Добавить `expectedDatePrecision` и обновить events.
-- [ ] Обновить backup schema/import/export.
-- [ ] Включить favourite action и month/quarter controls.
+- [x] Добавить `favorite`.
+- [x] Добавить `expectedDatePrecision` и обновить events.
+- [x] Обновить backup schema/import/export.
+- [x] Включить favourite action и month/quarter controls.
 
 Результат: favourite и полный preorder modal работают на постоянных данных.
 

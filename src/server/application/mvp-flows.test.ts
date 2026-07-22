@@ -775,16 +775,37 @@ describe("MVP service flows", () => {
     ]);
   });
 
+  it("persists favorites and uses them in collection filters and dashboard", async () => {
+    const favorite = await createTestItem({ title: "Favorite", owned: true });
+    await createTestItem({ title: "Regular", owned: true });
+
+    const updated = await updateUserItem(favorite.id, { favorite: true });
+    const collection = await listCollectionCards(
+      { favorite: true },
+      { page: 1, pageSize: 24 },
+    );
+    const dashboard = await getDashboard();
+
+    expect(updated.favorite).toBe(true);
+    expect(collection.data).toHaveLength(1);
+    expect(collection.data[0]).toMatchObject({
+      item: { id: favorite.id },
+      userItem: { favorite: true },
+    });
+    expect(dashboard.favoriteItem?.item.id).toBe(favorite.id);
+  });
+
   it("exports and imports the full manual dataset without duplicate records", async () => {
     const base = await createTestItem({
       title: "Backup Base Game",
       owned: true,
-      wishlist: true,
+      wishlist: false,
     });
     const expansion = await createTestItem({
       title: "Backup Expansion",
       owned: true,
     });
+    await updateUserItem(base.id, { favorite: true });
     const tag = await prisma.tag.create({
       data: {
         name: "Backup Tag",
@@ -854,6 +875,7 @@ describe("MVP service flows", () => {
       price: 40,
       currency: "USD",
       expectedDate: "2026-10-01T00:00:00.000Z",
+      expectedDatePrecision: "quarter",
       status: "ordered",
     });
     await updatePreorderExpectedDate(preorder.id, {
@@ -880,6 +902,9 @@ describe("MVP service flows", () => {
     expect(backup.schemaVersion).toBe(2);
     expect(backup.data.userItems.find(({ itemId }) => itemId === base.id)?.ownedAt)
       .toBeTruthy();
+    expect(backup.data.userItems.find(({ itemId }) => itemId === base.id)?.favorite)
+      .toBe(true);
+    expect(backup.data.preorders[0].expectedDatePrecision).toBe("day");
     const duplicateExternalReference = {
       ...backup.data.externalReferences[0],
       id: randomUUID(),
@@ -958,7 +983,11 @@ describe("MVP service flows", () => {
       ownedAt: new Date(
         backup.data.userItems.find(({ itemId }) => itemId === base.id)!.ownedAt!,
       ),
+      favorite: true,
     });
+    await expect(
+      prisma.preorder.findUniqueOrThrow({ where: { id: preorder.id } }),
+    ).resolves.toMatchObject({ expectedDatePrecision: "day" });
   });
 
   it("imports v1 owned rows with createdAt as ownedAt", async () => {
@@ -969,8 +998,8 @@ describe("MVP service flows", () => {
       schemaVersion: 1 as const,
       data: {
         ...backup.data,
-        userItems: backup.data.userItems.map(({ ownedAt: _ownedAt, ...row }) =>
-          row,
+        userItems: backup.data.userItems.map(
+          ({ ownedAt: _ownedAt, favorite: _favorite, ...row }) => row,
         ),
       },
     };

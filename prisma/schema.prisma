@@ -64,25 +64,27 @@ model Item {
 }
 
 model UserItem {
-  id             String   @id @default(uuid())
-  itemId         String   @unique @map("item_id")
-  owned          Boolean  @default(false)
-  wishlist       Boolean  @default(false)
-  status         String   @default("wishlist")
+  id             String    @id @default(uuid())
+  itemId         String    @unique @map("item_id")
+  owned          Boolean   @default(false)
+  wishlist       Boolean   @default(false)
+  status         String    @default("wishlist")
   ownedAt        DateTime? @map("owned_at")
+  favorite       Boolean   @default(false)
   location       String?
-  personalRating Int?     @map("personal_rating")
+  personalRating Int?      @map("personal_rating")
   notes          String?
-  interestLevel  Int?     @map("interest_level")
-  decisionNotes  String?  @map("decision_notes")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  interestLevel  Int?      @map("interest_level")
+  decisionNotes  String?   @map("decision_notes")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([owned])
   @@index([wishlist])
   @@index([status])
+  @@index([favorite])
   @@index([owned, ownedAt])
   @@map("user_items")
 }
@@ -153,19 +155,20 @@ model Purchase {
 }
 
 model Preorder {
-  id             String    @id @default(uuid())
-  itemId         String    @map("item_id")
-  shop           String
-  price          Decimal
-  currency       String
-  orderDate      DateTime? @map("order_date")
-  expectedDate   DateTime? @map("expected_date")
-  receivedDate   DateTime? @map("received_date")
-  trackingNumber String?   @map("tracking_number")
-  status         String
-  comment        String?
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  id                    String    @id @default(uuid())
+  itemId                String    @map("item_id")
+  shop                  String
+  price                 Decimal
+  currency              String
+  orderDate             DateTime? @map("order_date")
+  expectedDate          DateTime? @map("expected_date")
+  expectedDatePrecision String    @default("day") @map("expected_date_precision")
+  receivedDate          DateTime? @map("received_date")
+  trackingNumber        String?   @map("tracking_number")
+  status                String
+  comment               String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
   item   Item            @relation(fields: [itemId], references: [id], onDelete: Cascade)
   events PreorderEvent[]

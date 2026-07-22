@@ -34,6 +34,7 @@ import type {
   PlaySessionDto,
   PlaySummaryDto,
   PreorderEventDto,
+  ExpectedDatePrecision,
   PreorderListItemDto,
   PreorderSummaryDto,
   PreorderStatus,
@@ -106,9 +107,10 @@ export type UserItemForCollectionCard = Pick<
   | "status"
   | "owned"
   | "wishlist"
+  | "favorite"
   | "personalRating"
   | "location"
-  | "interestLevel"
+      | "interestLevel"
   | "ownedAt"
   | "createdAt"
   | "updatedAt"
@@ -119,7 +121,12 @@ export type UserItemForCollectionCard = Pick<
       playSessions: Pick<PlaySession, "playedAt" | "result">[];
       preorders: Pick<
         Preorder,
-        "id" | "status" | "expectedDate" | "price" | "currency"
+        | "id"
+        | "status"
+        | "expectedDate"
+        | "expectedDatePrecision"
+        | "price"
+        | "currency"
       >[];
       purchases: Pick<Purchase, "totalPrice" | "currency">[];
       _count: {
@@ -155,7 +162,12 @@ export type UserItemForWishlistCard = Pick<
       purchases: Pick<Purchase, "id" | "totalPrice" | "currency">[];
       preorders: Pick<
         Preorder,
-        "id" | "status" | "expectedDate" | "price" | "currency"
+        | "id"
+        | "status"
+        | "expectedDate"
+        | "expectedDatePrecision"
+        | "price"
+        | "currency"
       >[];
       links: Pick<Link, "id">[];
       playSessions: Pick<PlaySession, "playedAt">[];
@@ -264,7 +276,7 @@ export function mapCollectionCard(
         hasPlays: userItem.item._count.playSessions > 0,
       }),
       ownedAt: requiredOwnedAt(userItem),
-      favorite: false,
+      favorite: userItem.favorite,
       personalRating: userItem.personalRating,
       location: userItem.location,
       tags: userItem.item.tags.map(mapTag),
@@ -390,6 +402,7 @@ export function mapUserItem(userItem: UserItemWithTags): UserItemDto {
     status: resolveLifecycleStatus(userItem.status),
     owned: userItem.owned,
     wishlist: userItem.wishlist,
+    favorite: userItem.favorite,
     location: userItem.location,
     personalRating: userItem.personalRating,
     notes: userItem.notes,
@@ -559,14 +572,14 @@ export function mapPreorderListItem(
     price: money(preorder.price, preorder.currency),
     orderDate: preorder.orderDate?.toISOString() ?? null,
     expectedDate: preorder.expectedDate?.toISOString() ?? null,
-    expectedDatePrecision: preorder.expectedDate ? "day" : "unknown",
+    expectedDatePrecision: expectedDatePrecision(preorder),
     receivedDate: preorder.receivedDate?.toISOString() ?? null,
     trackingNumber: preorder.trackingNumber,
     status: preorder.status as PreorderStatus,
     uiStatus: getPreorderUiStatus(
       {
         ...preorder,
-        expectedDatePrecision: preorder.expectedDate ? "day" : "unknown",
+        expectedDatePrecision: expectedDatePrecision(preorder),
       },
       now,
     ),
@@ -576,7 +589,10 @@ export function mapPreorderListItem(
 }
 
 export function mapPreorderSummary(
-  preorder: Pick<Preorder, "id" | "status" | "expectedDate">,
+  preorder: Pick<
+    Preorder,
+    "id" | "status" | "expectedDate" | "expectedDatePrecision"
+  >,
   now = new Date(),
 ): PreorderSummaryDto {
   return {
@@ -585,12 +601,12 @@ export function mapPreorderSummary(
     uiStatus: getPreorderUiStatus(
       {
         ...preorder,
-        expectedDatePrecision: preorder.expectedDate ? "day" : "unknown",
+        expectedDatePrecision: expectedDatePrecision(preorder),
       },
       now,
     ),
     expectedDate: preorder.expectedDate?.toISOString() ?? null,
-    expectedDatePrecision: preorder.expectedDate ? "day" : "unknown",
+    expectedDatePrecision: expectedDatePrecision(preorder),
   };
 }
 
@@ -729,7 +745,7 @@ function mapUserItemDetail(
     owned: userItem.owned,
     wishlist: userItem.wishlist,
     ownedAt: userItem.ownedAt?.toISOString() ?? null,
-    favorite: false,
+    favorite: userItem.favorite,
     location: userItem.location,
     personalRating: userItem.personalRating,
     notes: userItem.notes,
@@ -759,6 +775,17 @@ function requiredOwnedAt(userItem: Pick<UserItem, "id" | "ownedAt">) {
   }
 
   return userItem.ownedAt.toISOString();
+}
+
+function expectedDatePrecision(
+  preorder: Pick<Preorder, "expectedDate" | "expectedDatePrecision">,
+): ExpectedDatePrecision {
+  if (!preorder.expectedDate) return "unknown";
+  return ["day", "month", "quarter", "unknown"].includes(
+    preorder.expectedDatePrecision,
+  )
+    ? (preorder.expectedDatePrecision as ExpectedDatePrecision)
+    : "day";
 }
 
 function getLastPlayedAt(playSessions: PlaySession[]) {

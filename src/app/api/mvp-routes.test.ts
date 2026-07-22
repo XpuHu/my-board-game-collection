@@ -133,6 +133,12 @@ describe("MVP API flows", () => {
     expect(response.status).toBe(200);
     expect(body.preorder.expectedDate).toBe("2026-10-01T00:00:00.000Z");
     expect(body.preorder.expectedDatePrecision).toBe("month");
+    await expect(
+      prisma.preorder.findUniqueOrThrow({ where: { id: preorder.id } }),
+    ).resolves.toMatchObject({
+      expectedDate: new Date("2026-10-01T00:00:00.000Z"),
+      expectedDatePrecision: "month",
+    });
     expect(body.event).toMatchObject({
       type: "expected_date_changed",
       legacyFormat: false,

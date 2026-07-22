@@ -35,6 +35,7 @@ type UserItemEditorProps = {
 type UserItemFormState = {
   owned: boolean;
   wishlist: boolean;
+  favorite: boolean;
   status: ItemStatus;
   location: string;
   personalRating: string;
@@ -120,6 +121,7 @@ export function UserItemEditor({
       const updated = await apiClient.items.updateUserItem(userItem.itemId, {
         owned: form.owned,
         wishlist: form.wishlist,
+        favorite: form.favorite,
         status: form.status,
         location: nullableText(form.location),
         personalRating:
@@ -179,6 +181,16 @@ export function UserItemEditor({
             className="h-4 w-4 rounded border"
           />
           <span>В wishlist</span>
+        </label>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={form.favorite}
+            onChange={(event) => updateForm("favorite", event.target.checked)}
+            className="h-4 w-4 rounded border"
+          />
+          <span>В избранном</span>
         </label>
       </div>
 
@@ -312,6 +324,7 @@ function toUserItemForm(userItem: UserItemDto): UserItemFormState {
   return {
     owned: userItem.owned,
     wishlist: userItem.wishlist,
+    favorite: userItem.favorite,
     status: userItem.status,
     location: userItem.location ?? "",
     personalRating: userItem.personalRating

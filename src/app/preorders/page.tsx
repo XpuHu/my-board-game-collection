@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { PreordersPageClient } from "./preorders-page-client";
 
 type PreordersPageProps = {
@@ -11,5 +13,5 @@ export default async function PreordersPage({
 }: PreordersPageProps) {
   const { itemId } = await searchParams;
 
-  return <PreordersPageClient initialItemId={itemId} />;
+  return <Suspense><PreordersPageClient initialItemId={itemId} /></Suspense>;
 }

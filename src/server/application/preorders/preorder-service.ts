@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/infrastructure/database/prisma";
 import type {
   CreatePreorderInput,
+  ExpectedDatePrecision,
   PaginatedResponse,
   PreorderListItemDto,
   PreorderQueryDto,
@@ -83,6 +84,10 @@ export async function createPreorder(
   input: CreatePreorderInput,
 ): Promise<LegacyPreorderDto> {
   await assertItemExists(itemId);
+  const expected = resolveExpectedDate(
+    input.expectedDate,
+    input.expectedDatePrecision,
+  );
 
   const preorder = await prisma.$transaction(async (tx) => {
     const created = await tx.preorder.create({
@@ -92,7 +97,8 @@ export async function createPreorder(
         price: input.price,
         currency: input.currency,
         orderDate: toDate(input.orderDate),
-        expectedDate: toDate(input.expectedDate),
+        expectedDate: expected.date,
+        expectedDatePrecision: expected.precision,
         receivedDate: toDate(input.receivedDate),
         trackingNumber: input.trackingNumber,
         status: input.status,
@@ -125,8 +131,7 @@ export async function updatePreorder(
   input: UpdatePreorderInput,
 ): Promise<LegacyPreorderDto> {
   const existing = await getPreorderOrThrow(preorderId);
-  const nextExpectedDate =
-    "expectedDate" in input ? toDate(input.expectedDate) : undefined;
+  const nextExpected = resolveExpectedDateUpdate(existing, input);
   const nextReceivedDate = resolveReceivedDate(existing.receivedDate, input);
 
   const preorder = await prisma.$transaction(async (tx) => {
@@ -139,7 +144,8 @@ export async function updatePreorder(
         price: input.price,
         currency: input.currency,
         orderDate: "orderDate" in input ? toDate(input.orderDate) : undefined,
-        expectedDate: nextExpectedDate,
+        expectedDate: nextExpected?.date,
+        expectedDatePrecision: nextExpected?.precision,
         receivedDate: nextReceivedDate,
         trackingNumber: input.trackingNumber,
         status: input.status,
@@ -149,8 +155,9 @@ export async function updatePreorder(
     });
 
     if (
-      "expectedDate" in input &&
-      !sameDate(existing.expectedDate, nextExpectedDate)
+      nextExpected &&
+      (!sameDate(existing.expectedDate, nextExpected.date) ||
+        existing.expectedDatePrecision !== nextExpected.precision)
     ) {
       await tx.preorderEvent.create({
         data: {
@@ -158,11 +165,11 @@ export async function updatePreorder(
           type: "expected_date_changed",
           oldValue: JSON.stringify({
             expectedDate: existing.expectedDate?.toISOString() ?? null,
-            expectedDatePrecision: existing.expectedDate ? "day" : "unknown",
+            expectedDatePrecision: storedExpectedDatePrecision(existing),
           }),
           newValue: JSON.stringify({
-            expectedDate: nextExpectedDate?.toISOString() ?? null,
-            expectedDatePrecision: nextExpectedDate ? "day" : "unknown",
+            expectedDate: nextExpected.date?.toISOString() ?? null,
+            expectedDatePrecision: nextExpected.precision,
           }),
         },
       });
@@ -256,12 +263,16 @@ async function updatePreorderExpectedDateCommand(
     });
     if (!existing) throw preorderNotFound();
 
-    const precision = input.expectedDatePrecision ??
-      (input.expectedDate ? "day" : "unknown");
-    const expectedDate = normalizeExpectedDate(input.expectedDate, precision);
+    const nextExpected = resolveExpectedDate(
+      input.expectedDate,
+      input.expectedDatePrecision,
+    );
     const preorder = await tx.preorder.update({
       where: { id: preorderId },
-      data: { expectedDate },
+      data: {
+        expectedDate: nextExpected.date,
+        expectedDatePrecision: nextExpected.precision,
+      },
       select: preorderListSelect,
     });
     const event = await tx.preorderEvent.create({
@@ -270,18 +281,18 @@ async function updatePreorderExpectedDateCommand(
         type: "expected_date_changed",
         oldValue: JSON.stringify({
           expectedDate: existing.expectedDate?.toISOString() ?? null,
-          expectedDatePrecision: existing.expectedDate ? "day" : "unknown",
+          expectedDatePrecision: storedExpectedDatePrecision(existing),
         }),
         newValue: JSON.stringify({
-          expectedDate: expectedDate?.toISOString() ?? null,
-          expectedDatePrecision: precision,
+          expectedDate: nextExpected.date?.toISOString() ?? null,
+          expectedDatePrecision: nextExpected.precision,
         }),
         reason: input.reason,
         comment: input.comment,
       },
     });
 
-    return { preorder, event, precision };
+    return { preorder, event, precision: nextExpected.precision };
   });
 }
 
@@ -355,10 +366,24 @@ function endOfDay(value: string) {
 }
 
 function normalizeExpectedDate(
-  value: string | null,
-  precision: "day" | "month" | "quarter" | "unknown",
+  value: string | null | undefined,
+  precision: ExpectedDatePrecision,
 ) {
-  if (!value || precision === "unknown") return null;
+  if (precision === "unknown") {
+    if (value) {
+      throw ApiError.badRequest(
+        "EXPECTED_DATE_MUST_BE_NULL",
+        "Unknown precision requires a null expected date",
+      );
+    }
+    return null;
+  }
+  if (!value) {
+    throw ApiError.badRequest(
+      "EXPECTED_DATE_REQUIRED",
+      "A date is required for day, month or quarter precision",
+    );
+  }
   const date = new Date(value);
   date.setUTCHours(0, 0, 0, 0);
   if (precision === "month") date.setUTCDate(1);
@@ -366,6 +391,52 @@ function normalizeExpectedDate(
     date.setUTCMonth(Math.floor(date.getUTCMonth() / 3) * 3, 1);
   }
   return date;
+}
+
+function resolveExpectedDate(
+  value: string | null | undefined,
+  precision?: ExpectedDatePrecision,
+) {
+  const resolvedPrecision = precision ?? (value ? "day" : "unknown");
+  return {
+    date: normalizeExpectedDate(value, resolvedPrecision),
+    precision: resolvedPrecision,
+  };
+}
+
+function resolveExpectedDateUpdate(
+  existing: {
+    expectedDate: Date | null;
+    expectedDatePrecision: string;
+  },
+  input: UpdatePreorderInput,
+) {
+  if (!("expectedDate" in input) && !("expectedDatePrecision" in input)) {
+    return null;
+  }
+
+  const value = "expectedDate" in input
+    ? input.expectedDate
+    : existing.expectedDate?.toISOString() ?? null;
+  const precision = input.expectedDatePrecision ??
+    ("expectedDate" in input
+      ? value
+        ? "day"
+        : "unknown"
+      : storedExpectedDatePrecision(existing));
+  return resolveExpectedDate(value, precision);
+}
+
+function storedExpectedDatePrecision(preorder: {
+  expectedDate: Date | null;
+  expectedDatePrecision: string;
+}): ExpectedDatePrecision {
+  if (!preorder.expectedDate) return "unknown";
+  return ["day", "month", "quarter", "unknown"].includes(
+    preorder.expectedDatePrecision,
+  )
+    ? (preorder.expectedDatePrecision as ExpectedDatePrecision)
+    : "day";
 }
 
 function sameDate(left?: Date | null, right?: Date | null) {
@@ -432,6 +503,7 @@ export const preorderListSelect = {
   currency: true,
   orderDate: true,
   expectedDate: true,
+  expectedDatePrecision: true,
   receivedDate: true,
   trackingNumber: true,
   status: true,

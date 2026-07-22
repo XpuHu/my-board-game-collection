@@ -67,14 +67,11 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
     prisma.userItem.findMany({
       where: {
         owned: true,
+        favorite: true,
         item: { deletedAt: null },
       },
       select: userItemCardSelect,
-      orderBy: [
-        { personalRating: "desc" },
-        { item: { playSessions: { _count: "desc" } } },
-        { updatedAt: "desc" },
-      ],
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
       take: 1,
     }),
     prisma.playSession.findMany({

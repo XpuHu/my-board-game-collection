@@ -310,6 +310,7 @@ const userItemWishlistCardSelect = {
           id: true,
           status: true,
           expectedDate: true,
+          expectedDatePrecision: true,
           price: true,
           currency: true,
         },
