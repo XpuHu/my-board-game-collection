@@ -69,6 +69,7 @@ model UserItem {
   owned          Boolean  @default(false)
   wishlist       Boolean  @default(false)
   status         String   @default("wishlist")
+  ownedAt        DateTime? @map("owned_at")
   location       String?
   personalRating Int?     @map("personal_rating")
   notes          String?
@@ -82,6 +83,7 @@ model UserItem {
   @@index([owned])
   @@index([wishlist])
   @@index([status])
+  @@index([owned, ownedAt])
   @@map("user_items")
 }
 

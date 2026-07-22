@@ -51,12 +51,13 @@ export async function listCollection(
 export async function listCollectionCards(
   query: CollectionQuery,
   pagination: PaginationInput,
+  now = new Date(),
 ): Promise<PaginatedResponse<CollectionCardDto>> {
   const page = await queryCollection(query, pagination);
 
   return {
     ...page,
-    data: page.data.map(mapCollectionCard),
+    data: page.data.map((item) => mapCollectionCard(item, now)),
   };
 }
 
@@ -259,7 +260,7 @@ function buildCollectionMatchesSql(query: CollectionQuery) {
   return Prisma.sql`
     SELECT
       ui.id AS id,
-      ui.created_at AS added_at,
+      ui.owned_at AS added_at,
       i.title AS title,
       ui.personal_rating AS personal_rating,
       COUNT(ps.id) AS plays_count,
@@ -309,6 +310,7 @@ export const userItemCardSelect = {
   personalRating: true,
   location: true,
   interestLevel: true,
+  ownedAt: true,
   createdAt: true,
   updatedAt: true,
   item: {

@@ -7,6 +7,7 @@ export type UserItemTransitionState = {
   owned: boolean;
   wishlist: boolean;
   status: string;
+  ownedAt?: Date | null;
 };
 
 export type UserItemTransitionPatch = {
@@ -18,12 +19,21 @@ export type UserItemTransitionPatch = {
 export function resolveUserItemTransition(
   current: UserItemTransitionState | null,
   patch: UserItemTransitionPatch,
-): UserItemTransitionState & { status: UserItemLifecycleStatus } {
+  now = new Date(),
+): UserItemTransitionState & {
+  status: UserItemLifecycleStatus;
+  ownedAt: Date | null;
+} {
   const next = {
     owned: patch.owned ?? current?.owned ?? false,
     wishlist: patch.wishlist ?? current?.wishlist ?? false,
     status: patch.status ?? resolveLifecycleStatus(current?.status ?? "active"),
+    ownedAt: current?.ownedAt ?? null,
   };
+
+  if (!current?.owned && next.owned && next.ownedAt === null) {
+    next.ownedAt = now;
+  }
 
   if (next.status === "sold" || next.status === "archived") {
     next.owned = false;

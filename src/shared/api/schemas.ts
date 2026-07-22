@@ -276,7 +276,7 @@ const backupItemSchema = z
   })
   .strict();
 
-const backupUserItemSchema = z
+const backupUserItemV1Schema = z
   .object({
     id: uuidSchema,
     itemId: uuidSchema,
@@ -298,6 +298,10 @@ const backupUserItemSchema = z
     updatedAt: isoDateStringSchema,
   })
   .strict();
+
+const backupUserItemV2Schema = backupUserItemV1Schema.extend({
+  ownedAt: isoDateStringSchema.nullable(),
+});
 
 const backupExternalReferenceSchema = z
   .object({
@@ -446,7 +450,7 @@ const backupItemTagSchema = z
   })
   .strict();
 
-export const jsonBackupSchema = z
+const jsonBackupV1Schema = z
   .object({
     schemaVersion: z.literal(1),
     exportedAt: isoDateStringSchema,
@@ -454,7 +458,7 @@ export const jsonBackupSchema = z
       .object({
         itemTypes: z.array(backupItemTypeSchema),
         items: z.array(backupItemSchema),
-        userItems: z.array(backupUserItemSchema),
+        userItems: z.array(backupUserItemV1Schema),
         externalReferences: z.array(backupExternalReferenceSchema),
         images: z.array(backupImageSchema),
         links: z.array(backupLinkSchema),
@@ -469,6 +473,35 @@ export const jsonBackupSchema = z
       .strict(),
   })
   .strict();
+
+const jsonBackupV2Schema = z
+  .object({
+    schemaVersion: z.literal(2),
+    exportedAt: isoDateStringSchema,
+    data: z
+      .object({
+        itemTypes: z.array(backupItemTypeSchema),
+        items: z.array(backupItemSchema),
+        userItems: z.array(backupUserItemV2Schema),
+        externalReferences: z.array(backupExternalReferenceSchema),
+        images: z.array(backupImageSchema),
+        links: z.array(backupLinkSchema),
+        purchases: z.array(backupPurchaseSchema),
+        preorders: z.array(backupPreorderSchema),
+        playSessions: z.array(backupPlaySessionSchema),
+        notes: z.array(backupNoteSchema),
+        relations: z.array(backupRelationSchema),
+        tags: z.array(backupTagSchema),
+        itemTags: z.array(backupItemTagSchema),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const jsonBackupSchema = z.discriminatedUnion("schemaVersion", [
+  jsonBackupV1Schema,
+  jsonBackupV2Schema,
+]);
 
 export type CreatePurchaseInput = z.infer<typeof createPurchaseRequestSchema>;
 export type UpdatePurchaseInput = z.infer<typeof updatePurchaseRequestSchema>;

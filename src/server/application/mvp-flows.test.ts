@@ -67,6 +67,9 @@ describe("MVP service flows", () => {
       personalRating: 9,
       notes: "Core box",
     });
+    const firstOwnedAt = (
+      await prisma.userItem.findUniqueOrThrow({ where: { itemId: item.id } })
+    ).ownedAt;
     await addItemToCollection(item.id, {
       location: "Shelf B",
       personalRating: 8,
@@ -85,6 +88,7 @@ describe("MVP service flows", () => {
     expect(userItem.wishlist).toBe(false);
     expect(userItem.status).toBe("active");
     expect(userItem.location).toBe("Shelf B");
+    expect(userItem.ownedAt).toEqual(firstOwnedAt);
   });
 
   it("adds an item to wishlist without duplicating UserItem", async () => {
@@ -658,9 +662,11 @@ describe("MVP service flows", () => {
       status: "paid",
     });
 
+    const now = new Date("2026-07-15T12:00:00.000Z");
     const collection = await listCollectionCards(
       { playsMin: 1, sort: "plays" },
       { page: 1, pageSize: 1 },
+      now,
     );
     const lastPlayedCollection = await listCollectionCards(
       { sort: "lastPlayed", direction: "desc" },
@@ -682,11 +688,10 @@ describe("MVP service flows", () => {
     const preorders = await listPreorderItems(
       { group: "active", expectedTo: "2026-07-31T23:59:59.999Z" },
       { page: 1, pageSize: 20 },
+      now,
     );
-    const dashboard = await getDashboard(new Date("2026-07-15T12:00:00.000Z"));
-    const overview = await getStatisticsOverview(
-      new Date("2026-07-15T12:00:00.000Z"),
-    );
+    const dashboard = await getDashboard(now);
+    const overview = await getStatisticsOverview(now);
 
     expect(collection.pagination).toMatchObject({ total: 1, pageSize: 1 });
     expect(collection.data[0]).toMatchObject({
@@ -728,6 +733,46 @@ describe("MVP service flows", () => {
       title: "Expansion",
       playsCount: 1,
     });
+  });
+
+  it("sorts collection and dashboard recently added by ownedAt", async () => {
+    const first = await createTestItem({ title: "First created", owned: true });
+    const second = await createTestItem({ title: "Second created", owned: true });
+
+    await prisma.userItem.update({
+      where: { itemId: first.id },
+      data: {
+        ownedAt: new Date("2026-01-01T00:00:00.000Z"),
+        createdAt: new Date("2026-03-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+      },
+    });
+    await prisma.userItem.update({
+      where: { itemId: second.id },
+      data: {
+        ownedAt: new Date("2026-02-01T00:00:00.000Z"),
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+
+    const collection = await listCollectionCards(
+      { sort: "added", direction: "desc" },
+      { page: 1, pageSize: 24 },
+    );
+    const dashboard = await getDashboard();
+
+    expect(collection.data.map(({ item }) => item.title)).toEqual([
+      "Second created",
+      "First created",
+    ]);
+    expect(collection.data[0].userItem.ownedAt).toBe(
+      "2026-02-01T00:00:00.000Z",
+    );
+    expect(dashboard.recentlyAdded.map(({ item }) => item.title)).toEqual([
+      "Second created",
+      "First created",
+    ]);
   });
 
   it("exports and imports the full manual dataset without duplicate records", async () => {
@@ -832,6 +877,9 @@ describe("MVP service flows", () => {
     });
 
     const backup = await exportJsonBackup();
+    expect(backup.schemaVersion).toBe(2);
+    expect(backup.data.userItems.find(({ itemId }) => itemId === base.id)?.ownedAt)
+      .toBeTruthy();
     const duplicateExternalReference = {
       ...backup.data.externalReferences[0],
       id: randomUUID(),
@@ -904,6 +952,39 @@ describe("MVP service flows", () => {
     await expect(prisma.playSession.count()).resolves.toBe(2);
     expect(importedBase.tags).toHaveLength(1);
     expect(importedBase.categories).toEqual(["Strategy"]);
+    await expect(
+      prisma.userItem.findUniqueOrThrow({ where: { itemId: base.id } }),
+    ).resolves.toMatchObject({
+      ownedAt: new Date(
+        backup.data.userItems.find(({ itemId }) => itemId === base.id)!.ownedAt!,
+      ),
+    });
+  });
+
+  it("imports v1 owned rows with createdAt as ownedAt", async () => {
+    const item = await createTestItem({ title: "Legacy backup", owned: true });
+    const backup = await exportJsonBackup();
+    const legacyBackup = {
+      ...backup,
+      schemaVersion: 1 as const,
+      data: {
+        ...backup.data,
+        userItems: backup.data.userItems.map(({ ownedAt: _ownedAt, ...row }) =>
+          row,
+        ),
+      },
+    };
+    const expectedOwnedAt = legacyBackup.data.userItems.find(
+      ({ itemId }) => itemId === item.id,
+    )!.createdAt;
+
+    await clearDomainData();
+    await importJsonBackup(legacyBackup);
+
+    const imported = await prisma.userItem.findUniqueOrThrow({
+      where: { itemId: item.id },
+    });
+    expect(imported.ownedAt?.toISOString()).toBe(expectedOwnedAt);
   });
 });
 
@@ -935,6 +1016,7 @@ async function createTestItem({
           owned,
           wishlist,
           status: owned ? "owned" : "wishlist",
+          ownedAt: owned ? new Date() : null,
         },
       },
     },

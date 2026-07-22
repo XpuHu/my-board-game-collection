@@ -447,6 +447,7 @@ async function createTestItem({
           owned,
           wishlist,
           status: owned ? "owned" : "wishlist",
+          ownedAt: owned ? new Date() : null,
         },
       },
     },

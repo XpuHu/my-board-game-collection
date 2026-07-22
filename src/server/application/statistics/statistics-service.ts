@@ -156,7 +156,7 @@ export async function getStatisticsOverview(
     results: countByResult(plays),
     activityByWeekday: countByWeekday(plays),
     staleItems: (staleItems as UserItemForCollectionCard[]).map(
-      mapCollectionCard,
+      (item) => mapCollectionCard(item, now),
     ),
     expansionUsage: await getExpansionUsage(plays),
     frequentPlayers: getFrequentPlayers(plays),

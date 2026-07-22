@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 
 process.env.DATABASE_URL = "file:./.test/test.db";
@@ -17,22 +23,24 @@ if (!globalForTest.__boardGameCollectionTestDbReady) {
 
   const { prisma } = await import("../infrastructure/database/prisma");
 
-  const migrationSql = readFileSync(
-    resolve(
-      process.cwd(),
-      "prisma",
-      "migrations",
-      "20260706190500_init",
-      "migration.sql",
-    ),
-    "utf8",
-  );
+  const migrationsPath = resolve(process.cwd(), "prisma", "migrations");
+  const migrations = readdirSync(migrationsPath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
 
-  for (const statement of migrationSql
-    .split(";")
-    .map((entry) => entry.trim())
-    .filter(Boolean)) {
-    await prisma.$executeRawUnsafe(statement);
+  for (const migration of migrations) {
+    const migrationSql = readFileSync(
+      resolve(migrationsPath, migration, "migration.sql"),
+      "utf8",
+    );
+
+    for (const statement of migrationSql
+      .split(";")
+      .map((entry) => entry.trim())
+      .filter(Boolean)) {
+      await prisma.$executeRawUnsafe(statement);
+    }
   }
 
   await prisma.itemType.createMany({

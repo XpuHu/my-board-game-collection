@@ -40,12 +40,13 @@ export async function listWishlist(
 export async function listWishlistCards(
   query: WishlistQuery,
   pagination: PaginationInput,
+  now = new Date(),
 ): Promise<PaginatedResponse<WishlistCardDto>> {
   const page = await queryWishlist(query, pagination);
 
   return {
     ...page,
-    data: page.data.map(mapWishlistCard),
+    data: page.data.map((item) => mapWishlistCard(item, now)),
   };
 }
 

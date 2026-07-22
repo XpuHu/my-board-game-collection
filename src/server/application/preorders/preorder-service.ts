@@ -52,6 +52,7 @@ export async function listPreorders(): Promise<LegacyPreorderDto[]> {
 export async function listPreorderItems(
   query: PreorderQueryDto,
   pagination: PaginationInput,
+  now = new Date(),
 ): Promise<PaginatedResponse<PreorderListItemDto>> {
   const where = buildPreorderWhere(query);
   const { page, pageSize } = pagination;
@@ -67,7 +68,7 @@ export async function listPreorderItems(
   ]);
 
   return {
-    data: preorders.map((preorder) => mapPreorderListItem(preorder)),
+    data: preorders.map((preorder) => mapPreorderListItem(preorder, now)),
     pagination: {
       page,
       pageSize,

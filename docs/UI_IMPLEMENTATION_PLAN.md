@@ -857,11 +857,11 @@ legacy физически изолирован и доступен исключ�
 
 ## Этап 3. P0-миграция даты коллекции
 
-- [ ] Добавить `ownedAt`.
-- [ ] Выполнить backfill для существующих owned-записей.
-- [ ] Обновить collection transitions.
-- [ ] Обновить backup schema/import/export.
-- [ ] Переключить dashboard и collection sort на `ownedAt`.
+- [x] Добавить `ownedAt`.
+- [x] Выполнить backfill для существующих owned-записей.
+- [x] Обновить collection transitions.
+- [x] Обновить backup schema/import/export.
+- [x] Переключить dashboard и collection sort на `ownedAt`.
 
 Результат: recently added и added date используют достоверное поле, не
 зависящее от обычного `updatedAt`.

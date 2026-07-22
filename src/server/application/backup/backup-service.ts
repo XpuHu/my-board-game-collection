@@ -12,7 +12,7 @@ import type { JsonBackupInput } from "@/shared/api/schemas";
 import { resolveLifecycleStatus } from "@/server/application/items/user-item-state";
 import { resolveUserItemTransition } from "@/server/application/items/user-item-transition";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 type BackupTransaction = Prisma.TransactionClient;
 
@@ -114,6 +114,7 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
         status: userItem.status as JsonBackupDto["data"]["userItems"][number]["status"],
         owned: userItem.owned,
         wishlist: userItem.wishlist,
+        ownedAt: userItem.ownedAt?.toISOString() ?? null,
         location: userItem.location,
         personalRating: userItem.personalRating,
         notes: userItem.notes,
@@ -507,8 +508,18 @@ async function importUserItems(
       wishlist: userItem.owned ? false : userItem.wishlist,
       status: resolveLifecycleStatus(userItem.status),
     });
+    const importedOwnedAt =
+      "ownedAt" in userItem
+        ? nullableDate(userItem.ownedAt)
+        : userItem.owned
+          ? toDate(userItem.createdAt)
+          : null;
     const data = {
       ...next,
+      ownedAt:
+        userItem.owned && importedOwnedAt === null
+          ? toDate(userItem.createdAt)
+          : importedOwnedAt,
       location: userItem.location,
       personalRating: userItem.personalRating,
       notes: userItem.notes,

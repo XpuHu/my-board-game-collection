@@ -27,7 +27,7 @@ export function BggAttribution({
         alt="Powered by BoardGameGeek"
         className={cn(
           "h-auto w-auto object-contain",
-          compact ? "max-w-12" : "max-w-12 xl:max-w-[168px]",
+          compact ? "max-w-12" : "max-w-12 min-[1200px]:max-w-[168px]",
         )}
       />
     </a>

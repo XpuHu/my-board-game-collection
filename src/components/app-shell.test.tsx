@@ -22,7 +22,8 @@ describe("AppShell", () => {
     expect(markup.match(/alt="Powered by BoardGameGeek"/g)).toHaveLength(1);
     expect(markup).not.toContain("<footer");
     expect(markup).toContain("md:pl-[72px]");
-    expect(markup).toContain("xl:pl-56");
+    expect(markup).toContain("min-[1200px]:pl-56");
+    expect(markup).not.toContain("xl:");
     expect(markup).toContain("safe-area-inset-top");
     expect(markup).toContain("safe-area-inset-bottom");
     expect(markup).not.toContain("shadow-[");

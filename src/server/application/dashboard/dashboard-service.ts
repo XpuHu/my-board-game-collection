@@ -50,7 +50,7 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
     prisma.userItem.findMany({
       where: { owned: true, item: { deletedAt: null } },
       select: userItemCardSelect,
-      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      orderBy: [{ ownedAt: "desc" }, { id: "asc" }],
       take: 4,
     }),
     prisma.playSession.findMany({
@@ -97,7 +97,7 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
       (preorder) => mapPreorderListItem(preorder, now),
     ),
     recentlyAdded: (recentlyAdded as UserItemForCollectionCard[]).map(
-      mapCollectionCard,
+      (item) => mapCollectionCard(item, now),
     ),
     monthSummary: {
       playsCount: monthPlays.length,
@@ -110,7 +110,7 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
       winsCount: monthPlays.filter(({ result }) => result === "win").length,
     },
     favoriteItem: favoriteItems[0]
-      ? mapCollectionCard(favoriteItems[0] as UserItemForCollectionCard)
+      ? mapCollectionCard(favoriteItems[0] as UserItemForCollectionCard, now)
       : null,
     activity: mapActivity(activityPlays),
   };

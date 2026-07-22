@@ -427,7 +427,8 @@ export async function addItemToCollection(
   await assertItemExists(itemId);
 
   await prisma.$transaction(async (tx) => {
-    const next = resolveUserItemTransition(null, collectionTransition());
+    const current = await tx.userItem.findUnique({ where: { itemId } });
+    const next = resolveUserItemTransition(current, collectionTransition());
     await tx.userItem.upsert({
       where: {
         itemId,

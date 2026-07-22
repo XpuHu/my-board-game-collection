@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "@fontsource-variable/inter";
 import { AppShell } from "@/components/app-shell";
 import { ToastProvider } from "@/components/toast-provider";
 import "./globals.css";

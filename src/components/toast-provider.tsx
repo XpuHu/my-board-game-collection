@@ -80,7 +80,7 @@ function ToastItem({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-card p-4 text-card-foreground shadow-lg",
+        "rounded-lg border bg-card p-4 text-card-foreground shadow-sm",
         toast.variant === "error" && "border-destructive/50",
       )}
       role="status"

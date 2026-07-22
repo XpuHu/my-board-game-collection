@@ -824,6 +824,7 @@ export type BackupItemDto = {
 
 export type BackupUserItemDto = Omit<UserItemDto, "tags" | "status"> & {
   status: StoredUserItemStatus;
+  ownedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -914,7 +915,7 @@ export type BackupItemRelationDto = {
 };
 
 export type JsonBackupDto = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   exportedAt: string;
   data: {
     itemTypes: BackupItemTypeDto[];

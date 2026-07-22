@@ -288,6 +288,7 @@ async function createItem(
           owned: state.owned ?? false,
           wishlist: state.wishlist ?? false,
           status: state.owned ? "owned" : "wishlist",
+          ownedAt: state.owned ? new Date() : null,
         },
       },
     },
@@ -312,6 +313,7 @@ async function seedCollection(count: number) {
       owned: true,
       wishlist: false,
       status: "owned",
+      ownedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, item.title.length)),
     })),
   });
 }

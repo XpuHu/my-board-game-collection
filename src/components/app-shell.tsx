@@ -18,6 +18,7 @@ import { SidebarBggAttribution } from "@/components/bgg-attribution";
 import { OfflineBanner } from "@/components/offline-banner";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -48,14 +49,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-svh bg-background text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[72px] flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-sidebar)] md:flex xl:w-56">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[72px] flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-sidebar)] md:flex min-[1200px]:w-56">
         <Link
           href="/"
           aria-label="Board Game Collection — главная"
-          className="flex h-[72px] items-center justify-center gap-3 px-5 xl:justify-start"
+          className="flex h-[72px] items-center justify-center gap-3 px-5 min-[1200px]:justify-start"
         >
           <BrandMark />
-          <span className="hidden min-w-0 text-[15px] font-semibold leading-tight xl:block">
+          <span className="hidden min-w-0 text-[15px] font-semibold leading-tight min-[1200px]:block">
             Board Game
             <br />
             Collection
@@ -64,19 +65,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <nav
           aria-label="Основная навигация"
-          className="grid gap-1.5 px-3 py-4 xl:px-4"
+          className="grid gap-1.5 px-3 py-4 min-[1200px]:px-4"
         >
           {navItems.map((item) => (
             <SidebarNavLink key={item.href} item={item} pathname={pathname} />
           ))}
         </nav>
 
-        <div className="mt-auto flex justify-center px-3 py-5 xl:justify-start xl:px-5">
+        <div className="mt-auto flex justify-center px-3 py-5 min-[1200px]:justify-start min-[1200px]:px-5">
           <SidebarBggAttribution />
         </div>
       </aside>
 
-      <div className="min-w-0 md:pl-[72px] xl:pl-56">
+      <div className="min-w-0 md:pl-[72px] min-[1200px]:pl-56">
         <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
           <Link
             href="/"
@@ -141,7 +142,7 @@ function SidebarNavLink({
       aria-current={isActive ? "page" : undefined}
       title={item.label}
       className={cn(
-        "inline-flex h-11 items-center justify-center gap-3 rounded-lg px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:justify-start",
+        "inline-flex h-11 items-center justify-center gap-3 rounded-lg px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-[1200px]:justify-start",
         isActive
           ? "bg-[var(--accent-soft)] text-foreground"
           : "text-muted-foreground hover:bg-[var(--bg-surface-hover)] hover:text-foreground",
@@ -151,7 +152,7 @@ function SidebarNavLink({
         className={cn("h-5 w-5 shrink-0", isActive && "text-primary")}
         aria-hidden="true"
       />
-      <span className="hidden truncate xl:block">{item.label}</span>
+      <span className="hidden truncate min-[1200px]:block">{item.label}</span>
     </Link>
   );
 }
@@ -226,22 +227,23 @@ function MobileMenu({
         </DialogHeader>
         <nav aria-label="Дополнительная навигация" className="grid gap-2 py-2">
           {extraItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={
-                isItemActive(item.href, pathname) ? "page" : undefined
-              }
-              className={cn(
-                "flex h-12 items-center gap-3 rounded-lg px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                isItemActive(item.href, pathname)
-                  ? "bg-[var(--accent-soft)] text-foreground"
-                  : "text-muted-foreground hover:bg-[var(--bg-surface-hover)] hover:text-foreground",
-              )}
-            >
-              <item.icon className="h-5 w-5" aria-hidden="true" />
-              {item.label}
-            </Link>
+            <DialogClose asChild key={item.href}>
+              <Link
+                href={item.href}
+                aria-current={
+                  isItemActive(item.href, pathname) ? "page" : undefined
+                }
+                className={cn(
+                  "flex h-12 items-center gap-3 rounded-lg px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  isItemActive(item.href, pathname)
+                    ? "bg-[var(--accent-soft)] text-foreground"
+                    : "text-muted-foreground hover:bg-[var(--bg-surface-hover)] hover:text-foreground",
+                )}
+              >
+                <item.icon className="h-5 w-5" aria-hidden="true" />
+                {item.label}
+              </Link>
+            </DialogClose>
           ))}
         </nav>
       </DialogContent>

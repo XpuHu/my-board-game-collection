@@ -109,6 +109,7 @@ export type UserItemForCollectionCard = Pick<
   | "personalRating"
   | "location"
   | "interestLevel"
+  | "ownedAt"
   | "createdAt"
   | "updatedAt"
 > & {
@@ -252,6 +253,7 @@ export function mapItemCompact(item: ItemForCompact): ItemCompactDto {
 
 export function mapCollectionCard(
   userItem: UserItemForCollectionCard,
+  now = new Date(),
 ): CollectionCardDto {
   return {
     item: mapItemCompact(userItem.item),
@@ -261,7 +263,7 @@ export function mapCollectionCard(
         hasActivePreorder: userItem.item._count.preorders > 0,
         hasPlays: userItem.item._count.playSessions > 0,
       }),
-      ownedAt: userItem.createdAt.toISOString(),
+      ownedAt: requiredOwnedAt(userItem),
       favorite: false,
       personalRating: userItem.personalRating,
       location: userItem.location,
@@ -279,7 +281,7 @@ export function mapCollectionCard(
       userItem.item._count.childRelations,
     imagesCount: userItem.item._count.images,
     activePreorder: userItem.item.preorders[0]
-      ? mapPreorderSummary(userItem.item.preorders[0])
+      ? mapPreorderSummary(userItem.item.preorders[0], now)
       : null,
     purchaseTotal: sumMoney(userItem.item.purchases),
   };
@@ -320,6 +322,7 @@ export function mapCollectionCardToLegacy(
 
 export function mapWishlistCard(
   userItem: UserItemForWishlistCard,
+  now = new Date(),
 ): WishlistCardDto {
   return {
     item: {
@@ -343,7 +346,7 @@ export function mapWishlistCard(
       lowestMoney(userItem.item.purchases) ??
       lowestMoney(userItem.item.preorders),
     activePreorder: userItem.item.preorders[0]
-      ? mapPreorderSummary(userItem.item.preorders[0])
+      ? mapPreorderSummary(userItem.item.preorders[0], now)
       : null,
   };
 }
@@ -725,7 +728,7 @@ function mapUserItemDetail(
     lifecycleStatus: resolveLifecycleStatus(userItem.status),
     owned: userItem.owned,
     wishlist: userItem.wishlist,
-    ownedAt: userItem.owned ? userItem.createdAt.toISOString() : null,
+    ownedAt: userItem.ownedAt?.toISOString() ?? null,
     favorite: false,
     location: userItem.location,
     personalRating: userItem.personalRating,
@@ -748,6 +751,14 @@ function mapNote(note: Note): NoteDto {
 
 function isActivePreorder(preorder: Preorder) {
   return preorder.status !== "received" && preorder.status !== "cancelled";
+}
+
+function requiredOwnedAt(userItem: Pick<UserItem, "id" | "ownedAt">) {
+  if (!userItem.ownedAt) {
+    throw new Error(`Owned UserItem ${userItem.id} is missing ownedAt`);
+  }
+
+  return userItem.ownedAt.toISOString();
 }
 
 function getLastPlayedAt(playSessions: PlaySession[]) {
