@@ -22,6 +22,7 @@ import {
   PATCH as updateLinkRoute,
 } from "@/app/api/items/[itemId]/links/[linkId]/route";
 import { POST as addToWishlistRoute } from "@/app/api/items/[itemId]/wishlist/route";
+import { DELETE as removeFromWishlistRoute } from "@/app/api/wishlist/[itemId]/route";
 import { POST as createPlayRoute } from "@/app/api/items/[itemId]/plays/route";
 import { PATCH as updateExpectedDateRoute } from "@/app/api/preorders/[preorderId]/expected-date/route";
 import { POST as syncBggPlaysRoute } from "@/app/api/sync/bgg/plays/route";
@@ -180,6 +181,22 @@ describe("MVP API flows", () => {
     expect(userItem.owned).toBe(true);
     expect(userItem.wishlist).toBe(false);
     expect(userItem.status).toBe("active");
+  });
+
+  it("removes a wishlist flag without deleting the Item", async () => {
+    const item = await createTestItem({ wishlist: true });
+
+    const response = await removeFromWishlistRoute(
+      new Request("http://localhost/api/wishlist", { method: "DELETE" }),
+      itemContext(item.id),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ itemId: item.id, wishlist: false });
+    await expect(
+      prisma.item.findUnique({ where: { id: item.id } }),
+    ).resolves.not.toBeNull();
   });
 
   it("updates item reference fields without changing the user item", async () => {

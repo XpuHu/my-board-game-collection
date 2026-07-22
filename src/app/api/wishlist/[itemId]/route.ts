@@ -6,6 +6,7 @@ import {
   getWishlistItem,
   getWishlistItemDetail,
 } from "@/server/application/wishlist/wishlist-service";
+import { removeItemFromWishlist } from "@/server/application/items/item-service";
 
 type RouteContext = {
   params: Promise<{
@@ -23,5 +24,13 @@ export async function GET(request: Request, context: RouteContext) {
         ? await getWishlistItem(itemId)
         : await getWishlistItemDetail(itemId),
     );
+  });
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  return withApiErrorHandling(async () => {
+    const { itemId } = await context.params;
+
+    return NextResponse.json(await removeItemFromWishlist(itemId));
   });
 }

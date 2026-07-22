@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
+  ArrowLeft,
+  CheckCircle2,
   Boxes,
   CalendarPlus,
   Download,
@@ -31,14 +32,23 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  type AddToCollectionRequest,
+  type CreatePreorderRequest,
   type ExternalSearchResultDto,
-  type ImportExternalItemRequest,
+  type ExpectedDatePrecision,
   type ItemTypeDto,
 } from "@/shared/api";
 import {
-  legacyApiClient as apiClient,
-  type CreateItemRequest,
-} from "@/shared/api/legacy";
+  addItemToCollection,
+  addItemToWishlist,
+  createItemPreorder,
+  createManualItem,
+  importExternalItem,
+  listItemTypes,
+  searchExternalItems,
+  updateItemUserData,
+  type CreateManualItemRequest,
+} from "@/features/items/api";
 
 const ANY_VALUE = "__any__";
 
@@ -54,10 +64,12 @@ const itemTypeOptions = [
 
 const targetOptions = [
   { value: "collection", label: "В коллекцию", icon: Boxes },
+  { value: "play", label: "Добавить партию", icon: CalendarPlus },
   { value: "wishlist", label: "В wishlist", icon: Star },
+  { value: "preorder", label: "Оформить предзаказ", icon: PlusCircle },
   { value: "reference_only", label: "Только справка", icon: Download },
 ] satisfies {
-  value: NonNullable<ImportExternalItemRequest["target"]>;
+  value: ManualQuickAction;
   label: string;
   icon: typeof Boxes;
 }[];
@@ -104,27 +116,41 @@ type ExternalImportPageClientProps = {
   initialTarget?: ManualQuickAction;
 };
 
+type PendingItem =
+  | { kind: "external"; result: ExternalSearchResultDto }
+  | { kind: "manual"; request: CreateManualItemRequest; title: string };
+
+type PersonalData = {
+  collection?: AddToCollectionRequest;
+  wishlist?: { interestLevel?: number; decisionNotes?: string | null };
+  preorder?: CreatePreorderRequest;
+};
+
+type CompletedItem = {
+  title: string;
+  href: string;
+  actionLabel: string;
+};
+
 export function ExternalImportPageClient({
   initialTarget = "collection",
 }: ExternalImportPageClientProps) {
-  const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [type, setType] = React.useState(ANY_VALUE);
+  const [provider, setProvider] = React.useState<"boardgamegeek" | "tesera">("boardgamegeek");
   const [target, setTarget] = React.useState<ManualQuickAction>(initialTarget);
   const [results, setResults] = React.useState<ExternalSearchResultDto[]>([]);
   const [itemTypes, setItemTypes] = React.useState<ItemTypeDto[]>([]);
   const [searched, setSearched] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
-  const [importingId, setImportingId] = React.useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = React.useState<PendingItem | null>(null);
+  const [completedItem, setCompletedItem] = React.useState<CompletedItem | null>(null);
+  const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [externalWarning, setExternalWarning] = React.useState<string | null>(
-    null,
-  );
-  const [manualMessage, setManualMessage] = React.useState<string | null>(null);
+  const [externalWarnings, setExternalWarnings] = React.useState<string[]>([]);
 
   React.useEffect(() => {
-    apiClient.itemTypes
-      .list()
+    listItemTypes()
       .then(setItemTypes)
       .catch(() => {
         setError("Не удалось загрузить типы игр для ручного добавления");
@@ -144,73 +170,82 @@ export function ExternalImportPageClient({
 
     setLoading(true);
     setError(null);
-    setExternalWarning(null);
+    setExternalWarnings([]);
 
     try {
-      const response = await apiClient.externalSearch.search({
+      const response = await searchExternalItems({
         q: trimmedQuery,
-        provider: "boardgamegeek",
+        provider,
         type: type === ANY_VALUE ? undefined : type,
       });
       setResults(response.data);
       setSearched(true);
-      setExternalWarning(response.warnings?.[0]?.message ?? null);
+      setExternalWarnings(response.warnings?.map((warning) => warning.message) ?? []);
     } catch (searchError) {
-      setError(
+      setExternalWarnings([
         searchError instanceof Error
           ? searchError.message
           : "Не удалось выполнить внешний поиск",
-      );
-      setResults([]);
+      ]);
       setSearched(true);
-      setExternalWarning(null);
     } finally {
       setLoading(false);
     }
   }
 
-  async function importItem(result: ExternalSearchResultDto) {
-    setImportingId(result.externalId);
+  function selectExternalItem(result: ExternalSearchResultDto) {
+    setSelectedItem({ kind: "external", result });
+    setError(null);
+  }
+
+  async function completeItem(data: PersonalData) {
+    if (!selectedItem) return;
+    setSaving(true);
     setError(null);
 
     try {
-      const details = await apiClient.externalSearch.import({
-        provider: result.provider,
-        externalId: result.externalId,
-        target: toExternalImportTarget(target),
-      });
+      const details = selectedItem.kind === "external"
+        ? await importExternalItem({
+            provider: selectedItem.result.provider,
+            externalId: selectedItem.result.externalId,
+            target: "reference_only",
+          })
+        : await createManualItem(selectedItem.request);
+      const itemId = details.item.id;
+      const title = details.item.title;
 
-      if (target === "collection") {
-        router.push(`/collection/${details.item.id}`);
-        return;
+      if (target === "collection" || target === "play") {
+        await addItemToCollection(itemId, data.collection ?? {});
+      } else if (target === "wishlist") {
+        await addItemToWishlist(itemId);
+        if (data.wishlist) {
+          await updateItemUserData(itemId, data.wishlist);
+        }
+      } else if (target === "preorder") {
+        await addItemToWishlist(itemId);
+        if (!data.preorder) throw new Error("Заполните данные предзаказа");
+        await createItemPreorder(itemId, data.preorder);
       }
 
-      if (target === "wishlist") {
-        router.push(`/wishlist/${details.item.id}`);
-        return;
-      }
-
-      setQuery(result.title);
-      setResults([result]);
-    } catch (importError) {
-      setError(
-        importError instanceof Error
-          ? importError.message
-          : "Не удалось импортировать игру",
-      );
+      setCompletedItem(completionForTarget(target, itemId, title));
+      setSelectedItem(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Не удалось завершить добавление");
     } finally {
-      setImportingId(null);
+      setSaving(false);
     }
   }
 
   function reset() {
     setQuery("");
     setType(ANY_VALUE);
+    setProvider("boardgamegeek");
     setResults([]);
     setSearched(false);
     setError(null);
-    setExternalWarning(null);
-    setManualMessage(null);
+    setExternalWarnings([]);
+    setSelectedItem(null);
+    setCompletedItem(null);
   }
 
   return (
@@ -226,9 +261,19 @@ export function ExternalImportPageClient({
         </p>
       </div>
 
+      <WizardProgress step={completedItem ? 4 : selectedItem ? 3 : results.length > 0 ? 2 : 1} />
+
       {error ? <ErrorState description={error} /> : null}
 
-      <section className="grid gap-4 rounded-lg border bg-card p-4">
+      {completedItem ? (
+        <section className="grid justify-items-center gap-4 rounded-xl border bg-card p-8 text-center">
+          <CheckCircle2 className="h-12 w-12 text-green-600" />
+          <div><h2 className="text-xl font-semibold">Готово</h2><p className="mt-2 text-sm text-muted-foreground">«{completedItem.title}» добавлена без дублирования Item.</p></div>
+          <div className="flex flex-wrap justify-center gap-2"><Button asChild><Link href={completedItem.href}>{completedItem.actionLabel}</Link></Button><Button type="button" variant="outline" onClick={reset}>Добавить ещё</Button></div>
+        </section>
+      ) : null}
+
+      {!selectedItem && !completedItem ? <section className="grid gap-4 rounded-lg border bg-card p-4">
         <div>
           <h2 className="text-base font-semibold tracking-normal">
             1. Найти в каталогах
@@ -236,6 +281,10 @@ export function ExternalImportPageClient({
           <p className="text-sm text-muted-foreground">
             Поиск выполняется по очереди: сначала BoardGameGeek, затем Tesera.
           </p>
+          <div className="mt-3 flex gap-2" role="tablist" aria-label="Источник поиска">
+            <Button type="button" size="sm" variant={provider === "boardgamegeek" ? "default" : "outline"} onClick={() => setProvider("boardgamegeek")} role="tab" aria-selected={provider === "boardgamegeek"}>BoardGameGeek</Button>
+            <Button type="button" size="sm" variant={provider === "tesera" ? "default" : "outline"} onClick={() => setProvider("tesera")} role="tab" aria-selected={provider === "tesera"}>Tesera</Button>
+          </div>
         </div>
 
         <form
@@ -278,7 +327,7 @@ export function ExternalImportPageClient({
               value={target}
               onValueChange={(value) =>
                 setTarget(
-                  value as NonNullable<ImportExternalItemRequest["target"]>,
+                  value as ManualQuickAction,
                 )
               }
             >
@@ -317,14 +366,10 @@ export function ExternalImportPageClient({
           </div>
         </form>
 
-        {externalWarning ? (
-          <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
-            {externalWarning}
-          </div>
-        ) : null}
-      </section>
+        {externalWarnings.map((warning) => <div key={warning} className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">{warning}</div>)}
+      </section> : null}
 
-      {searched && !loading && results.length === 0 && !error ? (
+      {!selectedItem && !completedItem && searched && !loading && results.length === 0 && !error ? (
         <EmptyState
           icon={Search}
           title="Ничего не найдено"
@@ -332,7 +377,7 @@ export function ExternalImportPageClient({
         />
       ) : null}
 
-      {results.length > 0 ? (
+      {!selectedItem && !completedItem && results.length > 0 ? (
         <section className="grid gap-3" aria-labelledby="search-results-title">
           <h2 id="search-results-title" className="text-base font-semibold">
             2. Выбрать найденную игру
@@ -341,15 +386,15 @@ export function ExternalImportPageClient({
             <SearchResultRow
               key={`${result.provider}:${result.externalId}`}
               result={result}
-              target={toExternalImportTarget(target)}
-              importing={importingId === result.externalId}
-              onImport={() => importItem(result)}
+              target={target}
+              importing={false}
+              onImport={() => selectExternalItem(result)}
             />
           ))}
         </section>
       ) : null}
 
-      {searched && !loading && results.length === 0 ? (
+      {!selectedItem && !completedItem && searched && !loading && results.length === 0 ? (
         <section className="grid gap-4">
           <div>
             <h2 className="text-base font-semibold tracking-normal">
@@ -365,20 +410,147 @@ export function ExternalImportPageClient({
             target={target}
             onTargetChange={setTarget}
             onError={setError}
-            onSavedAsReference={(title) => {
-              setManualMessage(`Карточка "${title}" создана вручную.`);
+            onCreated={(request) => {
+              setSelectedItem({ kind: "manual", request, title: request.title });
               setError(null);
             }}
           />
         </section>
       ) : null}
 
-      {manualMessage ? (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-900">
-          {manualMessage}
-        </div>
-      ) : null}
+      {selectedItem && !completedItem ? <PersonalDataStep
+        key={`${selectedItem.kind}:${selectedItem.kind === "external" ? selectedItem.result.externalId : selectedItem.title}:${target}`}
+        title={selectedItem.kind === "external" ? selectedItem.result.title : selectedItem.title}
+        target={target}
+        saving={saving}
+        onBack={() => setSelectedItem(null)}
+        onSubmit={completeItem}
+      /> : null}
     </main>
+  );
+}
+
+function WizardProgress({ step }: { step: number }) {
+  const steps = ["Поиск", "Выбор", "Личные данные", "Готово"];
+  return (
+    <ol className="grid grid-cols-4 gap-2" aria-label="Шаги добавления игры">
+      {steps.map((label, index) => {
+        const number = index + 1;
+        return <li key={label} className={`rounded-lg border px-2 py-3 text-center text-xs sm:text-sm ${number === step ? "border-primary bg-primary/5 font-medium" : number < step ? "bg-muted text-foreground" : "text-muted-foreground"}`} aria-current={number === step ? "step" : undefined}>{number}. {label}</li>;
+      })}
+    </ol>
+  );
+}
+
+function PersonalDataStep({ title, target, saving, onBack, onSubmit }: { title: string; target: ManualQuickAction; saving: boolean; onBack: () => void; onSubmit: (data: PersonalData) => Promise<void> }) {
+  const [location, setLocation] = React.useState("");
+  const [personalRating, setPersonalRating] = React.useState("");
+  const [notes, setNotes] = React.useState("");
+  const [hasPurchase, setHasPurchase] = React.useState(false);
+  const [purchaseShop, setPurchaseShop] = React.useState("");
+  const [purchasePrice, setPurchasePrice] = React.useState("");
+  const [purchaseCurrency, setPurchaseCurrency] = React.useState("RUB");
+  const [purchaseDate, setPurchaseDate] = React.useState("");
+  const [interestLevel, setInterestLevel] = React.useState("");
+  const [decisionNotes, setDecisionNotes] = React.useState("");
+  const [preorderShop, setPreorderShop] = React.useState("");
+  const [preorderPrice, setPreorderPrice] = React.useState("");
+  const [preorderCurrency, setPreorderCurrency] = React.useState("RUB");
+  const [orderDate, setOrderDate] = React.useState("");
+  const [precision, setPrecision] = React.useState<ExpectedDatePrecision>("unknown");
+  const [expectedDay, setExpectedDay] = React.useState("");
+  const [expectedMonth, setExpectedMonth] = React.useState("");
+  const [expectedQuarter, setExpectedQuarter] = React.useState("1");
+  const [expectedYear, setExpectedYear] = React.useState(String(new Date().getUTCFullYear()));
+  const [preorderStatus, setPreorderStatus] = React.useState<CreatePreorderRequest["status"]>("planned");
+  const [preorderComment, setPreorderComment] = React.useState("");
+  const collectionTarget = target === "collection" || target === "play";
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (collectionTarget) {
+      await onSubmit({
+        collection: {
+          location: nullableText(location),
+          personalRating: personalRating ? Number(personalRating) : null,
+          notes: nullableText(notes),
+          purchase: hasPurchase ? {
+            shop: purchaseShop.trim(),
+            price: Number(purchasePrice),
+            currency: purchaseCurrency.trim().toUpperCase(),
+            purchaseDate: dateIso(purchaseDate),
+            comment: null,
+          } : undefined,
+        },
+      });
+      return;
+    }
+    if (target === "wishlist") {
+      await onSubmit({ wishlist: { interestLevel: interestLevel ? Number(interestLevel) : undefined, decisionNotes: nullableText(decisionNotes) } });
+      return;
+    }
+    if (target === "preorder") {
+      await onSubmit({
+        preorder: {
+          shop: preorderShop.trim(),
+          price: Number(preorderPrice),
+          currency: preorderCurrency.trim().toUpperCase(),
+          orderDate: dateIso(orderDate),
+          expectedDate: expectedDateForPrecision({ precision, expectedDay, expectedMonth, expectedQuarter, expectedYear }),
+          expectedDatePrecision: precision,
+          status: preorderStatus,
+          comment: nullableText(preorderComment),
+        },
+      });
+      return;
+    }
+    await onSubmit({});
+  }
+
+  return (
+    <section className="grid gap-4 rounded-xl border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-lg font-semibold">3. Личные данные</h2><p className="mt-1 text-sm text-muted-foreground">{title} · {targetLabel(target)}</p></div>
+        <Button type="button" variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Назад к результатам</Button>
+      </div>
+      <form onSubmit={submit} className="grid gap-4">
+        {collectionTarget ? <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div><Label htmlFor="personal-location">Место хранения</Label><Input id="personal-location" value={location} onChange={(event) => setLocation(event.target.value)} className="mt-2" placeholder="Стеллаж, полка" /></div>
+            <div><Label htmlFor="personal-rating">Личная оценка</Label><Input id="personal-rating" type="number" min={1} max={10} value={personalRating} onChange={(event) => setPersonalRating(event.target.value)} className="mt-2" /></div>
+          </div>
+          <div><Label htmlFor="personal-notes">Заметки</Label><Textarea id="personal-notes" value={notes} onChange={(event) => setNotes(event.target.value)} className="mt-2" /></div>
+          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={hasPurchase} onChange={(event) => setHasPurchase(event.target.checked)} /> Добавить покупку</label>
+          {hasPurchase ? <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div><Label htmlFor="purchase-shop">Магазин</Label><Input id="purchase-shop" value={purchaseShop} onChange={(event) => setPurchaseShop(event.target.value)} className="mt-2" required /></div>
+            <div><Label htmlFor="purchase-price">Цена</Label><Input id="purchase-price" type="number" min={0} step="0.01" value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} className="mt-2" required /></div>
+            <div><Label htmlFor="purchase-currency">Валюта</Label><Input id="purchase-currency" value={purchaseCurrency} onChange={(event) => setPurchaseCurrency(event.target.value.toUpperCase())} maxLength={3} className="mt-2" required /></div>
+            <div><Label htmlFor="purchase-date">Дата покупки</Label><Input id="purchase-date" type="date" value={purchaseDate} onChange={(event) => setPurchaseDate(event.target.value)} className="mt-2" /></div>
+          </div> : null}
+        </> : null}
+
+        {target === "wishlist" ? <div className="grid gap-4 sm:grid-cols-2">
+          <div><Label>Уровень интереса</Label><Select value={interestLevel || "none"} onValueChange={(value) => setInterestLevel(value === "none" ? "" : value)}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Не указан</SelectItem>{[1,2,3,4,5].map((value) => <SelectItem key={value} value={String(value)}>{value}/5</SelectItem>)}</SelectContent></Select></div>
+          <div><Label htmlFor="decision-notes">Заметки к решению</Label><Textarea id="decision-notes" value={decisionNotes} onChange={(event) => setDecisionNotes(event.target.value)} className="mt-2" /></div>
+        </div> : null}
+
+        {target === "preorder" ? <div className="grid gap-4 sm:grid-cols-2">
+          <div><Label htmlFor="wizard-preorder-shop">Магазин</Label><Input id="wizard-preorder-shop" value={preorderShop} onChange={(event) => setPreorderShop(event.target.value)} className="mt-2" required /></div>
+          <div><Label htmlFor="wizard-preorder-price">Стоимость</Label><Input id="wizard-preorder-price" type="number" min={0} step="0.01" value={preorderPrice} onChange={(event) => setPreorderPrice(event.target.value)} className="mt-2" required /></div>
+          <div><Label htmlFor="wizard-preorder-currency">Валюта</Label><Input id="wizard-preorder-currency" value={preorderCurrency} onChange={(event) => setPreorderCurrency(event.target.value.toUpperCase())} maxLength={3} className="mt-2" required /></div>
+          <div><Label>Статус</Label><Select value={preorderStatus} onValueChange={(value) => setPreorderStatus(value as CreatePreorderRequest["status"])}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="planned">Планируется</SelectItem><SelectItem value="ordered">Заказан</SelectItem><SelectItem value="paid">Оплачен</SelectItem><SelectItem value="shipped">Отправлен</SelectItem></SelectContent></Select></div>
+          <div><Label htmlFor="wizard-order-date">Дата заказа</Label><Input id="wizard-order-date" type="date" value={orderDate} onChange={(event) => setOrderDate(event.target.value)} className="mt-2" /></div>
+          <div><Label>Точность срока</Label><Select value={precision} onValueChange={(value) => setPrecision(value as ExpectedDatePrecision)}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="day">Точный день</SelectItem><SelectItem value="month">Месяц</SelectItem><SelectItem value="quarter">Квартал</SelectItem><SelectItem value="unknown">Неизвестно</SelectItem></SelectContent></Select></div>
+          {precision === "day" ? <div><Label htmlFor="wizard-expected-day">Ожидаемая дата</Label><Input id="wizard-expected-day" type="date" value={expectedDay} onChange={(event) => setExpectedDay(event.target.value)} className="mt-2" required /></div> : null}
+          {precision === "month" ? <div><Label htmlFor="wizard-expected-month">Ожидаемый месяц</Label><Input id="wizard-expected-month" type="month" value={expectedMonth} onChange={(event) => setExpectedMonth(event.target.value)} className="mt-2" required /></div> : null}
+          {precision === "quarter" ? <div className="grid grid-cols-2 gap-3"><div><Label htmlFor="wizard-expected-year">Год</Label><Input id="wizard-expected-year" type="number" min={1900} max={2200} value={expectedYear} onChange={(event) => setExpectedYear(event.target.value)} className="mt-2" required /></div><div><Label>Квартал</Label><Select value={expectedQuarter} onValueChange={setExpectedQuarter}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent>{[1,2,3,4].map((value) => <SelectItem key={value} value={String(value)}>{value}</SelectItem>)}</SelectContent></Select></div></div> : null}
+          <div className="sm:col-span-2"><Label htmlFor="wizard-preorder-comment">Комментарий</Label><Textarea id="wizard-preorder-comment" value={preorderComment} onChange={(event) => setPreorderComment(event.target.value)} className="mt-2" /></div>
+        </div> : null}
+
+        {target === "reference_only" ? <p className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">Будет сохранена только справочная карточка Item и внешний идентификатор.</p> : null}
+        <div className="flex justify-end"><Button type="submit" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{saving ? "Сохраняем" : "Завершить"}</Button></div>
+      </form>
+    </section>
   );
 }
 
@@ -389,7 +561,7 @@ function SearchResultRow({
   onImport,
 }: {
   result: ExternalSearchResultDto;
-  target: NonNullable<ImportExternalItemRequest["target"]>;
+  target: ManualQuickAction;
   importing: boolean;
   onImport: () => void;
 }) {
@@ -397,7 +569,14 @@ function SearchResultRow({
     targetOptions.find((option) => option.value === target)?.icon ?? Download;
 
   return (
-    <article className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+    <article className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
+      <div className="aspect-[4/5] overflow-hidden rounded-md bg-muted">
+        {result.imageUrl ? <>
+          {/* Provider-controlled preview URL; native image keeps the search adapter domain-agnostic. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={result.imageUrl} alt={`Обложка ${result.title}`} className="h-full w-full object-cover" />
+        </> : <div className="flex h-full items-center justify-center"><ImageIcon className="h-6 w-6 text-muted-foreground" /></div>}
+      </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-base font-semibold tracking-normal">
@@ -412,6 +591,14 @@ function SearchResultRow({
               {itemTypeLabel(result.itemTypeCode)}
             </Badge>
           ) : null}
+        </div>
+
+        {result.originalTitle && result.originalTitle !== result.title ? <p className="mt-1 text-sm text-muted-foreground">{result.originalTitle}</p> : null}
+
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>Игроки: {rangeLabel(result.minPlayers, result.maxPlayers)}</span>
+          <span>Время: {rangeLabel(result.minPlayTime, result.maxPlayTime, " мин")}</span>
+          <span>Рейтинг: {result.rating ? result.rating.toFixed(1) : "—"}</span>
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
@@ -442,7 +629,7 @@ function SearchResultRow({
         ) : (
           <TargetIcon className="h-4 w-4" />
         )}
-        Импорт
+        Выбрать
       </Button>
     </article>
   );
@@ -454,16 +641,15 @@ function ManualItemForm({
   target,
   onTargetChange,
   onError,
-  onSavedAsReference,
+  onCreated,
 }: {
   itemTypes: ItemTypeDto[];
   selectedType: string;
   target: ManualQuickAction;
   onTargetChange: (target: ManualQuickAction) => void;
   onError: (message: string | null) => void;
-  onSavedAsReference: (title: string) => void;
+  onCreated: (request: CreateManualItemRequest) => void;
 }) {
-  const router = useRouter();
   const [saving, setSaving] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const [typeId, setTypeId] = React.useState("");
@@ -516,7 +702,7 @@ function ManualItemForm({
     onError(null);
 
     try {
-      const body: CreateItemRequest = {
+      const body: CreateManualItemRequest = {
         typeId: selectedTypeId,
         title: trimmedTitle,
         originalTitle: optionalText(originalTitle),
@@ -538,36 +724,7 @@ function ManualItemForm({
         imageUrl: optionalText(imageUrl),
         linkUrl: optionalText(linkUrl),
       };
-      const details = await apiClient.items.create(body);
-
-      if (target === "collection") {
-        const collectionDetails = await apiClient.collection.add(
-          details.item.id,
-          {},
-        );
-        router.push(`/collection/${collectionDetails.item.id}`);
-        return;
-      }
-
-      if (target === "play") {
-        await apiClient.collection.add(details.item.id, {});
-        router.push(`/plays?itemId=${encodeURIComponent(details.item.id)}`);
-        return;
-      }
-
-      if (target === "wishlist") {
-        await apiClient.wishlist.add(details.item.id);
-        router.push(`/wishlist/${details.item.id}`);
-        return;
-      }
-
-      if (target === "preorder") {
-        await apiClient.wishlist.add(details.item.id);
-        router.push(`/preorders?itemId=${encodeURIComponent(details.item.id)}`);
-        return;
-      }
-
-      onSavedAsReference(details.item.title);
+      onCreated(body);
     } catch (saveError) {
       onError(
         saveError instanceof Error
@@ -926,20 +1083,6 @@ function providerLabel(provider: ExternalSearchResultDto["provider"]) {
   return provider;
 }
 
-function toExternalImportTarget(
-  target: ManualQuickAction,
-): NonNullable<ImportExternalItemRequest["target"]> {
-  if (target === "play") {
-    return "collection";
-  }
-
-  if (target === "preorder") {
-    return "wishlist";
-  }
-
-  return target;
-}
-
 function itemTypeLabel(
   itemTypeCode: NonNullable<ExternalSearchResultDto["itemTypeCode"]>,
 ) {
@@ -958,4 +1101,42 @@ function itemTypeLabel(
   };
 
   return labels[itemTypeCode];
+}
+
+function completionForTarget(
+  target: ManualQuickAction,
+  itemId: string,
+  title: string,
+): CompletedItem {
+  if (target === "collection") return { title, href: `/collection/${itemId}`, actionLabel: "Открыть коллекцию" };
+  if (target === "play") return { title, href: `/plays?itemId=${encodeURIComponent(itemId)}`, actionLabel: "Добавить партию" };
+  if (target === "wishlist") return { title, href: `/wishlist/${itemId}`, actionLabel: "Открыть wishlist" };
+  if (target === "preorder") return { title, href: `/preorders?itemId=${encodeURIComponent(itemId)}`, actionLabel: "Открыть предзаказы" };
+  return { title, href: `/api/items/${encodeURIComponent(itemId)}`, actionLabel: "Открыть Item" };
+}
+
+function targetLabel(target: ManualQuickAction) {
+  return quickActionOptions.find((option) => option.value === target)?.label ?? target;
+}
+
+function dateIso(value: string) {
+  return value ? new Date(`${value}T00:00:00.000Z`).toISOString() : null;
+}
+
+function expectedDateForPrecision({ precision, expectedDay, expectedMonth, expectedQuarter, expectedYear }: { precision: ExpectedDatePrecision; expectedDay: string; expectedMonth: string; expectedQuarter: string; expectedYear: string }) {
+  if (precision === "unknown") return null;
+  if (precision === "day") return dateIso(expectedDay);
+  if (precision === "month") return dateIso(`${expectedMonth}-01`);
+  const month = String((Number(expectedQuarter) - 1) * 3 + 1).padStart(2, "0");
+  return dateIso(`${expectedYear}-${month}-01`);
+}
+
+function nullableText(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function rangeLabel(min?: number | null, max?: number | null, suffix = "") {
+  if (min && max && min !== max) return `${min}–${max}${suffix}`;
+  return min || max ? `${min ?? max}${suffix}` : "—";
 }

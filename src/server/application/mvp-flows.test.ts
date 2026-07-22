@@ -14,6 +14,7 @@ import {
   addItemToCollection,
   addItemToWishlist,
   createItem,
+  removeItemFromWishlist,
   updateUserItem,
 } from "@/server/application/items/item-service";
 import {
@@ -107,6 +108,31 @@ describe("MVP service flows", () => {
     expect(userItem.owned).toBe(false);
     expect(userItem.wishlist).toBe(true);
     expect(userItem.status).toBe("active");
+  });
+
+  it("removes an item from wishlist without deleting Item or related data", async () => {
+    const item = await createTestItem({ owned: false, wishlist: true });
+    const preorder = await createPreorder(item.id, {
+      shop: "Test shop",
+      price: 4900,
+      currency: "RUB",
+      expectedDate: null,
+      expectedDatePrecision: "unknown",
+      status: "planned",
+    });
+
+    const userItem = await removeItemFromWishlist(item.id);
+
+    expect(userItem.wishlist).toBe(false);
+    await expect(
+      prisma.item.findUnique({ where: { id: item.id } }),
+    ).resolves.not.toBeNull();
+    await expect(
+      prisma.preorder.findUnique({ where: { id: preorder.id } }),
+    ).resolves.not.toBeNull();
+    await expect(
+      listWishlistCards({}, { page: 1, pageSize: 24 }),
+    ).resolves.toMatchObject({ data: [], pagination: { total: 0 } });
   });
 
   it("updates the full manual UserItem state with tags", async () => {

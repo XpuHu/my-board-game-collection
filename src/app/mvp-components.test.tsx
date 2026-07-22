@@ -10,6 +10,7 @@ import { ExternalImportPageClient } from "@/app/items/new/external-import-page-c
 import { PlaysPageClient } from "@/app/plays/plays-page-client";
 import { PreordersPageClient } from "@/app/preorders/preorders-page-client";
 import { WishlistItemPageClient } from "@/app/wishlist/[itemId]/wishlist-item-page-client";
+import { WishlistPageClient } from "@/app/wishlist/wishlist-page-client";
 import type { ItemDetailsDto } from "@/shared/api";
 
 vi.mock("next/navigation", () => ({
@@ -53,6 +54,9 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Добавить игру");
     expect(markup).toContain("1. Найти в каталогах");
     expect(markup).toContain("сначала BoardGameGeek, затем Tesera");
+    expect(markup).toContain("2. Выбор");
+    expect(markup).toContain("3. Личные данные");
+    expect(markup).toContain("4. Готово");
     expect(markup).not.toContain("Быстрый ручной сценарий");
     expect(markup).not.toContain("3. Ввести данные вручную");
   });
@@ -107,6 +111,20 @@ describe("MVP component contracts", () => {
 
     expect(markup).toContain("Загружаем wishlist");
     expect(markup).toContain("подробную справочную карточку");
+  });
+
+  it("renders the target wishlist list with URL-backed filters", () => {
+    const markup = renderToStaticMarkup(
+      <Wrapped>
+        <WishlistPageClient />
+      </Wrapped>,
+    );
+
+    expect(markup).toContain("Добавить в wishlist");
+    expect(markup).toContain("Рейтинг от");
+    expect(markup).toContain("Механики");
+    expect(markup).toContain("Сортировка");
+    expect(markup).toContain("Загружаем wishlist");
   });
 
   it("renders a shared category and mechanic label only once", () => {

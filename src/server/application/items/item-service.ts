@@ -498,6 +498,31 @@ export async function addItemToWishlist(itemId: string) {
   return getUserItemDto(userItemId);
 }
 
+export async function removeItemFromWishlist(itemId: string) {
+  await assertItemExists(itemId);
+
+  const userItemId = await prisma.$transaction(async (tx) => {
+    const current = await tx.userItem.findUnique({ where: { itemId } });
+
+    if (!current?.wishlist) {
+      throw ApiError.notFound(
+        "WISHLIST_ITEM_NOT_FOUND",
+        "Item is not in the wishlist",
+      );
+    }
+
+    const next = resolveUserItemTransition(current, { wishlist: false });
+    const userItem = await tx.userItem.update({
+      where: { itemId },
+      data: next,
+    });
+
+    return userItem.id;
+  });
+
+  return getUserItemDto(userItemId);
+}
+
 async function assertItemExists(itemId: string) {
   const item = await prisma.item.findFirst({
     where: {

@@ -500,6 +500,11 @@ export type ExternalSearchResultDto = {
   originalTitle?: string | null;
   itemTypeCode?: ItemTypeCode | null;
   year?: number | null;
+  minPlayers?: number | null;
+  maxPlayers?: number | null;
+  minPlayTime?: number | null;
+  maxPlayTime?: number | null;
+  rating?: number | null;
   imageUrl?: string | null;
   url?: string | null;
   description?: string | null;

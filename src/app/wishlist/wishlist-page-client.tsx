@@ -2,430 +2,257 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ImageIcon,
+  Boxes,
   ListFilter,
   RotateCcw,
   Search,
   ShoppingBag,
   Star,
+  Trash2,
 } from "lucide-react";
 
-import { EmptyState, ErrorState, LoadingState } from "@/components/ui-state";
+import { ConfirmationDialog } from "@/components/confirmation-dialog";
+import { GameCover } from "@/components/game-cover";
+import { Pagination } from "@/components/pagination";
+import { useToast } from "@/components/toast-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui-state";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import type { WishlistCardDto, WishlistQueryDto } from "@/shared/api";
-import { wishlistRestAdapter } from "@/features/wishlist/api";
+  addWishlistItemToCollection,
+  removeWishlistItem,
+  wishlistRestAdapter,
+  type WishlistListQuery,
+} from "@/features/wishlist/api";
+import type { WishlistCardDto } from "@/shared/api";
+import { useAdapterQuery } from "@/shared/hooks/use-adapter-query";
 
 const ANY_VALUE = "__any__";
 
-const ratingOptions = [
-  { value: ANY_VALUE, label: "Любой рейтинг" },
-  ...Array.from({ length: 10 }, (_, index) => {
-    const rating = String(10 - index);
-    return { value: rating, label: `от ${rating}` };
-  }),
-];
-
 export function WishlistPageClient() {
-  const [items, setItems] = React.useState<WishlistCardDto[]>([]);
-  const [total, setTotal] = React.useState(0);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
-  const [filters, setFilters] = React.useState({
-    q: "",
-    minRating: ANY_VALUE,
-    players: "",
-    maxPlayTime: "",
-    mechanics: "",
-    categories: "",
-    hasPrice: ANY_VALUE,
-  });
-  const [appliedFilters, setAppliedFilters] = React.useState(filters);
-
-  const loadWishlist = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await wishlistRestAdapter.load({
-        ...toWishlistQuery(appliedFilters),
-        pageSize: 24,
-      });
-      setItems(response.data);
-      setTotal(response.pagination.total);
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Не удалось загрузить wishlist",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [appliedFilters]);
-
-  React.useEffect(() => {
-    let isActive = true;
-
-    wishlistRestAdapter
-      .load({
-        ...toWishlistQuery(appliedFilters),
-        pageSize: 24,
-      })
-      .then((response) => {
-        if (!isActive) {
-          return;
-        }
-
-        setItems(response.data);
-        setTotal(response.pagination.total);
-        setError(null);
-      })
-      .catch((loadError: unknown) => {
-        if (!isActive) {
-          return;
-        }
-
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Не удалось загрузить wishlist",
-        );
-      })
-      .finally(() => {
-        if (isActive) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [appliedFilters]);
-
-  function updateFilter(key: keyof typeof filters, value: string) {
-    setFilters((current) => ({ ...current, [key]: value }));
-  }
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
+  const query = React.useMemo(
+    () => wishlistQueryFromUrl(searchParams),
+    [searchParams],
+  );
+  const result = useAdapterQuery(wishlistRestAdapter, query);
+  const [busyItemId, setBusyItemId] = React.useState<string | null>(null);
+  const [removeEntry, setRemoveEntry] = React.useState<WishlistCardDto | null>(
+    null,
+  );
 
   function applyFilters(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setError(null);
-    setAppliedFilters(filters);
+    const form = new FormData(event.currentTarget);
+    const next = new URLSearchParams(searchParams.toString());
+
+    setOrDelete(next, "q", String(form.get("q") ?? "").trim());
+    setOrDelete(next, "ratingMin", optionalSelect(form, "ratingMin"));
+    setOrDelete(next, "players", String(form.get("players") ?? ""));
+    setOrDelete(next, "playTimeMax", String(form.get("playTimeMax") ?? ""));
+    setOrDelete(next, "hasPrice", optionalSelect(form, "hasPrice"));
+    setOrDelete(next, "sort", optionalSelect(form, "sort", "interest"));
+    setOrDelete(next, "direction", optionalSelect(form, "direction", "desc"));
+    setArray(next, "mechanic", splitValues(String(form.get("mechanic") ?? "")));
+    setArray(next, "category", splitValues(String(form.get("category") ?? "")));
+    next.delete("page");
+    router.push(wishlistHref(next));
   }
 
-  function resetFilters() {
-    const nextFilters = {
-      q: "",
-      minRating: ANY_VALUE,
-      players: "",
-      maxPlayTime: "",
-      mechanics: "",
-      categories: "",
-      hasPrice: ANY_VALUE,
-    };
-    setFilters(nextFilters);
-    setLoading(true);
-    setError(null);
-    setAppliedFilters(nextFilters);
+  async function addToCollection(entry: WishlistCardDto) {
+    setBusyItemId(entry.item.id);
+    try {
+      await addWishlistItemToCollection(entry.item.id);
+      toast({
+        title: "Добавлено в коллекцию",
+        description: "Справочная карточка и пользовательские данные сохранены.",
+        variant: "success",
+      });
+      router.push(`/collection/${entry.item.id}`);
+    } catch (error) {
+      toast({
+        title: "Не удалось добавить в коллекцию",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      });
+    } finally {
+      setBusyItemId(null);
+    }
+  }
+
+  async function confirmRemove() {
+    if (!removeEntry) return;
+    const itemId = removeEntry.item.id;
+    setBusyItemId(itemId);
+    try {
+      await removeWishlistItem(itemId);
+      toast({
+        title: "Удалено из wishlist",
+        description: "Item, ссылки, история и предзаказы не удалены.",
+        variant: "success",
+      });
+      result.reload();
+    } catch (error) {
+      toast({
+        title: "Не удалось удалить из wishlist",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      });
+    } finally {
+      setBusyItemId(null);
+      setRemoveEntry(null);
+    }
   }
 
   return (
     <main className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Wishlist</h1>
+          <h1 className="text-2xl font-semibold">Wishlist</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Подробный список игр для выбора следующей покупки или предзаказа.
+            Игры для следующей покупки или предзаказа.
           </p>
         </div>
         <Button asChild>
           <Link href="/items/new?target=wishlist">
-            <Star className="h-4 w-4" />
-            Добавить в wishlist
+            <Star className="h-4 w-4" /> Добавить в wishlist
           </Link>
         </Button>
-      </div>
+      </header>
 
       <form
+        key={searchParams.toString()}
         onSubmit={applyFilters}
-        className="grid gap-3 rounded-lg border bg-card p-4 lg:grid-cols-[minmax(16rem,1.4fr)_repeat(4,minmax(9rem,1fr))_auto]"
+        className="grid gap-3 rounded-xl border bg-card p-4 md:grid-cols-2 xl:grid-cols-12 xl:items-end"
       >
-        <div className="lg:col-span-2">
+        <div className="xl:col-span-3">
           <Label htmlFor="wishlist-search">Поиск</Label>
           <div className="relative mt-2">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="wishlist-search"
-              value={filters.q}
-              onChange={(event) => updateFilter("q", event.target.value)}
-              className="pl-9"
-              placeholder="Название или оригинальное название"
-            />
+            <Input id="wishlist-search" name="q" defaultValue={query.q ?? ""} className="pl-9" />
           </div>
         </div>
-
-        <div>
-          <Label>Рейтинг</Label>
-          <Select
-            value={filters.minRating}
-            onValueChange={(value) => updateFilter("minRating", value)}
-          >
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ratingOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div>
-          <Label htmlFor="wishlist-players">Игроков</Label>
-          <Input
-            id="wishlist-players"
-            type="number"
-            min={1}
-            value={filters.players}
-            onChange={(event) => updateFilter("players", event.target.value)}
-            className="mt-2"
-            placeholder="2"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="wishlist-playtime">До минут</Label>
-          <Input
-            id="wishlist-playtime"
-            type="number"
-            min={1}
-            value={filters.maxPlayTime}
-            onChange={(event) =>
-              updateFilter("maxPlayTime", event.target.value)
-            }
-            className="mt-2"
-            placeholder="90"
-          />
-        </div>
-
-        <div>
-          <Label>Цена</Label>
-          <Select
-            value={filters.hasPrice}
-            onValueChange={(value) => updateFilter("hasPrice", value)}
-          >
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY_VALUE}>Не важно</SelectItem>
-              <SelectItem value="true">Есть сигнал</SelectItem>
-              <SelectItem value="false">Нет сигнала</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div>
-          <Label htmlFor="wishlist-mechanics">Механики</Label>
-          <Input
-            id="wishlist-mechanics"
-            value={filters.mechanics}
-            onChange={(event) => updateFilter("mechanics", event.target.value)}
-            className="mt-2"
-            placeholder="Deck Building"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="wishlist-categories">Категории</Label>
-          <Input
-            id="wishlist-categories"
-            value={filters.categories}
-            onChange={(event) => updateFilter("categories", event.target.value)}
-            className="mt-2"
-            placeholder="Animals"
-          />
-        </div>
-
-        <div className="flex items-end gap-2">
-          <Button type="submit" className="min-w-28">
-            <ListFilter className="h-4 w-4" />
-            Найти
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={resetFilters}
-            title="Сбросить фильтры"
-          >
-            <RotateCcw className="h-4 w-4" />
-            <span className="sr-only">Сбросить фильтры</span>
-          </Button>
+        <SelectField name="ratingMin" label="Рейтинг от" value={query.ratingMin?.toString() ?? ANY_VALUE} options={[
+          [ANY_VALUE, "Любой"], ...Array.from({ length: 10 }, (_, index) => [String(10 - index), String(10 - index)]),
+        ]} />
+        <NumberField name="players" label="Игроков" value={query.players} />
+        <NumberField name="playTimeMax" label="До минут" value={query.playTimeMax} />
+        <SelectField name="hasPrice" label="Цена" value={query.hasPrice === undefined ? ANY_VALUE : String(query.hasPrice)} options={[[ANY_VALUE, "Не важно"], ["true", "Есть сигнал"], ["false", "Нет сигнала"]]} />
+        <SelectField name="sort" label="Сортировка" value={query.sort ?? "interest"} options={[["interest", "По интересу"], ["rating", "По рейтингу"], ["year", "По году"], ["title", "По названию"], ["updated", "По обновлению"]]} />
+        <SelectField name="direction" label="Порядок" value={query.direction ?? "desc"} options={[["desc", "По убыванию"], ["asc", "По возрастанию"]]} />
+        <div className="xl:col-span-2"><Label htmlFor="wishlist-mechanic">Механики</Label><Input id="wishlist-mechanic" name="mechanic" defaultValue={query.mechanic?.join(", ") ?? ""} className="mt-2" /></div>
+        <div className="xl:col-span-2"><Label htmlFor="wishlist-category">Категории</Label><Input id="wishlist-category" name="category" defaultValue={query.category?.join(", ") ?? ""} className="mt-2" /></div>
+        <div className="flex gap-2 xl:col-span-2">
+          <Button type="submit"><ListFilter className="h-4 w-4" /> Найти</Button>
+          <Button asChild type="button" variant="outline" size="icon"><Link href="/wishlist" aria-label="Сбросить фильтры"><RotateCcw className="h-4 w-4" /></Link></Button>
         </div>
       </form>
 
-      {loading ? (
-        <LoadingState
-          title="Загружаем wishlist"
-          description="Получаем игры и справочные сигналы."
-        />
-      ) : error ? (
-        <ErrorState description={error} onRetry={loadWishlist} />
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={Search}
-          title="Wishlist пока пуст"
-          description="Добавленные игры появятся здесь с обложками, рейтингами, фильтрами и действиями покупки."
-          action={
-            <Button asChild>
-              <Link href="/items/new?target=wishlist">
-                <Star className="h-4 w-4" />
-                Добавить в wishlist
-              </Link>
-            </Button>
-          }
-        />
-      ) : (
+      {result.isLoading ? <LoadingState title="Загружаем wishlist" description="Получаем игры и справочные сигналы." /> : null}
+      {result.error ? <ErrorState description={result.error} onRetry={result.reload} /> : null}
+      {result.data && result.data.data.length === 0 ? <EmptyState icon={Search} title="Wishlist пока пуст" description="Измените фильтры или добавьте игру." /> : null}
+      {result.data?.data.length ? (
         <section className="grid gap-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-medium">{totalLabel(total)}</div>
-            <div className="text-xs text-muted-foreground">
-              Показано {items.length}
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((entry) => (
-              <WishlistCard key={entry.item.id} entry={entry} />
+          <div className="flex items-center justify-between gap-3 text-sm"><strong>{result.data.pagination.total} игр</strong><span className="text-muted-foreground">Страница {result.data.pagination.page}</span></div>
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+            {result.data.data.map((entry) => (
+              <WishlistCard
+                key={entry.item.id}
+                entry={entry}
+                busy={busyItemId === entry.item.id}
+                onAddToCollection={() => addToCollection(entry)}
+                onRemove={() => setRemoveEntry(entry)}
+              />
             ))}
           </div>
+          <Pagination page={result.data.pagination.page} totalPages={result.data.pagination.totalPages} createHref={(page) => {
+            const next = new URLSearchParams(searchParams.toString());
+            if (page <= 1) next.delete("page"); else next.set("page", String(page));
+            return wishlistHref(next);
+          }} />
         </section>
-      )}
+      ) : null}
+
+      <ConfirmationDialog
+        open={Boolean(removeEntry)}
+        onOpenChange={(open) => { if (!open) setRemoveEntry(null); }}
+        title="Удалить из wishlist?"
+        description={`«${removeEntry?.item.title ?? "Игра"}» исчезнет из списка, но Item, история, ссылки и предзаказы сохранятся.`}
+        confirmLabel="Удалить из wishlist"
+        destructive
+        onConfirm={confirmRemove}
+      />
     </main>
   );
 }
 
-function WishlistCard({ entry }: { entry: WishlistCardDto }) {
+function WishlistCard({ entry, busy, onAddToCollection, onRemove }: { entry: WishlistCardDto; busy: boolean; onAddToCollection: () => void; onRemove: () => void }) {
   return (
-    <article className="grid min-h-52 grid-cols-[7rem_1fr] gap-4 rounded-lg border bg-card p-4">
-      <div className="overflow-hidden rounded-md border bg-secondary">
-        {entry.item.cover?.url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={entry.item.cover.url}
-            alt=""
-            className="h-full min-h-44 w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full min-h-44 items-center justify-center text-muted-foreground">
-            <ImageIcon className="h-7 w-7" />
-          </div>
-        )}
-      </div>
-
+    <article className="grid min-w-0 grid-cols-[6.5rem_1fr] gap-4 rounded-xl border bg-card p-4">
+      <GameCover src={entry.item.cover?.url ?? entry.item.cover?.path} alt={entry.item.cover?.alt ?? entry.item.title} size="card" />
       <div className="flex min-w-0 flex-col">
-        <div className="min-w-0">
-          <Link
-            href={`/wishlist/${entry.item.id}`}
-            className="font-semibold text-foreground hover:underline"
-          >
-            {entry.item.title}
-          </Link>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Badge variant="secondary">{entry.item.type.name}</Badge>
-            {entry.item.year ? (
-              <Badge variant="outline">{entry.item.year}</Badge>
-            ) : null}
-            {entry.activePreorder ? (
-              <Badge>
-                <ShoppingBag className="mr-1 h-3 w-3" />
-                Предзаказ
-              </Badge>
-            ) : null}
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <Link href={`/wishlist/${entry.item.id}`} className="line-clamp-2 font-semibold hover:underline">{entry.item.title}</Link>
+            <p className="mt-1 text-sm text-muted-foreground">{entry.item.year ?? "Год не указан"} · {entry.item.type.name}</p>
           </div>
+          {entry.item.communityRating ? <Badge variant="secondary"><Star className="mr-1 h-3 w-3 fill-current" />{entry.item.communityRating.toFixed(1)}</Badge> : null}
         </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-          <InfoValue
-            label="BGG"
-            value={
-              entry.item.communityRating
-                ? entry.item.communityRating.toFixed(1)
-                : "Нет"
-            }
-          />
-          <InfoValue
-            label="Интерес"
-            value={
-              entry.userItem.interestLevel
-                ? `${entry.userItem.interestLevel}/5`
-                : "Нет"
-            }
-          />
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+          <span>Игроки: {players(entry)}</span><span>Время: {playTime(entry)}</span>
+          <span>Интерес: {entry.userItem.interestLevel ? `${entry.userItem.interestLevel}/5` : "—"}</span>
+          <span>Цена: {entry.priceSignal ? money(entry.priceSignal.amount, entry.priceSignal.currency) : "—"}</span>
         </div>
-
-        <div className="mt-auto pt-4">
-          <Button asChild variant="outline" size="sm" className="w-full">
-            <Link href={`/wishlist/${entry.item.id}`}>Открыть</Link>
-          </Button>
+        {entry.mechanics.length ? <div className="mt-3 flex flex-wrap gap-1">{entry.mechanics.slice(0, 3).map((mechanic) => <Badge key={mechanic} variant="outline" className="max-w-full truncate">{mechanic}</Badge>)}</div> : null}
+        {entry.activePreorder ? <Badge className="mt-3 w-fit"><ShoppingBag className="mr-1 h-3 w-3" />Есть предзаказ</Badge> : null}
+        <div className="mt-auto flex flex-wrap gap-2 pt-4">
+          <Button asChild size="sm" variant="outline"><Link href={`/wishlist/${entry.item.id}`}>Подробнее</Link></Button>
+          <Button type="button" size="sm" variant="outline" onClick={onAddToCollection} disabled={busy} aria-label="Добавить в коллекцию"><Boxes className="h-4 w-4" /></Button>
+          <Button asChild size="sm" variant="outline" aria-label="Оформить предзаказ"><Link href={`/wishlist/${entry.item.id}?action=preorder`}><ShoppingBag className="h-4 w-4" /></Link></Button>
+          <Button type="button" size="sm" variant="ghost" onClick={onRemove} disabled={busy} aria-label="Удалить из wishlist"><Trash2 className="h-4 w-4" /></Button>
         </div>
       </div>
     </article>
   );
 }
 
-function InfoValue({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="font-medium">{value}</div>
-    </div>
-  );
+function SelectField({ name, label, value, options }: { name: string; label: string; value: string; options: string[][] }) {
+  return <div><Label htmlFor={`wishlist-${name}`}>{label}</Label><select id={`wishlist-${name}`} name={name} defaultValue={value} className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm">{options.map(([option, text]) => <option key={option} value={option}>{text}</option>)}</select></div>;
 }
 
-function toWishlistQuery(filters: Record<string, string>): WishlistQueryDto {
+function NumberField({ name, label, value }: { name: string; label: string; value?: number }) {
+  return <div><Label htmlFor={`wishlist-${name}`}>{label}</Label><Input id={`wishlist-${name}`} name={name} type="number" min={1} defaultValue={value ?? ""} className="mt-2" /></div>;
+}
+
+export function wishlistQueryFromUrl(searchParams: URLSearchParams): WishlistListQuery {
+  const boolean = (key: string) => searchParams.get(key) === null ? undefined : searchParams.get(key) === "true";
+  const number = (key: string) => { const value = searchParams.get(key); return value ? Number(value) : undefined; };
   return {
-    q: filters.q.trim() || undefined,
-    ratingMin:
-      filters.minRating === ANY_VALUE ? undefined : Number(filters.minRating),
-    players: filters.players ? Number(filters.players) : undefined,
-    playTimeMax: filters.maxPlayTime
-      ? Number(filters.maxPlayTime)
-      : undefined,
-    mechanic: splitFilterValues(filters.mechanics),
-    category: splitFilterValues(filters.categories),
-    hasPrice:
-      filters.hasPrice === ANY_VALUE ? undefined : filters.hasPrice === "true",
+    q: searchParams.get("q") || undefined,
+    ratingMin: number("ratingMin"),
+    players: number("players"),
+    playTimeMax: number("playTimeMax"),
+    mechanic: searchParams.getAll("mechanic").filter(Boolean) || undefined,
+    category: searchParams.getAll("category").filter(Boolean) || undefined,
+    hasPrice: boolean("hasPrice"),
+    sort: (searchParams.get("sort") as WishlistListQuery["sort"]) || undefined,
+    direction: (searchParams.get("direction") as WishlistListQuery["direction"]) || undefined,
+    page: number("page"),
+    pageSize: 24,
   };
 }
 
-function splitFilterValues(value: string) {
-  const values = value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-  return values.length > 0 ? values : undefined;
-}
-
-function totalLabel(total: number) {
-  if (total === 1) {
-    return "1 игра в wishlist";
-  }
-
-  return `${total} игр в wishlist`;
-}
+function optionalSelect(form: FormData, key: string, defaultValue?: string) { const value = String(form.get(key) ?? ""); return value === ANY_VALUE || value === defaultValue ? "" : value; }
+function splitValues(value: string) { return value.split(",").map((entry) => entry.trim()).filter(Boolean); }
+function setOrDelete(params: URLSearchParams, key: string, value: string) { if (value) params.set(key, value); else params.delete(key); }
+function setArray(params: URLSearchParams, key: string, values: string[]) { params.delete(key); values.forEach((value) => params.append(key, value)); }
+export function wishlistHref(params: URLSearchParams) { const value = params.toString(); return value ? `/wishlist?${value}` : "/wishlist"; }
+function players(entry: WishlistCardDto) { const { minPlayers: min, maxPlayers: max } = entry.item; return min && max && min !== max ? `${min}–${max}` : String(min ?? max ?? "—"); }
+function playTime(entry: WishlistCardDto) { const { minPlayTime: min, maxPlayTime: max } = entry.item; return min && max && min !== max ? `${min}–${max} мин` : min || max ? `${min ?? max} мин` : "—"; }
+function money(amount: number, currency: string) { return new Intl.NumberFormat("ru-RU", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount); }

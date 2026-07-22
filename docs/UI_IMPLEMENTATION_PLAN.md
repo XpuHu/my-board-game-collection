@@ -887,11 +887,11 @@ legacy физически изолирован и доступен исключ�
 
 ## Этап 6. Wishlist и Add Item
 
-- [ ] Новый wishlist list/detail.
-- [ ] Удаление из wishlist без удаления Item.
-- [ ] Preorder flow из wishlist.
-- [ ] Add Item wizard.
-- [ ] Personal data step для collection/preorder.
+- [x] Новый wishlist list/detail.
+- [x] Удаление из wishlist без удаления Item.
+- [x] Preorder flow из wishlist.
+- [x] Add Item wizard.
+- [x] Personal data step для collection/preorder.
 
 Результат: MVP-03–06 и MVP-12 работают в новом UI.
 

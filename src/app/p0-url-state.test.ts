@@ -5,6 +5,10 @@ import {
   preordersHref,
   preordersQueryFromUrl,
 } from "@/app/preorders/preorders-page-client";
+import {
+  wishlistHref,
+  wishlistQueryFromUrl,
+} from "@/app/wishlist/wishlist-page-client";
 
 describe("P0 list URL state", () => {
   it("restores plays filters and pagination", () => {
@@ -45,6 +49,31 @@ describe("P0 list URL state", () => {
     });
     expect(preordersHref(new URLSearchParams("group=active"))).toBe(
       "/preorders?group=active",
+    );
+  });
+
+  it("restores wishlist filters, repeated taxonomy and pagination", () => {
+    expect(
+      wishlistQueryFromUrl(
+        new URLSearchParams(
+          "q=Ark&ratingMin=7&players=2&playTimeMax=90&mechanic=Drafting&mechanic=Deck+Building&category=Animals&hasPrice=true&sort=rating&direction=asc&page=2",
+        ),
+      ),
+    ).toMatchObject({
+      q: "Ark",
+      ratingMin: 7,
+      players: 2,
+      playTimeMax: 90,
+      mechanic: ["Drafting", "Deck Building"],
+      category: ["Animals"],
+      hasPrice: true,
+      sort: "rating",
+      direction: "asc",
+      page: 2,
+      pageSize: 24,
+    });
+    expect(wishlistHref(new URLSearchParams("page=2"))).toBe(
+      "/wishlist?page=2",
     );
   });
 });
