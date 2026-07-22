@@ -11,7 +11,7 @@ describe("P0 list URL state", () => {
     expect(
       playsQueryFromUrl(
         new URLSearchParams(
-          "itemId=item-1&from=2026-01-01&to=2026-01-31&result=win&source=manual&page=2",
+          "itemId=item-1&from=2026-01-01&to=2026-01-31&result=win&source=manual&player=Anna&playersMin=2&playersMax=4&durationMin=30&durationMax=120&usedItemId=item-2&page=2",
         ),
       ),
     ).toMatchObject({
@@ -20,6 +20,12 @@ describe("P0 list URL state", () => {
       to: "2026-01-31",
       result: "win",
       source: "manual",
+      player: "Anna",
+      playersMin: 2,
+      playersMax: 4,
+      durationMin: 30,
+      durationMax: 120,
+      usedItemId: "item-2",
       page: 2,
       pageSize: 24,
     });

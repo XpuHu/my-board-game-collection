@@ -69,6 +69,10 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("С даты");
     expect(markup).toContain("По дату");
     expect(markup).toContain("Источник");
+    expect(markup).toContain("Игрок");
+    expect(markup).toContain("Участников");
+    expect(markup).toContain("Длительность, мин");
+    expect(markup).toContain("Дополнение");
   });
 
   it("renders the preorder page shell with expected-date workflow entry points", () => {
