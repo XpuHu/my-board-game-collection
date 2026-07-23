@@ -56,6 +56,11 @@ model Item {
   tags               Tag[]               @relation("ItemTags")
   parentRelations    ItemRelation[]      @relation("ParentItemRelations")
   childRelations     ItemRelation[]      @relation("ChildItemRelations")
+  itemMechanics      ItemMechanic[]
+  itemCategories     ItemCategory[]
+  itemDesigners      ItemDesigner[]
+  itemArtists        ItemArtist[]
+  itemPublishers     ItemPublisher[]
 
   @@index([title])
   @@index([originalTitle])
@@ -111,6 +116,7 @@ model PlaySession {
   id                String    @id @default(uuid())
   itemId            String    @map("item_id")
   playedAt          DateTime  @map("played_at")
+  startedAt         DateTime? @map("started_at")
   playersCount      Int?      @map("players_count")
   durationMinutes   Int?      @map("duration_minutes")
   result            String?
@@ -123,6 +129,7 @@ model PlaySession {
   bggPlayId         String?   @unique @map("bgg_play_id")
   locallyModifiedAt DateTime? @map("locally_modified_at")
   importedAt        DateTime? @map("imported_at")
+  personalRating    Int?      @map("personal_rating")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
@@ -132,6 +139,116 @@ model PlaySession {
   @@index([playedAt])
   @@index([bggPlayId])
   @@map("play_sessions")
+}
+
+model Mechanic {
+  id             String         @id @default(uuid())
+  name           String
+  normalizedName String         @unique @map("normalized_name")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @default(now()) @updatedAt @map("updated_at")
+  items          ItemMechanic[]
+
+  @@map("mechanics")
+}
+
+model ItemMechanic {
+  itemId     String   @map("item_id")
+  mechanicId String   @map("mechanic_id")
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  mechanic   Mechanic @relation(fields: [mechanicId], references: [id], onDelete: Restrict)
+
+  @@id([itemId, mechanicId])
+  @@index([mechanicId])
+  @@map("item_mechanics")
+}
+
+model Category {
+  id             String         @id @default(uuid())
+  name           String
+  normalizedName String         @unique @map("normalized_name")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @default(now()) @updatedAt @map("updated_at")
+  items          ItemCategory[]
+
+  @@map("categories")
+}
+
+model ItemCategory {
+  itemId     String   @map("item_id")
+  categoryId String   @map("category_id")
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@id([itemId, categoryId])
+  @@index([categoryId])
+  @@map("item_categories")
+}
+
+model Designer {
+  id             String         @id @default(uuid())
+  name           String
+  normalizedName String         @unique @map("normalized_name")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @default(now()) @updatedAt @map("updated_at")
+  items          ItemDesigner[]
+
+  @@map("designers")
+}
+
+model ItemDesigner {
+  itemId     String   @map("item_id")
+  designerId String   @map("designer_id")
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  designer   Designer @relation(fields: [designerId], references: [id], onDelete: Restrict)
+
+  @@id([itemId, designerId])
+  @@index([designerId])
+  @@map("item_designers")
+}
+
+model Artist {
+  id             String       @id @default(uuid())
+  name           String
+  normalizedName String       @unique @map("normalized_name")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
+  items          ItemArtist[]
+
+  @@map("artists")
+}
+
+model ItemArtist {
+  itemId   String @map("item_id")
+  artistId String @map("artist_id")
+  item     Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Restrict)
+
+  @@id([itemId, artistId])
+  @@index([artistId])
+  @@map("item_artists")
+}
+
+model Publisher {
+  id             String          @id @default(uuid())
+  name           String
+  normalizedName String          @unique @map("normalized_name")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at")
+  items          ItemPublisher[]
+
+  @@map("publishers")
+}
+
+model ItemPublisher {
+  itemId      String    @map("item_id")
+  publisherId String    @map("publisher_id")
+  item        Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  publisher   Publisher @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+
+  @@id([itemId, publisherId])
+  @@index([publisherId])
+  @@map("item_publishers")
 }
 
 model Purchase {

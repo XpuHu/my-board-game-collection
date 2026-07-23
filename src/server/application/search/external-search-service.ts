@@ -15,6 +15,7 @@ import type {
   ProviderItem,
 } from "@/infrastructure/providers/item-provider";
 import { ApiError } from "@/server/api/errors";
+import { syncItemTaxonomy } from "@/server/application/items/taxonomy-service";
 import {
   addItemToCollection,
   addItemToWishlist,
@@ -194,65 +195,69 @@ async function importOrReuseItem(item: ProviderItem, requestedTypeId?: string) {
   }
 
   const typeId = await resolveTypeId(requestedTypeId, item.itemTypeCode);
-  const created = await prisma.item.create({
-    data: {
-      typeId,
-      title: item.title,
-      originalTitle: item.originalTitle,
-      description: item.description,
-      year: item.year,
-      minPlayers: item.minPlayers,
-      maxPlayers: item.maxPlayers,
-      minPlayTime: item.minPlayTime,
-      maxPlayTime: item.maxPlayTime,
-      minAge: item.minAge,
-      complexity: item.complexity,
-      rating: item.rating,
-      sourceMode: "imported",
-      categories: item.categories,
-      mechanics: item.mechanics,
-      designers: item.designers,
-      artists: item.artists,
-      publishers: item.publishers,
-      externalReferences: {
-        create: {
-          provider: item.provider,
-          externalId: item.externalId,
-          url: item.url,
-          lastSync: new Date(),
+  const created = await prisma.$transaction(async (tx) => {
+    const imported = await tx.item.create({
+      data: {
+        typeId,
+        title: item.title,
+        originalTitle: item.originalTitle,
+        description: item.description,
+        year: item.year,
+        minPlayers: item.minPlayers,
+        maxPlayers: item.maxPlayers,
+        minPlayTime: item.minPlayTime,
+        maxPlayTime: item.maxPlayTime,
+        minAge: item.minAge,
+        complexity: item.complexity,
+        rating: item.rating,
+        sourceMode: "imported",
+        categories: item.categories,
+        mechanics: item.mechanics,
+        designers: item.designers,
+        artists: item.artists,
+        publishers: item.publishers,
+        externalReferences: {
+          create: {
+            provider: item.provider,
+            externalId: item.externalId,
+            url: item.url,
+            lastSync: new Date(),
+          },
+        },
+        images: item.imageUrl
+          ? {
+              create: {
+                type: "reference",
+                provider: item.provider,
+                url: item.imageUrl,
+                caption: providerLabel(item.provider),
+                sortOrder: 0,
+              },
+            }
+          : undefined,
+        links: item.url
+          ? {
+              create: {
+                type: "other",
+                url: item.url,
+                title: providerLabel(item.provider),
+              },
+            }
+          : undefined,
+        userItem: {
+          create: {
+            owned: false,
+            wishlist: false,
+            status: "wishlist",
+          },
         },
       },
-      images: item.imageUrl
-        ? {
-            create: {
-              type: "reference",
-              provider: item.provider,
-              url: item.imageUrl,
-              caption: providerLabel(item.provider),
-              sortOrder: 0,
-            },
-          }
-        : undefined,
-      links: item.url
-        ? {
-            create: {
-              type: "other",
-              url: item.url,
-              title: providerLabel(item.provider),
-            },
-          }
-        : undefined,
-      userItem: {
-        create: {
-          owned: false,
-          wishlist: false,
-          status: "wishlist",
-        },
+      select: {
+        id: true,
       },
-    },
-    select: {
-      id: true,
-    },
+    });
+    await syncItemTaxonomy(tx, imported.id, item);
+    return imported;
   });
 
   return created.id;
@@ -270,7 +275,10 @@ function providerLabel(provider: ProviderCode) {
   return provider;
 }
 
-async function resolveTypeId(requestedTypeId?: string, itemTypeCode?: string | null) {
+async function resolveTypeId(
+  requestedTypeId?: string,
+  itemTypeCode?: string | null,
+) {
   if (requestedTypeId) {
     const itemType = await prisma.itemType.findUnique({
       where: {
@@ -308,7 +316,10 @@ async function resolveTypeId(requestedTypeId?: string, itemTypeCode?: string | n
     }));
 
   if (!itemType) {
-    throw ApiError.notFound("ITEM_NOT_FOUND", "Default item type was not found");
+    throw ApiError.notFound(
+      "ITEM_NOT_FOUND",
+      "Default item type was not found",
+    );
   }
 
   return itemType.id;

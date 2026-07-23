@@ -38,6 +38,7 @@ const NONE = "__none__";
 type PlayFormState = {
   itemId: string;
   playedAt: string;
+  startedAt: string;
   playersCount: string;
   durationMinutes: string;
   result: PlayResult | typeof NONE;
@@ -45,6 +46,7 @@ type PlayFormState = {
   scenario: string;
   playerNames: string;
   usedItemIds: string[];
+  personalRating: string;
   notes: string;
 };
 
@@ -148,7 +150,9 @@ export function AddPlayDialog({
                 <SelectTrigger className="mt-2">
                   <SelectValue
                     placeholder={
-                      collection.isLoading ? "Загружаем коллекцию" : "Выберите игру"
+                      collection.isLoading
+                        ? "Загружаем коллекцию"
+                        : "Выберите игру"
                     }
                   />
                 </SelectTrigger>
@@ -176,6 +180,14 @@ export function AddPlayDialog({
                 required
               />
             </Field>
+            <Field label="Время начала" htmlFor="play-start-time">
+              <Input
+                id="play-start-time"
+                type="time"
+                value={form.startedAt}
+                onChange={(event) => update("startedAt", event.target.value)}
+              />
+            </Field>
             <Field label="Количество игроков" htmlFor="play-players-count">
               <Input
                 id="play-players-count"
@@ -191,7 +203,9 @@ export function AddPlayDialog({
                 type="number"
                 min={1}
                 value={form.durationMinutes}
-                onChange={(event) => update("durationMinutes", event.target.value)}
+                onChange={(event) =>
+                  update("durationMinutes", event.target.value)
+                }
               />
             </Field>
             <div>
@@ -202,7 +216,9 @@ export function AddPlayDialog({
                   update("result", value as PlayFormState["result"])
                 }
               >
-                <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>Не указан</SelectItem>
                   <SelectItem value="win">Победа</SelectItem>
@@ -227,6 +243,19 @@ export function AddPlayDialog({
                 onChange={(event) => update("scenario", event.target.value)}
               />
             </Field>
+            <Field label="Личная оценка" htmlFor="play-personal-rating">
+              <Input
+                id="play-personal-rating"
+                type="number"
+                min={1}
+                max={10}
+                value={form.personalRating}
+                onChange={(event) =>
+                  update("personalRating", event.target.value)
+                }
+                placeholder="1–10"
+              />
+            </Field>
             <div className="sm:col-span-2">
               <Label htmlFor="play-player-names">Игроки</Label>
               <Input
@@ -243,7 +272,10 @@ export function AddPlayDialog({
                 {cards
                   .filter(({ item }) => item.id !== form.itemId)
                   .map(({ item }) => (
-                    <label key={item.id} className="flex items-center gap-2 text-sm">
+                    <label
+                      key={item.id}
+                      className="flex items-center gap-2 text-sm"
+                    >
                       <input
                         type="checkbox"
                         checked={form.usedItemIds.includes(item.id)}
@@ -265,7 +297,11 @@ export function AddPlayDialog({
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
               Отмена
             </Button>
             <Button type="submit" disabled={saving}>
@@ -303,6 +339,13 @@ function formFromProps(
   return {
     itemId: play?.item.id ?? initialItemId ?? "",
     playedAt: (play?.playedAt ?? new Date().toISOString()).slice(0, 10),
+    startedAt: play?.startedAt
+      ? new Date(play.startedAt).toLocaleTimeString("ru-RU", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        })
+      : "",
     playersCount: play?.playersCount ? String(play.playersCount) : "",
     durationMinutes: play?.durationMinutes ? String(play.durationMinutes) : "",
     result: play?.result ?? NONE,
@@ -310,6 +353,7 @@ function formFromProps(
     scenario: play?.scenario ?? "",
     playerNames: play?.playerNames.join(", ") ?? "",
     usedItemIds: play?.usedItems.map(({ id }) => id) ?? [],
+    personalRating: play?.personalRating ? String(play.personalRating) : "",
     notes: play?.notes ?? "",
   };
 }
@@ -317,13 +361,20 @@ function formFromProps(
 function toRequest(form: PlayFormState): CreatePlaySessionRequest {
   return {
     playedAt: new Date(`${form.playedAt}T12:00:00.000Z`).toISOString(),
+    startedAt: form.startedAt
+      ? new Date(`${form.playedAt}T${form.startedAt}:00`).toISOString()
+      : null,
     playersCount: positiveNumber(form.playersCount),
     durationMinutes: positiveNumber(form.durationMinutes),
     result: form.result === NONE ? null : form.result,
     score: textOrNull(form.score),
     scenario: textOrNull(form.scenario),
-    playerNames: form.playerNames.split(",").map((value) => value.trim()).filter(Boolean),
+    playerNames: form.playerNames
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
     usedItemIds: form.usedItemIds,
+    personalRating: boundedRating(form.personalRating),
     notes: textOrNull(form.notes),
   };
 }
@@ -331,6 +382,13 @@ function toRequest(form: PlayFormState): CreatePlaySessionRequest {
 function positiveNumber(value: string) {
   const parsed = Number(value);
   return value && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function boundedRating(value: string) {
+  const parsed = Number(value);
+  return value && Number.isInteger(parsed) && parsed >= 1 && parsed <= 10
+    ? parsed
+    : null;
 }
 
 function textOrNull(value: string) {

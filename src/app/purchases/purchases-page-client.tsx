@@ -34,11 +34,22 @@ import { useToast } from "@/components/toast-provider";
 import {
   type CreatePurchaseRequest,
   type ItemListDto,
+  type PaginatedResponse,
 } from "@/shared/api";
-import {
-  legacyApiClient as apiClient,
-  type LegacyPurchaseDto as PurchaseDto,
-} from "@/shared/api/legacy";
+import { apiRequest } from "@/shared/api/client";
+
+type PurchaseDto = {
+  id: string;
+  itemId: string;
+  shop: string;
+  price: number;
+  currency: string;
+  deliveryCost?: number | null;
+  discount?: number | null;
+  totalPrice: number;
+  purchaseDate?: string | null;
+  comment?: string | null;
+};
 
 type PurchaseFormState = {
   itemId: string;
@@ -82,9 +93,13 @@ export function PurchasesPageClient() {
     let isActive = true;
 
     Promise.all([
-      apiClient.purchases.list(),
-      apiClient.collection.list({ pageSize: 100 }),
-      apiClient.wishlist.list({ pageSize: 100 }),
+      apiRequest<PurchaseDto[]>("/api/purchases"),
+      apiRequest<PaginatedResponse<ItemListDto>>(
+        "/api/collection?view=legacy&pageSize=100",
+      ),
+      apiRequest<PaginatedResponse<ItemListDto>>(
+        "/api/wishlist?view=legacy&pageSize=100",
+      ),
     ])
       .then(([purchaseResponse, collectionResponse, wishlistResponse]) => {
         if (!isActive) {
@@ -169,9 +184,15 @@ export function PurchasesPageClient() {
       const payload = toPurchaseRequest(form);
 
       if (editingPurchase) {
-        await apiClient.purchases.update(editingPurchase.id, payload);
+        await apiRequest(`/api/purchases/${editingPurchase.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
       } else {
-        await apiClient.purchases.create(form.itemId, payload);
+        await apiRequest(`/api/items/${form.itemId}/purchases`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
       }
 
       toast({
@@ -201,7 +222,7 @@ export function PurchasesPageClient() {
     }
 
     try {
-      await apiClient.purchases.delete(purchase.id);
+      await apiRequest(`/api/purchases/${purchase.id}`, { method: "DELETE" });
       toast({
         title: "Покупка удалена",
         variant: "success",

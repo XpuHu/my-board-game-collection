@@ -10,6 +10,7 @@ import {
   mapWishlistItemDetail,
   type UserItemForWishlistCard,
 } from "@/server/application/items/item-mappers";
+import { normalizeTaxonomyName } from "@/server/application/items/taxonomy-service";
 import {
   asItemForDetails,
   itemDetailsInclude,
@@ -213,21 +214,67 @@ async function findTaxonomyItemIds(
   mechanics: string[],
   categories: string[],
 ) {
-  const items = await prisma.item.findMany({
+  const mechanicNames = mechanics.map(normalizeTaxonomyName);
+  const categoryNames = categories.map(normalizeTaxonomyName);
+  const relationFilters: Prisma.ItemWhereInput[] = [];
+  if (mechanics.length) {
+    relationFilters.push({
+      itemMechanics: {
+        some: {
+          mechanic: {
+            OR: [
+              { id: { in: mechanics } },
+              { normalizedName: { in: mechanicNames } },
+            ],
+          },
+        },
+      },
+    });
+  }
+  if (categories.length) {
+    relationFilters.push({
+      itemCategories: {
+        some: {
+          category: {
+            OR: [
+              { id: { in: categories } },
+              { normalizedName: { in: categoryNames } },
+            ],
+          },
+        },
+      },
+    });
+  }
+
+  const normalizedItems = await prisma.item.findMany({
+    where: {
+      AND: [...prefilter, ...relationFilters],
+      userItem: { wishlist: true, owned: false },
+    },
+    select: { id: true },
+  });
+
+  const legacyCandidates = await prisma.item.findMany({
     where: {
       AND: prefilter,
       userItem: { wishlist: true, owned: false },
+      OR: [
+        ...(mechanics.length ? [{ itemMechanics: { none: {} } }] : []),
+        ...(categories.length ? [{ itemCategories: { none: {} } }] : []),
+      ],
     },
     select: { id: true, mechanics: true, categories: true },
   });
 
-  return items
+  const legacyIds = legacyCandidates
     .filter(
       (item) =>
         containsAny(jsonStringArray(item.mechanics), mechanics) &&
         containsAny(jsonStringArray(item.categories), categories),
     )
     .map(({ id }) => id);
+
+  return [...new Set([...normalizedItems.map(({ id }) => id), ...legacyIds])];
 }
 
 function buildWishlistOrder(

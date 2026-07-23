@@ -110,7 +110,7 @@ export type UserItemForCollectionCard = Pick<
   | "favorite"
   | "personalRating"
   | "location"
-      | "interestLevel"
+  | "interestLevel"
   | "ownedAt"
   | "createdAt"
   | "updatedAt"
@@ -319,10 +319,11 @@ export function mapCollectionCardToLegacy(
       location: userItem.location,
       interestLevel: userItem.interestLevel,
     },
-    mainImage: userItem.item.images[0] ? mapImage(userItem.item.images[0]) : null,
+    mainImage: userItem.item.images[0]
+      ? mapImage(userItem.item.images[0])
+      : null,
     playsCount: userItem.item._count.playSessions,
-    lastPlayedAt:
-      userItem.item.playSessions[0]?.playedAt.toISOString() ?? null,
+    lastPlayedAt: userItem.item.playSessions[0]?.playedAt.toISOString() ?? null,
     activePreordersCount: userItem.item._count.preorders,
     purchasesCount: userItem.item._count.purchases,
     updatedAt: latestDate([
@@ -383,7 +384,9 @@ export function mapWishlistCardToLegacy(
       location: userItem.location,
       interestLevel: userItem.interestLevel,
     },
-    mainImage: userItem.item.images[0] ? mapImage(userItem.item.images[0]) : null,
+    mainImage: userItem.item.images[0]
+      ? mapImage(userItem.item.images[0])
+      : null,
     playsCount: userItem.item._count.playSessions,
     lastPlayedAt: userItem.item.playSessions[0]?.playedAt.toISOString() ?? null,
     activePreordersCount: userItem.item._count.preorders,
@@ -420,6 +423,7 @@ export function mapPlaySession(
     itemId: play.itemId,
     itemTitle: play.item?.title ?? "",
     playedAt: play.playedAt.toISOString(),
+    startedAt: play.startedAt?.toISOString() ?? null,
     playersCount: play.playersCount,
     durationMinutes: play.durationMinutes,
     result: play.result as PlaySessionDto["result"],
@@ -427,6 +431,7 @@ export function mapPlaySession(
     scenario: play.scenario,
     playerNames: jsonStringArray(play.playerNames),
     usedItemIds: jsonStringArray(play.usedItemIds),
+    personalRating: play.personalRating,
     notes: play.notes,
     source: play.source as PlaySessionDto["source"],
     bggPlayId: play.bggPlayId,
@@ -444,7 +449,7 @@ export function mapPlayListItem(
     id: play.id,
     item: mapItemCompact(play.item),
     playedAt: play.playedAt.toISOString(),
-    startedAt: null,
+    startedAt: play.startedAt?.toISOString() ?? null,
     playersCount: play.playersCount,
     durationMinutes: play.durationMinutes,
     result: play.result as PlayResult | null,
@@ -452,7 +457,7 @@ export function mapPlayListItem(
     scenario: play.scenario,
     playerNames: jsonStringArray(play.playerNames),
     usedItems: usedItems.map(mapItemCompact),
-    personalRating: null,
+    personalRating: play.personalRating,
     notes: play.notes,
     source: play.source as PlayListItemDto["source"],
   };
@@ -820,9 +825,7 @@ function money(amount: unknown, currency: string) {
   return { amount: decimalToNumber(amount) ?? 0, currency };
 }
 
-function sumMoney(
-  values: { totalPrice: unknown; currency: string }[],
-) {
+function sumMoney(values: { totalPrice: unknown; currency: string }[]) {
   if (values.length === 0) return null;
   const currency = values[0].currency;
   if (values.some((value) => value.currency !== currency)) return null;
@@ -875,10 +878,7 @@ function parseExpectedDateEventValue(value: string | null) {
         value: {
           expectedDate: parsed.expectedDate,
           expectedDatePrecision: parsed.expectedDatePrecision as
-            | "day"
-            | "month"
-            | "quarter"
-            | "unknown",
+            "day" | "month" | "quarter" | "unknown",
         },
         legacy: false,
       };
@@ -894,9 +894,14 @@ function parseExpectedDateEventValue(value: string | null) {
 }
 
 function asPreorderStatus(value: string | null): PreorderStatus | null {
-  return ["planned", "ordered", "paid", "shipped", "received", "cancelled"].includes(
-    value ?? "",
-  )
+  return [
+    "planned",
+    "ordered",
+    "paid",
+    "shipped",
+    "received",
+    "cancelled",
+  ].includes(value ?? "")
     ? (value as PreorderStatus)
     : null;
 }

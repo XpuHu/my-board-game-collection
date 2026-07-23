@@ -6,14 +6,18 @@ import { legacyResponseViewSchema } from "@/shared/api/legacy/schemas";
 const integer = z.coerce.number().int();
 const positiveInteger = integer.positive();
 const nonNegativeInteger = integer.nonnegative();
-const booleanParam = z.enum(["true", "false"]).transform((value) => value === "true");
-const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
-  (value) => {
+const booleanParam = z
+  .enum(["true", "false"])
+  .transform((value) => value === "true");
+const calendarDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
     const date = new Date(`${value}T00:00:00.000Z`);
-    return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
-  },
-  "Expected a valid YYYY-MM-DD date",
-);
+    return (
+      !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value)
+    );
+  }, "Expected a valid YYYY-MM-DD date");
 const direction = z.enum(["asc", "desc"]);
 const viewSchema = z
   .union([z.enum(["target", "compact"]), legacyResponseViewSchema])
@@ -45,10 +49,19 @@ const collectionSchema = z
   })
   .superRefine((value, context) => {
     if (value.view !== "legacy" && value.pageSize !== 24) {
-      context.addIssue({ code: "custom", path: ["pageSize"], message: "Collection pageSize must be 24" });
+      context.addIssue({
+        code: "custom",
+        path: ["pageSize"],
+        message: "Collection pageSize must be 24",
+      });
     }
     range(value.playsMin, value.playsMax, "playsMax", context);
-    dateRange(value.lastPlayedFrom, value.lastPlayedTo, "lastPlayedTo", context);
+    dateRange(
+      value.lastPlayedFrom,
+      value.lastPlayedTo,
+      "lastPlayedTo",
+      context,
+    );
     if (
       value.neverPlayed &&
       (value.lastPlayedFrom || value.lastPlayedTo || value.notPlayedSince)
@@ -85,14 +98,13 @@ const wishlistSchema = z
   })
   .superRefine((value, context) => {
     if (value.view !== "legacy" && value.pageSize !== 24) {
-      context.addIssue({ code: "custom", path: ["pageSize"], message: "Wishlist pageSize must be 24" });
+      context.addIssue({
+        code: "custom",
+        path: ["pageSize"],
+        message: "Wishlist pageSize must be 24",
+      });
     }
-    range(
-      value.complexityMin,
-      value.complexityMax,
-      "complexityMax",
-      context,
-    );
+    range(value.complexityMin, value.complexityMax, "complexityMax", context);
   });
 
 const playsSchema = z
@@ -141,15 +153,40 @@ const preorderSchema = z
     dateRange(value.expectedFrom, value.expectedTo, "expectedTo", context);
   });
 
+const statisticsSchema = z
+  .object({
+    period: z
+      .enum(["month", "quarter", "year", "all", "custom"])
+      .default("month"),
+    from: calendarDate.optional(),
+    to: calendarDate.optional(),
+  })
+  .superRefine((value, context) => {
+    dateRange(value.from, value.to, "to", context);
+    if (value.period === "custom" && (!value.from || !value.to)) {
+      context.addIssue({
+        code: "custom",
+        path: [!value.from ? "from" : "to"],
+        message: "Custom statistics period requires from and to",
+      });
+    }
+  });
+
 export function parseCollectionQuery(searchParams: URLSearchParams) {
   return collectionSchema.parse({
     ...singleValues(searchParams),
     personalRating:
-      searchParams.get("personalRating") ?? searchParams.get("rating") ?? undefined,
+      searchParams.get("personalRating") ??
+      searchParams.get("rating") ??
+      undefined,
     lastPlayedFrom:
-      searchParams.get("lastPlayedFrom") ?? searchParams.get("playedFrom") ?? undefined,
+      searchParams.get("lastPlayedFrom") ??
+      searchParams.get("playedFrom") ??
+      undefined,
     lastPlayedTo:
-      searchParams.get("lastPlayedTo") ?? searchParams.get("playedTo") ?? undefined,
+      searchParams.get("lastPlayedTo") ??
+      searchParams.get("playedTo") ??
+      undefined,
     tag: all(searchParams, "tag"),
   });
 }
@@ -158,9 +195,13 @@ export function parseWishlistQuery(searchParams: URLSearchParams) {
   return wishlistSchema.parse({
     ...singleValues(searchParams),
     ratingMin:
-      searchParams.get("ratingMin") ?? searchParams.get("minRating") ?? undefined,
+      searchParams.get("ratingMin") ??
+      searchParams.get("minRating") ??
+      undefined,
     playTimeMax:
-      searchParams.get("playTimeMax") ?? searchParams.get("maxPlayTime") ?? undefined,
+      searchParams.get("playTimeMax") ??
+      searchParams.get("maxPlayTime") ??
+      undefined,
     mechanic: all(searchParams, "mechanic", "mechanics"),
     category: all(searchParams, "category", "categories"),
   });
@@ -176,6 +217,10 @@ export function parsePlaysQuery(searchParams: URLSearchParams) {
 
 export function parsePreorderQuery(searchParams: URLSearchParams) {
   return preorderSchema.parse(singleValues(searchParams));
+}
+
+export function parseStatisticsQuery(searchParams: URLSearchParams) {
+  return statisticsSchema.parse(singleValues(searchParams));
 }
 
 export function parseResponseView(searchParams: URLSearchParams) {
@@ -204,7 +249,9 @@ export function parseCollectionDetailQuery(searchParams: URLSearchParams) {
 export function parseWishlistDetailQuery(searchParams: URLSearchParams) {
   return z
     .object({
-      tab: z.enum(["overview", "photos", "relations", "links"]).default("overview"),
+      tab: z
+        .enum(["overview", "photos", "relations", "links"])
+        .default("overview"),
       view: viewSchema,
     })
     .parse(singleValues(searchParams));
@@ -215,7 +262,10 @@ function singleValues(searchParams: URLSearchParams) {
 }
 
 function all(searchParams: URLSearchParams, key: string, alias?: string) {
-  const values = [...searchParams.getAll(key), ...(alias ? searchParams.getAll(alias) : [])]
+  const values = [
+    ...searchParams.getAll(key),
+    ...(alias ? searchParams.getAll(alias) : []),
+  ]
     .map((value) => value.trim())
     .filter(Boolean);
   return values.length ? values : undefined;
@@ -228,7 +278,11 @@ function range(
   context: z.RefinementCtx,
 ) {
   if (min !== undefined && max !== undefined && min > max) {
-    context.addIssue({ code: "custom", path: [path], message: "Maximum must be greater than or equal to minimum" });
+    context.addIssue({
+      code: "custom",
+      path: [path],
+      message: "Maximum must be greater than or equal to minimum",
+    });
   }
 }
 
@@ -239,6 +293,10 @@ function dateRange(
   context: z.RefinementCtx,
 ) {
   if (from && to && from > to) {
-    context.addIssue({ code: "custom", path: [path], message: "End date must not be before start date" });
+    context.addIssue({
+      code: "custom",
+      path: [path],
+      message: "End date must not be before start date",
+    });
   }
 }

@@ -239,6 +239,20 @@ describe("MVP service flows", () => {
       type: "other",
       url: "https://example.com/game",
     });
+    await expect(
+      prisma.itemMechanic.findUnique({
+        where: {
+          itemId_mechanicId: {
+            itemId: details.item.id,
+            mechanicId: (
+              await prisma.mechanic.findUniqueOrThrow({
+                where: { normalizedName: "drafting" },
+              })
+            ).id,
+          },
+        },
+      }),
+    ).resolves.toBeTruthy();
   });
 
   it("returns a disabled warning without calling external providers", async () => {
@@ -431,9 +445,11 @@ describe("MVP service flows", () => {
   it("manages manual play sessions and collection aggregates locally", async () => {
     const item = await createTestItem({ title: "Spirit Island", owned: true });
     const playedAt = "2026-07-06T12:00:00.000Z";
+    const startedAt = "2026-07-06T18:30:00.000Z";
 
     const play = await createPlaySession(item.id, {
       playedAt,
+      startedAt,
       playersCount: 2,
       durationMinutes: 95,
       result: "win",
@@ -441,14 +457,17 @@ describe("MVP service flows", () => {
       scenario: "Difficulty 4",
       playerNames: ["Anna", "Max"],
       usedItemIds: [],
+      personalRating: 9,
       notes: "Fast win",
     });
 
     expect(play.itemId).toBe(item.id);
     expect(play.itemTitle).toBe("Spirit Island");
     expect(play.playedAt).toBe(playedAt);
+    expect(play.startedAt).toBe(startedAt);
     expect(play.playersCount).toBe(2);
     expect(play.result).toBe("win");
+    expect(play.personalRating).toBe(9);
     expect(play.source).toBe("manual");
 
     const manualPlays = await listPlaySessions(
@@ -470,17 +489,21 @@ describe("MVP service flows", () => {
 
     const updated = await updatePlaySession(play.id, {
       playedAt: "2026-07-07T12:00:00.000Z",
+      startedAt: null,
       playersCount: 3,
       durationMinutes: 105,
       result: "score",
       score: "81",
       playerNames: ["Anna", "Max", "Nina"],
       usedItemIds: [],
+      personalRating: 8,
       notes: "Second run",
     });
 
     expect(updated.playersCount).toBe(3);
     expect(updated.result).toBe("score");
+    expect(updated.startedAt).toBeNull();
+    expect(updated.personalRating).toBe(8);
     expect(updated.locallyModifiedAt).not.toBeNull();
 
     await deletePlaySession(play.id);

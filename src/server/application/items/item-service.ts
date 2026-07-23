@@ -28,6 +28,7 @@ import {
   resolveUserItemTransition,
   wishlistTransition,
 } from "./user-item-transition";
+import { syncItemTaxonomy } from "./taxonomy-service";
 
 const createItemSchema = z
   .object({
@@ -77,63 +78,67 @@ export async function createItem(input: CreateItemInput) {
     return existingExternalReference;
   }
 
-  const item = await prisma.item.create({
-    data: {
-      typeId: input.typeId,
-      title: input.title,
-      originalTitle: input.originalTitle,
-      description: input.description,
-      year: input.year,
-      minPlayers: input.minPlayers,
-      maxPlayers: input.maxPlayers,
-      minPlayTime: input.minPlayTime,
-      maxPlayTime: input.maxPlayTime,
-      minAge: input.minAge,
-      complexity: input.complexity,
-      rating: input.rating,
-      sourceMode: input.sourceMode,
-      categories: input.categories,
-      mechanics: input.mechanics,
-      designers: input.designers,
-      artists: input.artists,
-      publishers: input.publishers,
-      images: input.imageUrl
-        ? {
-            create: {
-              type: "user",
-              provider: "manual",
-              url: input.imageUrl,
-              caption: "Manual URL",
-              sortOrder: 0,
-            },
-          }
-        : undefined,
-      links: input.linkUrl
-        ? {
-            create: {
-              type: "other",
-              url: input.linkUrl,
-              title: "Manual link",
-            },
-          }
-        : undefined,
-      externalReferences: input.externalReference
-        ? {
-            create: {
-              provider: input.externalReference.provider,
-              externalId: input.externalReference.externalId,
-              url: input.externalReference.url,
-            },
-          }
-        : undefined,
-      userItem: {
-        create: {
-          owned: false,
-          wishlist: false,
-          status: "active",
+  const item = await prisma.$transaction(async (tx) => {
+    const created = await tx.item.create({
+      data: {
+        typeId: input.typeId,
+        title: input.title,
+        originalTitle: input.originalTitle,
+        description: input.description,
+        year: input.year,
+        minPlayers: input.minPlayers,
+        maxPlayers: input.maxPlayers,
+        minPlayTime: input.minPlayTime,
+        maxPlayTime: input.maxPlayTime,
+        minAge: input.minAge,
+        complexity: input.complexity,
+        rating: input.rating,
+        sourceMode: input.sourceMode,
+        categories: input.categories,
+        mechanics: input.mechanics,
+        designers: input.designers,
+        artists: input.artists,
+        publishers: input.publishers,
+        images: input.imageUrl
+          ? {
+              create: {
+                type: "user",
+                provider: "manual",
+                url: input.imageUrl,
+                caption: "Manual URL",
+                sortOrder: 0,
+              },
+            }
+          : undefined,
+        links: input.linkUrl
+          ? {
+              create: {
+                type: "other",
+                url: input.linkUrl,
+                title: "Manual link",
+              },
+            }
+          : undefined,
+        externalReferences: input.externalReference
+          ? {
+              create: {
+                provider: input.externalReference.provider,
+                externalId: input.externalReference.externalId,
+                url: input.externalReference.url,
+              },
+            }
+          : undefined,
+        userItem: {
+          create: {
+            owned: false,
+            wishlist: false,
+            status: "active",
+          },
         },
       },
-    },
+    });
+    await syncItemTaxonomy(tx, created.id, input);
+    return created;
   });
 
   return getItemDetails(item.id);
@@ -142,29 +147,32 @@ export async function createItem(input: CreateItemInput) {
 export async function updateItem(itemId: string, input: UpdateItemInput) {
   await assertItemExists(itemId);
 
-  await prisma.item.update({
-    where: {
-      id: itemId,
-    },
-    data: {
-      typeId: input.typeId,
-      title: input.title,
-      originalTitle: input.originalTitle,
-      description: input.description,
-      year: input.year,
-      minPlayers: input.minPlayers,
-      maxPlayers: input.maxPlayers,
-      minPlayTime: input.minPlayTime,
-      maxPlayTime: input.maxPlayTime,
-      minAge: input.minAge,
-      complexity: input.complexity,
-      rating: input.rating,
-      categories: input.categories,
-      mechanics: input.mechanics,
-      designers: input.designers,
-      artists: input.artists,
-      publishers: input.publishers,
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.item.update({
+      where: {
+        id: itemId,
+      },
+      data: {
+        typeId: input.typeId,
+        title: input.title,
+        originalTitle: input.originalTitle,
+        description: input.description,
+        year: input.year,
+        minPlayers: input.minPlayers,
+        maxPlayers: input.maxPlayers,
+        minPlayTime: input.minPlayTime,
+        maxPlayTime: input.maxPlayTime,
+        minAge: input.minAge,
+        complexity: input.complexity,
+        rating: input.rating,
+        categories: input.categories,
+        mechanics: input.mechanics,
+        designers: input.designers,
+        artists: input.artists,
+        publishers: input.publishers,
+      },
+    });
+    await syncItemTaxonomy(tx, itemId, input);
   });
 
   return getItemDetails(itemId);

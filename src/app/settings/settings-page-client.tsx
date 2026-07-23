@@ -25,7 +25,7 @@ import {
   type JsonImportReportDto,
   type SyncBggPlaysResponse,
 } from "@/shared/api";
-import { legacyApiClient as apiClient } from "@/shared/api/legacy";
+import { apiRequest } from "@/shared/api/client";
 import type { IntegrationFeatureFlags } from "@/server/config/feature-flags";
 
 const BGG_USERNAME_KEY = "board-game-collection:bgg-username";
@@ -96,10 +96,16 @@ export function SettingsPageClient({ featureFlags }: SettingsPageClientProps) {
     setSyncing(true);
 
     try {
-      const response = await apiClient.bggSync.syncPlays({
-        username: trimmedUsername,
-        since: since ? new Date(since).toISOString() : undefined,
-      });
+      const response = await apiRequest<SyncBggPlaysResponse>(
+        "/api/sync/bgg/plays",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            username: trimmedUsername,
+            since: since ? new Date(since).toISOString() : undefined,
+          }),
+        },
+      );
 
       window.localStorage.setItem(BGG_USERNAME_KEY, trimmedUsername);
       window.localStorage.setItem(BGG_LAST_SYNC_KEY, response.syncedAt);
@@ -134,7 +140,7 @@ export function SettingsPageClient({ featureFlags }: SettingsPageClientProps) {
     setExporting(true);
 
     try {
-      const response = await apiClient.backup.exportJson();
+      const response = await exportBackup();
       const url = window.URL.createObjectURL(response.blob);
       const anchor = document.createElement("a");
 
@@ -177,7 +183,13 @@ export function SettingsPageClient({ featureFlags }: SettingsPageClientProps) {
 
     try {
       const backup = JSON.parse(await file.text()) as JsonBackupDto;
-      const response = await apiClient.backup.importJson(backup);
+      const response = await apiRequest<JsonImportReportDto>(
+        "/api/import/json",
+        {
+          method: "POST",
+          body: JSON.stringify(backup),
+        },
+      );
 
       setImportReport(response);
       toast({
@@ -367,6 +379,18 @@ export function SettingsPageClient({ featureFlags }: SettingsPageClientProps) {
       {importReport ? <ImportReport report={importReport} /> : null}
     </main>
   );
+}
+
+async function exportBackup() {
+  const response = await fetch("/api/export/json");
+  if (!response.ok) {
+    throw new Error(`Экспорт завершился с кодом ${response.status}`);
+  }
+  const disposition = response.headers.get("content-disposition");
+  return {
+    blob: await response.blob(),
+    filename: disposition?.match(/filename="?([^";]+)"?/i)?.[1],
+  };
 }
 
 function IntegrationStatus({

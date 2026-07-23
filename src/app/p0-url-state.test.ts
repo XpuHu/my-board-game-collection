@@ -9,6 +9,7 @@ import {
   wishlistHref,
   wishlistQueryFromUrl,
 } from "@/app/wishlist/wishlist-page-client";
+import { statisticsQueryFromUrl } from "@/app/statistics/statistics-page-client";
 
 describe("P0 list URL state", () => {
   it("restores plays filters and pagination", () => {
@@ -56,17 +57,22 @@ describe("P0 list URL state", () => {
     expect(
       wishlistQueryFromUrl(
         new URLSearchParams(
-          "q=Ark&ratingMin=7&players=2&playTimeMax=90&mechanic=Drafting&mechanic=Deck+Building&category=Animals&hasPrice=true&sort=rating&direction=asc&page=2",
+          "q=Ark&type=base_game&ratingMin=7&players=2&playTimeMax=90&complexityMin=2&complexityMax=4&mechanic=Drafting&mechanic=Deck+Building&category=Animals&hasLocalization=true&hasPrice=true&interestLevel=5&sort=rating&direction=asc&page=2",
         ),
       ),
     ).toMatchObject({
       q: "Ark",
+      type: "base_game",
       ratingMin: 7,
       players: 2,
       playTimeMax: 90,
+      complexityMin: 2,
+      complexityMax: 4,
       mechanic: ["Drafting", "Deck Building"],
       category: ["Animals"],
+      hasLocalization: true,
       hasPrice: true,
+      interestLevel: 5,
       sort: "rating",
       direction: "asc",
       page: 2,
@@ -75,5 +81,19 @@ describe("P0 list URL state", () => {
     expect(wishlistHref(new URLSearchParams("page=2"))).toBe(
       "/wishlist?page=2",
     );
+  });
+
+  it("restores statistics period", () => {
+    expect(
+      statisticsQueryFromUrl(
+        new URLSearchParams(
+          "period=custom&from=2026-01-01&to=2026-03-31",
+        ),
+      ),
+    ).toEqual({
+      period: "custom",
+      from: "2026-01-01",
+      to: "2026-03-31",
+    });
   });
 });

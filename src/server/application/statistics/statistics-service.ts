@@ -6,6 +6,7 @@ import type {
   MoneyAmountDto,
   PlayResult,
   StatisticsOverviewDto,
+  StatisticsQueryDto,
   StatisticsSummaryDto,
 } from "@/shared/api";
 import {
@@ -90,24 +91,21 @@ export async function getStatisticsSummary(): Promise<StatisticsSummaryDto> {
 }
 
 export async function getStatisticsOverview(
-  now = new Date(),
+  queryOrNow: StatisticsQueryDto | Date = {},
+  requestedNow = new Date(),
 ): Promise<StatisticsOverviewDto> {
+  const query: StatisticsQueryDto =
+    queryOrNow instanceof Date ? { period: "all" } : queryOrNow;
+  const now = queryOrNow instanceof Date ? queryOrNow : requestedNow;
   const staleSince = new Date(now);
   staleSince.setDate(staleSince.getDate() - 180);
 
+  const playedAt = statisticsDateRange(query, now);
   const [summary, plays, ratingAggregate, staleItems] = await Promise.all([
     getStatisticsSummary(),
     prisma.playSession.findMany({
-      where: { item: { deletedAt: null } },
-      select: {
-        itemId: true,
-        playedAt: true,
-        playersCount: true,
-        durationMinutes: true,
-        result: true,
-        playerNames: true,
-        usedItemIds: true,
-      },
+      where: { item: { deletedAt: null }, playedAt },
+      include: { item: { select: { title: true } } },
       orderBy: { playedAt: "asc" },
     }),
     prisma.userItem.aggregate({
@@ -136,9 +134,18 @@ export async function getStatisticsOverview(
     ({ result }) => result === "win" || result === "loss",
   );
   const wins = knownResults.filter(({ result }) => result === "win").length;
+  const periodTopItems = await getPeriodTopItems(plays);
 
   return {
     ...summary,
+    playsTotal: plays.length,
+    playsThisMonth: countPlaysThisMonth(plays),
+    latestPlays: [...plays]
+      .sort((left, right) => right.playedAt.getTime() - left.playedAt.getTime())
+      .slice(0, 8)
+      .map(mapPlaySession),
+    averagePlayDurationMinutes: getAveragePlayDuration(plays),
+    mostPlayedItems: periodTopItems,
     uniquePlayedItems: new Set(plays.map(({ itemId }) => itemId)).size,
     totalPlayHours: roundOneDecimal(
       plays.reduce(
@@ -155,12 +162,85 @@ export async function getStatisticsOverview(
     playerCountDistribution: countByPlayers(plays),
     results: countByResult(plays),
     activityByWeekday: countByWeekday(plays),
-    staleItems: (staleItems as UserItemForCollectionCard[]).map(
-      (item) => mapCollectionCard(item, now),
+    staleItems: (staleItems as UserItemForCollectionCard[]).map((item) =>
+      mapCollectionCard(item, now),
     ),
     expansionUsage: await getExpansionUsage(plays),
     frequentPlayers: getFrequentPlayers(plays),
   };
+}
+
+async function getPeriodTopItems(
+  plays: { itemId: string; playedAt: Date }[],
+) {
+  const aggregate = new Map<
+    string,
+    { count: number; lastPlayedAt: Date }
+  >();
+  plays.forEach(({ itemId, playedAt }) => {
+    const current = aggregate.get(itemId);
+    aggregate.set(itemId, {
+      count: (current?.count ?? 0) + 1,
+      lastPlayedAt:
+        !current || playedAt > current.lastPlayedAt
+          ? playedAt
+          : current.lastPlayedAt,
+    });
+  });
+  const itemIds = [...aggregate]
+    .sort(
+      ([leftId, left], [rightId, right]) =>
+        right.count - left.count || leftId.localeCompare(rightId),
+    )
+    .slice(0, 5)
+    .map(([itemId]) => itemId);
+  if (!itemIds.length) return [];
+
+  const userItems = await prisma.userItem.findMany({
+    where: { owned: true, itemId: { in: itemIds } },
+    include: userItemListInclude,
+  });
+  const mapped = new Map(
+    userItems.map((userItem) => {
+      const item = mapItemList(userItem as UserItemForList);
+      const period = aggregate.get(userItem.itemId);
+      return [
+        userItem.itemId,
+        {
+          ...item,
+          playsCount: period?.count ?? 0,
+          lastPlayedAt: period?.lastPlayedAt.toISOString() ?? null,
+        },
+      ] as const;
+    }),
+  );
+  return itemIds.flatMap((itemId) => {
+    const item = mapped.get(itemId);
+    return item ? [item] : [];
+  });
+}
+
+function statisticsDateRange(
+  query: StatisticsQueryDto,
+  now: Date,
+): Prisma.DateTimeFilter | undefined {
+  const period = query.period ?? "month";
+  if (period === "all") return undefined;
+  if (period === "custom") {
+    return {
+      gte: query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined,
+      lte: query.to ? new Date(`${query.to}T23:59:59.999Z`) : undefined,
+    };
+  }
+
+  const from = new Date(now);
+  from.setHours(0, 0, 0, 0);
+  if (period === "month") from.setDate(1);
+  if (period === "quarter") {
+    from.setMonth(Math.floor(from.getMonth() / 3) * 3, 1);
+  }
+  if (period === "year") from.setMonth(0, 1);
+  return { gte: from, lte: now };
 }
 
 function countPlaysThisMonth(plays: { playedAt: Date }[]) {

@@ -49,6 +49,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-svh bg-background text-foreground">
+      <a
+        href="#main-content"
+        className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-transform focus:translate-y-0"
+      >
+        Перейти к содержимому
+      </a>
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[72px] flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-sidebar)] md:flex min-[1200px]:w-56">
         <Link
           href="/"
@@ -93,7 +99,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         <OfflineBanner />
-        <div className="min-h-svh pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
+        <div
+          id="main-content"
+          tabIndex={-1}
+          className="min-h-svh pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0"
+        >
           {children}
         </div>
       </div>

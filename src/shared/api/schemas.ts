@@ -115,11 +115,13 @@ const imageRequestBaseSchema = z
   })
   .strict();
 
-export const createImageRequestSchema = imageRequestBaseSchema
-  .refine((input) => input.url || input.path, {
+export const createImageRequestSchema = imageRequestBaseSchema.refine(
+  (input) => input.url || input.path,
+  {
     message: "Image URL or local path is required",
     path: ["url"],
-  });
+  },
+);
 
 export const updateImageRequestSchema = imageRequestBaseSchema
   .partial()
@@ -150,6 +152,7 @@ export const importExternalItemRequestSchema = z
 export const createPlaySessionRequestSchema = z
   .object({
     playedAt: isoDateStringSchema,
+    startedAt: optionalIsoDateStringSchema,
     playersCount: z.number().int().positive().nullable().optional(),
     durationMinutes: z.number().int().positive().nullable().optional(),
     result: playResultSchema.nullable().optional(),
@@ -157,6 +160,7 @@ export const createPlaySessionRequestSchema = z
     scenario: nullableStringSchema.optional(),
     playerNames: z.array(z.string().trim().min(1)).optional(),
     usedItemIds: z.array(uuidSchema).optional(),
+    personalRating: z.number().int().min(1).max(10).nullable().optional(),
     notes: nullableStringSchema.optional(),
   })
   .strict();
@@ -188,8 +192,8 @@ export const updatePreorderExpectedDateRequestSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    const precision = value.expectedDatePrecision ??
-      (value.expectedDate ? "day" : "unknown");
+    const precision =
+      value.expectedDatePrecision ?? (value.expectedDate ? "day" : "unknown");
     if (precision === "unknown" && value.expectedDate !== null) {
       context.addIssue({
         code: "custom",
@@ -397,6 +401,7 @@ const backupPlaySessionSchema = z
     id: uuidSchema,
     itemId: uuidSchema,
     playedAt: isoDateStringSchema,
+    startedAt: isoDateStringSchema.nullable().optional(),
     playersCount: z.number().int().positive().nullable().optional(),
     durationMinutes: z.number().int().positive().nullable().optional(),
     result: playResultSchema.nullable().optional(),
@@ -404,6 +409,7 @@ const backupPlaySessionSchema = z
     scenario: z.string().nullable().optional(),
     playerNames: stringArraySchema,
     usedItemIds: z.array(uuidSchema),
+    personalRating: z.number().int().min(1).max(10).nullable().optional(),
     notes: z.string().nullable().optional(),
     source: z.enum(["manual", "boardgamegeek"]),
     bggPlayId: z.string().nullable().optional(),

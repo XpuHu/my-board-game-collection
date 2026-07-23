@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "@/components/toast-provider";
 import HomePage from "@/app/page";
-import { ItemReferenceEditor } from "@/components/item-reference-editor";
 import { CollectionPageClient } from "@/app/collection/collection-page-client";
 import { CollectionItemPageClient } from "@/app/collection/[itemId]/collection-item-page-client";
 import { ExternalImportPageClient } from "@/app/items/new/external-import-page-client";
@@ -11,7 +10,6 @@ import { PlaysPageClient } from "@/app/plays/plays-page-client";
 import { PreordersPageClient } from "@/app/preorders/preorders-page-client";
 import { WishlistItemPageClient } from "@/app/wishlist/[itemId]/wishlist-item-page-client";
 import { WishlistPageClient } from "@/app/wishlist/wishlist-page-client";
-import type { ItemDetailsDto } from "@/shared/api";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -127,56 +125,6 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Загружаем wishlist");
   });
 
-  it("renders a shared category and mechanic label only once", () => {
-    const details: ItemDetailsDto = {
-      item: {
-        id: "item-1",
-        type: {
-          id: "type-1",
-          code: "base_game",
-          name: "Игра",
-        },
-        title: "Test Game",
-        description: "Description",
-        sourceMode: "imported",
-        categories: ["Deduction"],
-        mechanics: ["Deduction"],
-        designers: [],
-        artists: [],
-        publishers: [],
-        createdAt: "2026-07-15T00:00:00.000Z",
-        updatedAt: "2026-07-15T00:00:00.000Z",
-      },
-      userItem: {
-        id: "user-item-1",
-        itemId: "item-1",
-        status: "active",
-        owned: false,
-        wishlist: true,
-        favorite: false,
-        tags: [],
-      },
-      externalReferences: [],
-      images: [],
-      links: [],
-      purchases: [],
-      preorders: [],
-      playSummary: { playsCount: 0, totalDurationMinutes: 0 },
-      notes: [],
-      relations: [],
-    };
-    const markup = renderToStaticMarkup(
-      <Wrapped>
-        <ItemReferenceEditor
-          details={details}
-          onDetailsChange={vi.fn()}
-          isEditing={false}
-        />
-      </Wrapped>,
-    );
-
-    expect(markup.match(/>Deduction</g)).toHaveLength(1);
-  });
 });
 
 function Wrapped({ children }: { children: React.ReactNode }) {

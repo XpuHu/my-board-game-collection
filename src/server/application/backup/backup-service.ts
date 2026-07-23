@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/infrastructure/database/prisma";
+import { syncItemTaxonomy } from "@/server/application/items/taxonomy-service";
 import type {
   BackupItemDto,
   BackupItemTypeDto,
@@ -45,8 +46,12 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
     }),
     prisma.userItem.findMany({ orderBy: { updatedAt: "desc" } }),
     prisma.externalReference.findMany({ orderBy: { provider: "asc" } }),
-    prisma.image.findMany({ orderBy: [{ itemId: "asc" }, { sortOrder: "asc" }] }),
-    prisma.link.findMany({ orderBy: [{ itemId: "asc" }, { createdAt: "asc" }] }),
+    prisma.image.findMany({
+      orderBy: [{ itemId: "asc" }, { sortOrder: "asc" }],
+    }),
+    prisma.link.findMany({
+      orderBy: [{ itemId: "asc" }, { createdAt: "asc" }],
+    }),
     prisma.purchase.findMany({
       orderBy: [{ itemId: "asc" }, { purchaseDate: "desc" }],
     }),
@@ -66,7 +71,9 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
     prisma.playSession.findMany({
       orderBy: [{ itemId: "asc" }, { playedAt: "desc" }],
     }),
-    prisma.note.findMany({ orderBy: [{ itemId: "asc" }, { createdAt: "asc" }] }),
+    prisma.note.findMany({
+      orderBy: [{ itemId: "asc" }, { createdAt: "asc" }],
+    }),
     prisma.itemRelation.findMany({
       orderBy: [{ parentItemId: "asc" }, { createdAt: "asc" }],
     }),
@@ -112,7 +119,8 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
       userItems: userItems.map((userItem) => ({
         id: userItem.id,
         itemId: userItem.itemId,
-        status: userItem.status as JsonBackupDto["data"]["userItems"][number]["status"],
+        status:
+          userItem.status as JsonBackupDto["data"]["userItems"][number]["status"],
         owned: userItem.owned,
         wishlist: userItem.wishlist,
         ownedAt: userItem.ownedAt?.toISOString() ?? null,
@@ -128,7 +136,8 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
       externalReferences: externalReferences.map((reference) => ({
         id: reference.id,
         itemId: reference.itemId,
-        provider: reference.provider as JsonBackupDto["data"]["externalReferences"][number]["provider"],
+        provider:
+          reference.provider as JsonBackupDto["data"]["externalReferences"][number]["provider"],
         externalId: reference.externalId,
         url: reference.url,
         lastSync: reference.lastSync?.toISOString() ?? null,
@@ -137,7 +146,8 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
         id: image.id,
         itemId: image.itemId,
         type: image.type as JsonBackupDto["data"]["images"][number]["type"],
-        provider: image.provider as JsonBackupDto["data"]["images"][number]["provider"],
+        provider:
+          image.provider as JsonBackupDto["data"]["images"][number]["provider"],
         url: image.url,
         path: image.path,
         caption: image.caption,
@@ -179,7 +189,8 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
           : "unknown") as JsonBackupDto["data"]["preorders"][number]["expectedDatePrecision"],
         receivedDate: preorder.receivedDate?.toISOString() ?? null,
         trackingNumber: preorder.trackingNumber,
-        status: preorder.status as JsonBackupDto["data"]["preorders"][number]["status"],
+        status:
+          preorder.status as JsonBackupDto["data"]["preorders"][number]["status"],
         comment: preorder.comment,
         events: preorder.events.map((event) => ({
           id: event.id,
@@ -194,28 +205,27 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
         createdAt: preorder.createdAt.toISOString(),
         updatedAt: preorder.updatedAt.toISOString(),
       })),
-      playSessions: playSessions.map(
-        (playSession): BackupPlaySessionDto => ({
-          id: playSession.id,
-          itemId: playSession.itemId,
-          playedAt: playSession.playedAt.toISOString(),
-          playersCount: playSession.playersCount,
-          durationMinutes: playSession.durationMinutes,
-          result: playSession.result as BackupPlaySessionDto["result"],
-          score: playSession.score,
-          scenario: playSession.scenario,
-          playerNames: jsonStringArray(playSession.playerNames),
-          usedItemIds: jsonStringArray(playSession.usedItemIds),
-          notes: playSession.notes,
-          source: playSession.source as BackupPlaySessionDto["source"],
-          bggPlayId: playSession.bggPlayId,
-          locallyModifiedAt:
-            playSession.locallyModifiedAt?.toISOString() ?? null,
-          importedAt: playSession.importedAt?.toISOString() ?? null,
-          createdAt: playSession.createdAt.toISOString(),
-          updatedAt: playSession.updatedAt.toISOString(),
-        }),
-      ),
+      playSessions: playSessions.map((playSession): BackupPlaySessionDto => ({
+        id: playSession.id,
+        itemId: playSession.itemId,
+        playedAt: playSession.playedAt.toISOString(),
+        startedAt: playSession.startedAt?.toISOString() ?? null,
+        playersCount: playSession.playersCount,
+        durationMinutes: playSession.durationMinutes,
+        result: playSession.result as BackupPlaySessionDto["result"],
+        score: playSession.score,
+        scenario: playSession.scenario,
+        playerNames: jsonStringArray(playSession.playerNames),
+        usedItemIds: jsonStringArray(playSession.usedItemIds),
+        personalRating: playSession.personalRating,
+        notes: playSession.notes,
+        source: playSession.source as BackupPlaySessionDto["source"],
+        bggPlayId: playSession.bggPlayId,
+        locallyModifiedAt: playSession.locallyModifiedAt?.toISOString() ?? null,
+        importedAt: playSession.importedAt?.toISOString() ?? null,
+        createdAt: playSession.createdAt.toISOString(),
+        updatedAt: playSession.updatedAt.toISOString(),
+      })),
       notes: notes.map((note) => ({
         id: note.id,
         itemId: note.itemId,
@@ -434,6 +444,11 @@ async function importItems(
         where: { id: itemId },
         data,
       });
+      await syncItemTaxonomy(tx, itemId, item);
+      await tx.item.update({
+        where: { id: itemId },
+        data: { updatedAt: toDate(item.updatedAt) },
+      });
       increment(report.updated, "items");
       continue;
     }
@@ -444,6 +459,11 @@ async function importItems(
         ...data,
         createdAt: toDate(item.createdAt),
       },
+    });
+    await syncItemTaxonomy(tx, itemId, item);
+    await tx.item.update({
+      where: { id: itemId },
+      data: { updatedAt: toDate(item.updatedAt) },
     });
     increment(report.created, "items");
   }
@@ -859,10 +879,7 @@ async function importPreorderEvents(
           createdAt: toDate(event.createdAt),
         },
       });
-      increment(
-        existing ? report.updated : report.created,
-        "preorderEvents",
-      );
+      increment(existing ? report.updated : report.created, "preorderEvents");
     }
   }
 }
@@ -903,6 +920,7 @@ async function importPlaySessions(
       update: {
         itemId,
         playedAt: toDate(playSession.playedAt),
+        startedAt: nullableDate(playSession.startedAt),
         playersCount: playSession.playersCount,
         durationMinutes: playSession.durationMinutes,
         result: playSession.result,
@@ -912,6 +930,7 @@ async function importPlaySessions(
         usedItemIds: playSession.usedItemIds
           .map((usedItemId) => itemIdMap.get(usedItemId))
           .filter((usedItemId): usedItemId is string => Boolean(usedItemId)),
+        personalRating: playSession.personalRating,
         notes: playSession.notes,
         source: playSession.source,
         bggPlayId: playSession.bggPlayId,
@@ -923,6 +942,7 @@ async function importPlaySessions(
         id: playSession.id,
         itemId,
         playedAt: toDate(playSession.playedAt),
+        startedAt: nullableDate(playSession.startedAt),
         playersCount: playSession.playersCount,
         durationMinutes: playSession.durationMinutes,
         result: playSession.result,
@@ -932,6 +952,7 @@ async function importPlaySessions(
         usedItemIds: playSession.usedItemIds
           .map((usedItemId) => itemIdMap.get(usedItemId))
           .filter((usedItemId): usedItemId is string => Boolean(usedItemId)),
+        personalRating: playSession.personalRating,
         notes: playSession.notes,
         source: playSession.source,
         bggPlayId: playSession.bggPlayId,

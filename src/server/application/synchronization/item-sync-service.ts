@@ -1,4 +1,8 @@
-import type { ProviderCode, SyncItemInput, SyncItemResponse } from "@/shared/api";
+import type {
+  ProviderCode,
+  SyncItemInput,
+  SyncItemResponse,
+} from "@/shared/api";
 import { prisma } from "@/infrastructure/database/prisma";
 import { boardGameGeekProvider } from "@/infrastructure/providers/boardgamegeek-provider";
 import { teseraProvider } from "@/infrastructure/providers/tesera-provider";
@@ -8,6 +12,7 @@ import type {
 } from "@/infrastructure/providers/item-provider";
 import { ApiError } from "@/server/api/errors";
 import { getItemDetails } from "@/server/application/items/item-service";
+import { syncItemTaxonomy } from "@/server/application/items/taxonomy-service";
 
 type ItemReferenceSnapshot = {
   title: string;
@@ -48,7 +53,11 @@ export async function syncItemReference(
   const providerItem = await provider.synchronizeItem(reference.externalId);
   const syncedAt = new Date();
   const typeId = await resolveTypeId(providerItem.itemTypeCode);
-  const updatedFields = buildUpdatedFields(before, providerItem, Boolean(typeId));
+  const updatedFields = buildUpdatedFields(
+    before,
+    providerItem,
+    Boolean(typeId),
+  );
 
   await prisma.$transaction(async (tx) => {
     await tx.item.update({
@@ -76,6 +85,7 @@ export async function syncItemReference(
         publishers: providerItem.publishers,
       },
     });
+    await syncItemTaxonomy(tx, itemId, providerItem);
 
     await tx.externalReference.update({
       where: {
@@ -282,13 +292,43 @@ function buildUpdatedFields(
     providerItem.maxPlayTime,
   );
   addChange(changes, "minAge", before.minAge, providerItem.minAge);
-  addChange(changes, "complexity", toNumber(before.complexity), providerItem.complexity);
+  addChange(
+    changes,
+    "complexity",
+    toNumber(before.complexity),
+    providerItem.complexity,
+  );
   addChange(changes, "rating", toNumber(before.rating), providerItem.rating);
-  addChange(changes, "categories", jsonStringArray(before.categories), providerItem.categories);
-  addChange(changes, "mechanics", jsonStringArray(before.mechanics), providerItem.mechanics);
-  addChange(changes, "designers", jsonStringArray(before.designers), providerItem.designers);
-  addChange(changes, "artists", jsonStringArray(before.artists), providerItem.artists);
-  addChange(changes, "publishers", jsonStringArray(before.publishers), providerItem.publishers);
+  addChange(
+    changes,
+    "categories",
+    jsonStringArray(before.categories),
+    providerItem.categories,
+  );
+  addChange(
+    changes,
+    "mechanics",
+    jsonStringArray(before.mechanics),
+    providerItem.mechanics,
+  );
+  addChange(
+    changes,
+    "designers",
+    jsonStringArray(before.designers),
+    providerItem.designers,
+  );
+  addChange(
+    changes,
+    "artists",
+    jsonStringArray(before.artists),
+    providerItem.artists,
+  );
+  addChange(
+    changes,
+    "publishers",
+    jsonStringArray(before.publishers),
+    providerItem.publishers,
+  );
   changes.push("externalReferences");
   changes.push("images");
   changes.push("links");

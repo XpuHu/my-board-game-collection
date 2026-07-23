@@ -26,6 +26,9 @@ describe("AppShell", () => {
     expect(markup).not.toContain("xl:");
     expect(markup).toContain("safe-area-inset-top");
     expect(markup).toContain("safe-area-inset-bottom");
+    expect(markup).toContain('href="#main-content"');
+    expect(markup).toContain('id="main-content"');
+    expect(markup).toContain("Перейти к содержимому");
     expect(markup).not.toContain("shadow-[");
   });
 });

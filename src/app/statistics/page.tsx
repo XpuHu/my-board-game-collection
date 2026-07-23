@@ -1,5 +1,11 @@
+import { Suspense } from "react";
+
 import { StatisticsPageClient } from "./statistics-page-client";
 
 export default function StatisticsPage() {
-  return <StatisticsPageClient />;
+  return (
+    <Suspense>
+      <StatisticsPageClient />
+    </Suspense>
+  );
 }

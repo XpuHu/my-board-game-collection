@@ -61,13 +61,14 @@ export async function mapPlayItemsWithUsedItems(
   );
 
   return plays.map((play) =>
-      mapPlayListItem(
-        play,
-        jsonStringArray(play.usedItemIds).flatMap((id) => {
-          const item = usedItemById.get(id);
-          return item ? [item] : [];
-        }),
-      ));
+    mapPlayListItem(
+      play,
+      jsonStringArray(play.usedItemIds).flatMap((id) => {
+        const item = usedItemById.get(id);
+        return item ? [item] : [];
+      }),
+    ),
+  );
 }
 
 async function queryPlaySessions(
@@ -108,6 +109,7 @@ export async function createPlaySession(
     data: {
       itemId,
       playedAt: new Date(input.playedAt),
+      startedAt: input.startedAt ? new Date(input.startedAt) : null,
       playersCount: input.playersCount,
       durationMinutes: input.durationMinutes,
       result: input.result,
@@ -115,6 +117,7 @@ export async function createPlaySession(
       scenario: input.scenario,
       playerNames: input.playerNames ?? [],
       usedItemIds: input.usedItemIds ?? [],
+      personalRating: input.personalRating,
       notes: input.notes,
       source: "manual",
     },
@@ -138,6 +141,12 @@ export async function updatePlaySession(
     },
     data: {
       playedAt: input.playedAt ? new Date(input.playedAt) : undefined,
+      startedAt:
+        input.startedAt === null
+          ? null
+          : input.startedAt
+            ? new Date(input.startedAt)
+            : undefined,
       playersCount: input.playersCount,
       durationMinutes: input.durationMinutes,
       result: input.result,
@@ -145,6 +154,7 @@ export async function updatePlaySession(
       scenario: input.scenario,
       playerNames: input.playerNames,
       usedItemIds: input.usedItemIds,
+      personalRating: input.personalRating,
       notes: input.notes,
       locallyModifiedAt: new Date(),
     },
@@ -234,8 +244,11 @@ function buildPlayOrder(
     case "duration":
       return [{ durationMinutes: direction }, { id: "asc" }];
     case "rating":
-      // DATA-04 is not migrated yet; keep a deterministic fallback order.
-      return [{ playedAt: direction }, { id: "asc" }];
+      return [
+        { personalRating: direction },
+        { playedAt: "desc" },
+        { id: "asc" },
+      ];
     default:
       return [{ playedAt: direction }, { id: "asc" }];
   }
@@ -289,6 +302,7 @@ export const playListSelect = {
   id: true,
   itemId: true,
   playedAt: true,
+  startedAt: true,
   playersCount: true,
   durationMinutes: true,
   result: true,
@@ -296,6 +310,7 @@ export const playListSelect = {
   scenario: true,
   playerNames: true,
   usedItemIds: true,
+  personalRating: true,
   notes: true,
   source: true,
   bggPlayId: true,

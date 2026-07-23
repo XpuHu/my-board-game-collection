@@ -897,22 +897,22 @@ legacy физически изолирован и доступен исключ�
 
 ## Этап 7. Расширенная статистика и справочники
 
-- [ ] Нормализовать taxonomy из JSON в связи.
-- [ ] Расширить wishlist filters.
-- [ ] Реализовать все доступные statistics panels.
-- [ ] Добавить `startedAt` и play `personalRating`, если подтверждено scope.
+- [x] Нормализовать taxonomy из JSON в связи.
+- [x] Расширить wishlist filters.
+- [x] Реализовать все доступные statistics panels.
+- [x] Добавить `startedAt` и play `personalRating`, если подтверждено scope.
 
 Результат: закрыты P1-разделы `UI_LAYOUT.md` без изменения Item/UserItem принципов.
 
 ## Этап 8. Responsive, accessibility и stabilization
 
 - [ ] Проверить 1536, 1280, 1024, 768, 430 и 390 px.
-- [ ] Keyboard navigation и focus order.
-- [ ] Focus trap, Escape и fixed modal footer.
-- [ ] WCAG AA contrast и status labels.
-- [ ] Alt text и reduced motion.
-- [ ] Long titles, no image, no rating, unknown date, 100+ records.
-- [ ] Удалить legacy UI после переключения всех страниц.
+- [x] Keyboard navigation и focus order.
+- [x] Focus trap, Escape и fixed modal footer.
+- [x] WCAG AA contrast и status labels.
+- [x] Alt text и reduced motion.
+- [x] Long titles, no image, no rating, unknown date, 100+ records.
+- [x] Удалить legacy UI после переключения всех страниц.
 
 ---
 

@@ -36,11 +36,7 @@ export type UserItemLifecycleStatus =
   (typeof userItemLifecycleStatuses)[number];
 
 export type StoredUserItemStatus =
-  | UserItemLifecycleStatus
-  | "owned"
-  | "wishlist"
-  | "preordered"
-  | "played";
+  UserItemLifecycleStatus | "owned" | "wishlist" | "preordered" | "played";
 
 /** @deprecated Use UserItemLifecycleStatus. */
 export type ItemStatus = UserItemLifecycleStatus;
@@ -527,6 +523,7 @@ export type PlaySessionDto = {
   itemId: string;
   itemTitle: string;
   playedAt: string;
+  startedAt?: string | null;
   playersCount?: number | null;
   durationMinutes?: number | null;
   result?: PlayResult | null;
@@ -534,6 +531,7 @@ export type PlaySessionDto = {
   scenario?: string | null;
   playerNames: string[];
   usedItemIds: string[];
+  personalRating?: number | null;
   notes?: string | null;
   source: "manual" | "boardgamegeek";
   bggPlayId?: string | null;
@@ -561,6 +559,7 @@ export type PlayListItemDto = {
 
 export type CreatePlaySessionRequest = {
   playedAt: string;
+  startedAt?: string | null;
   playersCount?: number | null;
   durationMinutes?: number | null;
   result?: PlayResult | null;
@@ -568,6 +567,7 @@ export type CreatePlaySessionRequest = {
   scenario?: string | null;
   playerNames?: string[];
   usedItemIds?: string[];
+  personalRating?: number | null;
   notes?: string | null;
 };
 
@@ -641,8 +641,7 @@ export type PreorderStatusChangedEventDto = {
 };
 
 export type PreorderEventDto =
-  | PreorderExpectedDateChangedEventDto
-  | PreorderStatusChangedEventDto;
+  PreorderExpectedDateChangedEventDto | PreorderStatusChangedEventDto;
 
 export type UpdatePreorderExpectedDateResponse = {
   preorder: PreorderListItemDto;
@@ -706,6 +705,12 @@ export type StatisticsOverviewDto = StatisticsSummaryDto & {
   staleItems: CollectionCardDto[];
   expansionUsage: { itemId: string; title: string; playsCount: number }[];
   frequentPlayers: { name: string; playsCount: number }[];
+};
+
+export type StatisticsQueryDto = {
+  period?: "month" | "quarter" | "year" | "all" | "custom";
+  from?: string;
+  to?: string;
 };
 
 export type DashboardDto = {

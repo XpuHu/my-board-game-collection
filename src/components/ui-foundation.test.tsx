@@ -1,4 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Gamepad2 } from "lucide-react";
 import { describe, expect, it } from "vitest";
 
@@ -60,4 +62,40 @@ describe("UI foundation", () => {
     expect(markup).toContain("API error");
     expect(markup).toContain("Повторить");
   });
+
+  it("keeps modal controls fixed and respects reduced motion", () => {
+    const dialogSource = readFileSync(
+      resolve(process.cwd(), "src/components/ui/dialog.tsx"),
+      "utf8",
+    );
+    const globalStyles = readFileSync(
+      resolve(process.cwd(), "src/app/globals.css"),
+      "utf8",
+    );
+
+    expect(dialogSource).toContain("sticky bottom-0");
+    expect(dialogSource).toContain("@radix-ui/react-dialog");
+    expect(globalStyles).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(globalStyles).toContain(":focus-visible");
+  });
+
+  it("uses AA contrast for primary and muted text tokens", () => {
+    expect(contrast("#ffffff", "#6757df")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#7f8ca2", "#101b2a")).toBeGreaterThanOrEqual(4.5);
+  });
 });
+
+function contrast(foreground: string, background: string) {
+  const values = [luminance(foreground), luminance(background)];
+  return (Math.max(...values) + 0.05) / (Math.min(...values) + 0.05);
+}
+
+function luminance(hex: string) {
+  const channels = [1, 3, 5].map((offset) => {
+    const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
