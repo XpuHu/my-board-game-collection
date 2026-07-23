@@ -6,13 +6,14 @@ import { Dices } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/shared/lib/utils";
 
-type GameCoverSize = "sm" | "md" | "lg" | "card";
+type GameCoverSize = "sm" | "md" | "lg" | "card" | "fill";
 
 const sizeClasses: Record<GameCoverSize, string> = {
   sm: "h-[72px] w-14",
   md: "h-[104px] w-20",
   lg: "h-[210px] w-40",
   card: "aspect-[4/5] w-full",
+  fill: "h-full w-full",
 };
 
 type GameCoverProps = {

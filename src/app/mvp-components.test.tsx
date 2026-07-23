@@ -19,7 +19,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("MVP component contracts", () => {
-  it("renders the collection list shell with compact filters and loading state", () => {
+  it("renders the collection list shell with compact toolbar and loading state", () => {
     const markup = renderToStaticMarkup(
       <Wrapped>
         <CollectionPageClient />
@@ -27,9 +27,9 @@ describe("MVP component contracts", () => {
     );
 
     expect(markup).toContain("Моя коллекция");
-    expect(markup).toContain("Поиск");
+    expect(markup).toContain("Поиск по коллекции");
     expect(markup).toContain("Добавить игру");
-    expect(markup).toContain("Состояние");
+    expect(markup).toContain("Недавние партии");
     expect(markup).toContain("Загружаем данные");
   });
 
@@ -124,7 +124,6 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Сортировка");
     expect(markup).toContain("Загружаем wishlist");
   });
-
 });
 
 function Wrapped({ children }: { children: React.ReactNode }) {

@@ -1,0 +1,683 @@
+.page {
+  display: grid;
+  min-width: 0;
+  gap: 26px;
+  padding: 28px 32px 40px;
+}
+
+.title {
+  color: var(--text-primary);
+  font-size: clamp(1.75rem, 2.2vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+}
+
+.searchForm {
+  position: relative;
+  width: clamp(260px, 24vw, 332px);
+  flex: none;
+}
+
+.searchIcon {
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.searchInput {
+  height: 44px;
+  border-color: var(--border-default);
+  background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+  padding-left: 40px;
+  border-radius: 8px;
+  color: var(--text-primary);
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.tabs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: inline-flex;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.tab:hover {
+  border-color: var(--border-default);
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.tabActive {
+  border-color: color-mix(
+    in srgb,
+    var(--accent-primary) 24%,
+    var(--border-default)
+  );
+  background: var(--accent-soft);
+  color: var(--accent-primary-hover);
+}
+
+.tabActive:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--accent-primary) 44%,
+    var(--border-default)
+  );
+  background: var(--accent-soft);
+  color: var(--accent-primary-hover);
+}
+
+.tabCount {
+  display: inline-grid;
+  min-width: 22px;
+  height: 22px;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-surface-elevated) 82%, transparent);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.tabActive .tabCount {
+  background: color-mix(in srgb, var(--accent-primary) 17%, transparent);
+  color: var(--accent-primary-hover);
+}
+
+.actions {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+}
+
+.sortControl {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.selectWrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.selectWrap svg {
+  position: absolute;
+  right: 1px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.sortSelect {
+  width: 142px;
+  height: 40px;
+  appearance: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0 18px 0 3px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.sortSelect option {
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+}
+
+.addButton {
+  height: 44px;
+  flex: none;
+  border-radius: 8px;
+  padding-inline: 16px;
+  box-shadow: 0 7px 20px
+    color-mix(in srgb, var(--accent-primary) 18%, transparent);
+}
+
+.addButton svg {
+  width: 17px;
+  height: 17px;
+}
+
+.collectionGrid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  align-items: stretch;
+  gap: 24px;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  overflow: visible;
+  flex-direction: column;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.card:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--accent-primary) 38%,
+    var(--border-default)
+  );
+  transform: translateY(-2px);
+}
+
+.media {
+  position: relative;
+  min-height: 280px;
+  overflow: hidden;
+  aspect-ratio: 1.08 / 1;
+  border-radius: 11px 11px 0 0;
+  background: var(--bg-surface-elevated);
+  isolation: isolate;
+}
+
+.cover {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  border-radius: 0;
+}
+
+.cover img {
+  transition:
+    filter 180ms ease,
+    transform 220ms ease;
+}
+
+.card:hover .cover img {
+  filter: saturate(1.08) brightness(1.05);
+  transform: scale(1.015);
+}
+
+.mediaShade {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(2, 7, 14, 0.7) 0%,
+      rgba(2, 7, 14, 0.18) 34%,
+      rgba(2, 7, 14, 0.2) 45%,
+      rgba(2, 7, 14, 0.92) 100%
+    ),
+    linear-gradient(90deg, rgba(2, 7, 14, 0.24), transparent 62%);
+  pointer-events: none;
+}
+
+.cardLink {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px 18px 16px;
+  border-radius: inherit;
+  color: white;
+}
+
+.cardLink:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -3px;
+}
+
+.cardTop {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.cardTop h2 {
+  width: calc(100% - 42px);
+  overflow: hidden;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+
+.rating {
+  margin-top: 13px;
+  gap: 2px;
+}
+
+.rating svg {
+  width: 16px;
+  height: 16px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+}
+
+.activityBadge {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  backdrop-filter: blur(7px);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.activity-recent {
+  border-color: color-mix(in srgb, var(--success) 26%, transparent);
+  background: color-mix(in srgb, var(--success-soft) 78%, rgba(8, 17, 31, 0.6));
+  color: color-mix(in srgb, var(--success) 82%, white);
+}
+
+.activity-warning {
+  border-color: color-mix(in srgb, var(--warning) 25%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--warning-soft) 80%,
+    rgba(8, 17, 31, 0.62)
+  );
+  color: color-mix(in srgb, var(--warning) 80%, white);
+}
+
+.activity-neutral {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(8, 17, 31, 0.62);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.cardStats {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.cardStats > strong {
+  font-size: 31px;
+  font-weight: 720;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.cardStats > span {
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 10px;
+}
+
+.playMeta {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 15px;
+  margin-top: 17px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.playMeta span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.playMeta svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+.resultSuccess {
+  color: color-mix(in srgb, var(--success) 84%, white);
+}
+
+.resultDanger {
+  color: color-mix(in srgb, var(--danger) 84%, white);
+}
+
+.quickPlay {
+  position: absolute;
+  top: 13px;
+  right: 13px;
+  z-index: 3;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(8, 17, 31, 0.5);
+  color: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.quickPlay:hover {
+  border-color: color-mix(in srgb, var(--accent-primary-hover) 60%, white);
+  background: var(--accent-primary);
+  color: #fff;
+  transform: scale(1.04);
+}
+
+.quickPlay svg {
+  width: 16px;
+  height: 16px;
+}
+
+.cardFooter {
+  display: flex;
+  min-height: 60px;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 9px 9px 16px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.cardFooter > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.cardFooter svg {
+  width: 13px;
+  height: 13px;
+}
+
+.cardMenu {
+  margin-left: auto;
+}
+
+.cardMenu > button {
+  width: 34px;
+  height: 34px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.cardMenu [role="menu"] svg {
+  width: 15px;
+  height: 15px;
+  margin-right: 8px;
+}
+
+.addGameCard {
+  display: flex;
+  min-height: 342px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 15px;
+  border: 1px dashed
+    color-mix(in srgb, var(--border-default) 88%, var(--text-muted));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-surface) 26%, transparent);
+  color: var(--accent-primary-hover);
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    transform 180ms ease;
+}
+
+.addGameCard:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--accent-primary) 62%,
+    var(--border-default)
+  );
+  background: var(--accent-soft);
+  transform: translateY(-2px);
+}
+
+.addGameIcon {
+  display: grid;
+  width: 66px;
+  height: 66px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-primary-hover);
+}
+
+.addGameIcon svg {
+  width: 27px;
+  height: 27px;
+}
+
+.loadingCard {
+  min-height: 342px;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+.loadingCard div,
+.loadingCard span {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--bg-surface-elevated),
+    var(--bg-surface-hover),
+    var(--bg-surface-elevated)
+  );
+  background-size: 200% 100%;
+  animation: collection-shimmer 1.6s ease-in-out infinite;
+}
+
+.loadingCard div {
+  height: 282px;
+}
+
+.loadingCard span {
+  width: 46%;
+  height: 9px;
+  margin: 25px 16px;
+  border-radius: 999px;
+}
+
+@keyframes collection-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 68rem) {
+  .searchForm {
+    width: min(100%, 360px);
+  }
+
+  .actions {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .page {
+    gap: 20px;
+    padding: 22px 16px 96px;
+  }
+
+  .searchForm {
+    width: 100%;
+  }
+
+  .tabs {
+    width: 100%;
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+
+  .actions {
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .sortLabel {
+    display: none;
+  }
+
+  .addButton {
+    width: 44px;
+    padding: 0;
+  }
+
+  .addButton span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .collectionGrid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+@media (min-width: 26.25rem) and (max-width: 47.99rem) {
+  .collectionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .media {
+    min-height: 256px;
+    aspect-ratio: auto;
+  }
+
+  .cardLink {
+    padding: 14px 12px 13px;
+  }
+
+  .cardTop h2 {
+    width: calc(100% - 34px);
+    font-size: 14px;
+  }
+
+  .quickPlay {
+    top: 10px;
+    right: 9px;
+    width: 30px;
+    height: 30px;
+  }
+
+  .playMeta {
+    gap: 6px 10px;
+  }
+
+  .cardFooter {
+    min-height: 54px;
+    flex-wrap: wrap;
+    gap: 4px 9px;
+    padding-left: 12px;
+  }
+
+  .cardMenu {
+    position: absolute;
+    right: 6px;
+    bottom: 8px;
+  }
+
+  .addGameCard,
+  .loadingCard {
+    min-height: 311px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingCard div,
+  .loadingCard span {
+    animation: none;
+  }
+}
