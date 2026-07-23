@@ -48,6 +48,20 @@ describe("UI foundation", () => {
     expect(markup).toContain("Импортировать");
   });
 
+  it("renders half-star ratings without rounding them up", () => {
+    const markup = renderToStaticMarkup(
+      <Rating
+        value={3.5}
+        label="Личная оценка: 7 из 10"
+        tone="accent"
+      />,
+    );
+
+    expect(markup).toContain("Личная оценка: 7 из 10");
+    expect(markup).toContain("width:50%");
+    expect(markup).toContain("width:200%");
+  });
+
   it("renders the prescribed offline message", () => {
     const markup = renderToStaticMarkup(<OfflineBanner forceVisible />);
     expect(markup).toContain(
