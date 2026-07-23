@@ -83,7 +83,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <div className="min-w-0 md:pl-[72px] min-[1200px]:pl-56">
+      <div className="app-shell-content">
         <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
           <Link
             href="/"

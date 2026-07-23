@@ -21,8 +21,9 @@ describe("AppShell", () => {
     expect(markup.match(/Powered by BoardGameGeek/g)).toHaveLength(2);
     expect(markup.match(/alt="Powered by BoardGameGeek"/g)).toHaveLength(1);
     expect(markup).not.toContain("<footer");
-    expect(markup).toContain("md:pl-[72px]");
-    expect(markup).toContain("min-[1200px]:pl-56");
+    expect(markup).toContain('class="app-shell-content"');
+    expect(markup).not.toContain("md:pl-[72px]");
+    expect(markup).not.toContain("min-[1200px]:pl-56");
     expect(markup).not.toContain("xl:");
     expect(markup).toContain("safe-area-inset-top");
     expect(markup).toContain("safe-area-inset-bottom");

@@ -62,6 +62,7 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
         itemId: true,
         durationMinutes: true,
         result: true,
+        personalRating: true,
       },
     }),
     prisma.userItem.findMany({
@@ -93,8 +94,8 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
     upcomingPreorders: (upcomingPreorders as PreorderForList[]).map(
       (preorder) => mapPreorderListItem(preorder, now),
     ),
-    recentlyAdded: (recentlyAdded as UserItemForCollectionCard[]).map(
-      (item) => mapCollectionCard(item, now),
+    recentlyAdded: (recentlyAdded as UserItemForCollectionCard[]).map((item) =>
+      mapCollectionCard(item, now),
     ),
     monthSummary: {
       playsCount: monthPlays.length,
@@ -103,7 +104,11 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
         (total, play) => total + (play.durationMinutes ?? 0),
         0,
       ),
-      averagePersonalRating: null,
+      averagePersonalRating: average(
+        monthPlays
+          .map(({ personalRating }) => personalRating)
+          .filter((rating): rating is number => rating !== null),
+      ),
       winsCount: monthPlays.filter(({ result }) => result === "win").length,
     },
     favoriteItem: favoriteItems[0]
@@ -111,6 +116,11 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
       : null,
     activity: mapActivity(activityPlays),
   };
+}
+
+function average(values: number[]) {
+  if (!values.length) return null;
+  return values.reduce((total, value) => total + value, 0) / values.length;
 }
 
 function mapActivity(plays: { playedAt: Date }[]) {

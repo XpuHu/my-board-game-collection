@@ -96,7 +96,7 @@ describe("MVP component contracts", () => {
 
     expect(markup).toContain("Быстрые действия");
     expect(markup).toContain("Добавить партию");
-    expect(markup).toContain("Оформить предзаказ");
+    expect(markup).toContain("Изменить предзаказ");
     expect(markup).toContain("Добавить фото");
   });
 

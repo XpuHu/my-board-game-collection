@@ -107,6 +107,22 @@ img {
   max-width: 100%;
 }
 
+.app-shell-content {
+  min-width: 0;
+}
+
+@media (min-width: 48rem) {
+  .app-shell-content {
+    padding-left: 72px;
+  }
+}
+
+@media (min-width: 75rem) {
+  .app-shell-content {
+    padding-left: 14rem;
+  }
+}
+
 ::selection {
   background: var(--accent-soft);
   color: var(--text-primary);

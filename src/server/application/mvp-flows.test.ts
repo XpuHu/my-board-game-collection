@@ -700,6 +700,7 @@ describe("MVP service flows", () => {
       playersCount: 2,
       durationMinutes: 90,
       result: "win",
+      personalRating: 8,
       playerNames: ["Anna", "Max"],
       usedItemIds: [usedItem.id],
     });
@@ -763,6 +764,7 @@ describe("MVP service flows", () => {
         playsCount: 1,
         uniqueItemsCount: 1,
         totalDurationMinutes: 90,
+        averagePersonalRating: 8,
         winsCount: 1,
       },
     });
