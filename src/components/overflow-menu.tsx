@@ -51,7 +51,7 @@ export function OverflowMenu({
         <div
           role="menu"
           onClick={() => setOpen(false)}
-          className="absolute right-0 top-full z-30 mt-2 min-w-44 rounded-lg border bg-[var(--bg-surface-elevated)] p-1.5 shadow-md"
+          className="absolute right-0 top-full z-30 mt-2 grid min-w-56 gap-1 rounded-lg border bg-[var(--bg-surface-elevated)] p-2 shadow-md"
         >
           {children}
         </div>
@@ -69,7 +69,7 @@ export function OverflowMenuItem({
       type="button"
       role="menuitem"
       className={cn(
-        "flex h-10 w-full items-center rounded-md px-3 text-left text-sm hover:bg-[var(--bg-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "flex min-h-10 w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm leading-5 hover:bg-[var(--bg-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
       {...props}

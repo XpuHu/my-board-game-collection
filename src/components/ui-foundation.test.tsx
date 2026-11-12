@@ -50,11 +50,7 @@ describe("UI foundation", () => {
 
   it("renders half-star ratings without rounding them up", () => {
     const markup = renderToStaticMarkup(
-      <Rating
-        value={3.5}
-        label="Личная оценка: 7 из 10"
-        tone="accent"
-      />,
+      <Rating value={3.5} label="Личная оценка: 7 из 10" tone="accent" />,
     );
 
     expect(markup).toContain("Личная оценка: 7 из 10");
@@ -77,7 +73,7 @@ describe("UI foundation", () => {
     expect(markup).toContain("Повторить");
   });
 
-  it("keeps modal controls fixed and respects reduced motion", () => {
+  it("keeps modal footer outside the scroll area and respects reduced motion", () => {
     const dialogSource = readFileSync(
       resolve(process.cwd(), "src/components/ui/dialog.tsx"),
       "utf8",
@@ -87,7 +83,9 @@ describe("UI foundation", () => {
       "utf8",
     );
 
-    expect(dialogSource).toContain("sticky bottom-0");
+    expect(dialogSource).toContain("flex-1 overflow-y-auto");
+    expect(dialogSource).toContain("flex shrink-0 flex-col-reverse");
+    expect(dialogSource).not.toContain("sticky bottom-0");
     expect(dialogSource).toContain("@radix-ui/react-dialog");
     expect(globalStyles).toContain("@media (prefers-reduced-motion: reduce)");
     expect(globalStyles).toContain(":focus-visible");
@@ -107,9 +105,7 @@ function contrast(foreground: string, background: string) {
 function luminance(hex: string) {
   const channels = [1, 3, 5].map((offset) => {
     const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
-    return value <= 0.04045
-      ? value / 12.92
-      : ((value + 0.055) / 1.055) ** 2.4;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
 }

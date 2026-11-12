@@ -35,7 +35,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 grid max-h-[92svh] gap-4 overflow-y-auto rounded-t-xl border bg-card p-5 shadow-md sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[85vh] sm:w-[calc(100%-2rem)] sm:max-w-2xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-6",
+        "fixed inset-x-0 bottom-0 z-50 flex max-h-[92svh] flex-col gap-4 overflow-hidden rounded-t-xl border bg-card p-5 shadow-md sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[85vh] sm:w-[calc(100%-2rem)] sm:max-w-2xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-6",
         className,
       )}
       {...props}
@@ -87,10 +87,40 @@ DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
 const DialogBody = ({
   className,
+  onScroll,
   ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("min-h-0 overflow-y-auto py-1", className)} {...props} />
-);
+}: React.HTMLAttributes<HTMLDivElement>) => {
+  const [isScrolling, setIsScrolling] = React.useState(false);
+  const scrollEndTimer = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  React.useEffect(
+    () => () => {
+      if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
+    },
+    [],
+  );
+
+  function handleScroll(event: React.UIEvent<HTMLDivElement>) {
+    setIsScrolling(true);
+    if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
+    scrollEndTimer.current = setTimeout(() => setIsScrolling(false), 600);
+    onScroll?.(event);
+  }
+
+  return (
+    <div
+      className={cn(
+        "dialog-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 py-1",
+        isScrolling && "is-scrolling",
+        className,
+      )}
+      onScroll={handleScroll}
+      {...props}
+    />
+  );
+};
 DialogBody.displayName = "DialogBody";
 
 const DialogFooter = ({
@@ -99,7 +129,7 @@ const DialogFooter = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "sticky bottom-0 -mx-5 -mb-5 flex shrink-0 flex-col-reverse gap-2 border-t bg-card px-5 py-4 sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6",
+      "flex shrink-0 flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end",
       className,
     )}
     {...props}
