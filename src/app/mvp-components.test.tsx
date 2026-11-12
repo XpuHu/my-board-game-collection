@@ -45,9 +45,9 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Получаем компактные данные владельца");
   });
 
-  it("renders external catalog search before offering manual creation", () => {
+  it("offers manual and existing-item creation without requiring an external search", () => {
     const markup = renderToStaticMarkup(
-      <ExternalImportPageClient initialTarget="play" />,
+      <ExternalImportPageClient initialTarget="collection" />,
     );
 
     expect(markup).toContain("Добавить игру");
@@ -56,8 +56,11 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("2. Выбор");
     expect(markup).toContain("3. Личные данные");
     expect(markup).toContain("4. Готово");
-    expect(markup).not.toContain("Быстрый ручной сценарий");
-    expect(markup).not.toContain("3. Ввести данные вручную");
+    expect(markup).toContain("Быстрый ручной сценарий");
+    expect(markup).toContain("Выбрать существующую игру");
+    expect(markup).not.toContain("Создать и добавить партию");
+    expect(markup).not.toContain("Создать и добавить в wishlist");
+    expect(markup).toContain("3. Ввести данные вручную");
   });
 
   it("renders the plays page shell with history filters and add action", () => {

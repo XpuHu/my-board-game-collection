@@ -1,4 +1,14 @@
 "use client";
+import {
+  ExpansionSelection,
+  expansionPayload,
+  type ExpansionDraft,
+} from "@/components/expansion-selection";
+import { calendarToIso } from "@/shared/lib/calendar-date";
+import { useProductFeatures } from "@/components/product-features-provider";
+import { LocalItemPicker } from "@/components/local-item-picker";
+import { usePendingCommand } from "@/shared/hooks/use-pending-command";
+import { apiRequest } from "@/shared/api/client";
 
 import * as React from "react";
 import Link from "next/link";
@@ -34,6 +44,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   type AddToCollectionRequest,
   type CreatePreorderRequest,
+  type ProviderCode,
   type ExternalSearchResultDto,
   type ExpectedDatePrecision,
   type ItemTypeDto,
@@ -41,7 +52,6 @@ import {
 import {
   addItemToCollection,
   addItemToWishlist,
-  createItemPreorder,
   createManualItem,
   importExternalItem,
   listItemTypes,
@@ -78,7 +88,7 @@ const quickActionOptions = [
   {
     value: "collection",
     label: "Создать в коллекции",
-    description: "Карточка сразу появится в owned-списке.",
+    description: "Игра появится в коллекции.",
     icon: Boxes,
   },
   {
@@ -114,9 +124,11 @@ const quickActionOptions = [
 
 type ExternalImportPageClientProps = {
   initialTarget?: ManualQuickAction;
+  initialItemId?: string;
 };
 
 type PendingItem =
+  | { kind: "existing"; itemId: string; title: string }
   | { kind: "external"; result: ExternalSearchResultDto }
   | { kind: "manual"; request: CreateManualItemRequest; title: string };
 
@@ -124,6 +136,13 @@ type PersonalData = {
   collection?: AddToCollectionRequest;
   wishlist?: { interestLevel?: number; decisionNotes?: string | null };
   preorder?: CreatePreorderRequest;
+  expansions?: {
+    itemId?: string;
+    title?: string;
+    external?: { provider: ProviderCode; externalId: string };
+    price?: number;
+  }[];
+  accessories?: PersonalData["expansions"];
 };
 
 type CompletedItem = {
@@ -134,17 +153,25 @@ type CompletedItem = {
 
 export function ExternalImportPageClient({
   initialTarget = "collection",
+  initialItemId,
 }: ExternalImportPageClientProps) {
+  const features = useProductFeatures();
+  const command = usePendingCommand("item-action:pending", "/api/item-actions");
   const [query, setQuery] = React.useState("");
   const [type, setType] = React.useState(ANY_VALUE);
-  const [provider, setProvider] = React.useState<"boardgamegeek" | "tesera">("boardgamegeek");
+  const [provider, setProvider] = React.useState<"boardgamegeek" | "tesera">(
+    "boardgamegeek",
+  );
   const [target, setTarget] = React.useState<ManualQuickAction>(initialTarget);
   const [results, setResults] = React.useState<ExternalSearchResultDto[]>([]);
   const [itemTypes, setItemTypes] = React.useState<ItemTypeDto[]>([]);
   const [searched, setSearched] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
-  const [selectedItem, setSelectedItem] = React.useState<PendingItem | null>(null);
-  const [completedItem, setCompletedItem] = React.useState<CompletedItem | null>(null);
+  const [selectedItem, setSelectedItem] = React.useState<PendingItem | null>(
+    null,
+  );
+  const [completedItem, setCompletedItem] =
+    React.useState<CompletedItem | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [externalWarnings, setExternalWarnings] = React.useState<string[]>([]);
@@ -156,6 +183,66 @@ export function ExternalImportPageClient({
         setError("Не удалось загрузить типы игр для ручного добавления");
       });
   }, []);
+
+  React.useEffect(() => {
+    if (!initialItemId) return;
+    let active = true;
+    apiRequest<{ item: { id: string; title: string } }>(
+      `/api/items/${encodeURIComponent(initialItemId)}`,
+    )
+      .then(({ item }) => {
+        if (active)
+          setSelectedItem({
+            kind: "existing",
+            itemId: item.id,
+            title: item.title,
+          });
+      })
+      .catch((error) => {
+        if (active)
+          setError(
+            error instanceof Error ? error.message : "Не удалось открыть игру",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialItemId]);
+
+  async function confirmPending() {
+    setSaving(true);
+    setError(null);
+    const pendingTarget = command.pending?.target as
+      ManualQuickAction | undefined;
+    try {
+      const result = await command.run<{
+        itemId: string;
+        title: string;
+        expansionPreorderIds?: string[];
+        accessoryPreorderIds?: string[];
+      }>();
+      setCompletedItem(
+        completionForTarget(
+          pendingTarget ?? target,
+          result.itemId,
+          result.title,
+          Boolean(
+            result.expansionPreorderIds?.length ||
+            result.accessoryPreorderIds?.length,
+          ),
+        ),
+      );
+      setSelectedItem(null);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Не удалось подтвердить сохранение",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function searchItems(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -180,7 +267,9 @@ export function ExternalImportPageClient({
       });
       setResults(response.data);
       setSearched(true);
-      setExternalWarnings(response.warnings?.map((warning) => warning.message) ?? []);
+      setExternalWarnings(
+        response.warnings?.map((warning) => warning.message) ?? [],
+      );
     } catch (searchError) {
       setExternalWarnings([
         searchError instanceof Error
@@ -204,33 +293,77 @@ export function ExternalImportPageClient({
     setError(null);
 
     try {
-      const details = selectedItem.kind === "external"
-        ? await importExternalItem({
-            provider: selectedItem.result.provider,
-            externalId: selectedItem.result.externalId,
-            target: "reference_only",
-          })
-        : await createManualItem(selectedItem.request);
+      if (target === "collection" || target === "preorder") {
+        const source =
+          selectedItem.kind === "manual"
+            ? { manual: selectedItem.request }
+            : selectedItem.kind === "existing"
+              ? { itemId: selectedItem.itemId }
+              : {
+                  itemId: (
+                    await importExternalItem({
+                      provider: selectedItem.result.provider,
+                      externalId: selectedItem.result.externalId,
+                      target: "reference_only",
+                    })
+                  ).item.id,
+                };
+        const result = await command.run<{
+          itemId: string;
+          title: string;
+          expansionPreorderIds?: string[];
+          accessoryPreorderIds?: string[];
+        }>({
+          ...source,
+          target,
+          ...data,
+        });
+        setCompletedItem(
+          completionForTarget(
+            target,
+            result.itemId,
+            result.title,
+            Boolean(
+              result.expansionPreorderIds?.length ||
+              result.accessoryPreorderIds?.length,
+            ),
+          ),
+        );
+        setSelectedItem(null);
+        return;
+      }
+      const details =
+        selectedItem.kind === "external"
+          ? await importExternalItem({
+              provider: selectedItem.result.provider,
+              externalId: selectedItem.result.externalId,
+              target: "reference_only",
+            })
+          : selectedItem.kind === "manual"
+            ? await createManualItem(selectedItem.request)
+            : await apiRequest<{ item: { id: string; title: string } }>(
+                `/api/items/${selectedItem.itemId}`,
+              );
       const itemId = details.item.id;
       const title = details.item.title;
 
-      if (target === "collection" || target === "play") {
+      if (target === "play") {
         await addItemToCollection(itemId, data.collection ?? {});
       } else if (target === "wishlist") {
         await addItemToWishlist(itemId);
         if (data.wishlist) {
           await updateItemUserData(itemId, data.wishlist);
         }
-      } else if (target === "preorder") {
-        await addItemToWishlist(itemId);
-        if (!data.preorder) throw new Error("Заполните данные предзаказа");
-        await createItemPreorder(itemId, data.preorder);
       }
 
       setCompletedItem(completionForTarget(target, itemId, title));
       setSelectedItem(null);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Не удалось завершить добавление");
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Не удалось завершить добавление",
+      );
     } finally {
       setSaving(false);
     }
@@ -248,6 +381,21 @@ export function ExternalImportPageClient({
     setCompletedItem(null);
   }
 
+  if (command.pending && !saving)
+    return (
+      <main className="mx-auto grid max-w-3xl gap-4 p-6">
+        <h1>Подтвердить сохранение</h1>
+        <p>
+          Результат предыдущего запроса ещё не подтверждён. Повтор безопасно
+          завершит именно его, не создавая дубли.
+        </p>
+        {error ? <ErrorState description={error} /> : null}
+        <Button onClick={() => void confirmPending()}>
+          Повторить сохранение
+        </Button>
+      </main>
+    );
+
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <div>
@@ -255,121 +403,185 @@ export function ExternalImportPageClient({
           Добавить игру
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Сначала найдём игру в BoardGameGeek. Если там ничего нет, поиск
-          автоматически продолжится в Tesera, а затем можно будет заполнить
-          карточку вручную.
+          Выберите сохранённую игру, создайте новую вручную или воспользуйтесь
+          внешним каталогом.
         </p>
       </div>
 
-      <WizardProgress step={completedItem ? 4 : selectedItem ? 3 : results.length > 0 ? 2 : 1} />
+      <WizardProgress
+        step={completedItem ? 4 : selectedItem ? 3 : results.length > 0 ? 2 : 1}
+      />
 
       {error ? <ErrorState description={error} /> : null}
 
       {completedItem ? (
         <section className="grid justify-items-center gap-4 rounded-xl border bg-card p-8 text-center">
           <CheckCircle2 className="h-12 w-12 text-green-600" />
-          <div><h2 className="text-xl font-semibold">Готово</h2><p className="mt-2 text-sm text-muted-foreground">«{completedItem.title}» добавлена без дублирования Item.</p></div>
-          <div className="flex flex-wrap justify-center gap-2"><Button asChild><Link href={completedItem.href}>{completedItem.actionLabel}</Link></Button><Button type="button" variant="outline" onClick={reset}>Добавить ещё</Button></div>
+          <div>
+            <h2 className="text-xl font-semibold">Готово</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              «{completedItem.title}» сохранена.
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild>
+              <Link href={completedItem.href}>{completedItem.actionLabel}</Link>
+            </Button>
+            <Button type="button" variant="outline" onClick={reset}>
+              Добавить ещё
+            </Button>
+          </div>
         </section>
       ) : null}
 
-      {!selectedItem && !completedItem ? <section className="grid gap-4 rounded-lg border bg-card p-4">
-        <div>
-          <h2 className="text-base font-semibold tracking-normal">
-            1. Найти в каталогах
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Поиск выполняется по очереди: сначала BoardGameGeek, затем Tesera.
-          </p>
-          <div className="mt-3 flex gap-2" role="tablist" aria-label="Источник поиска">
-            <Button type="button" size="sm" variant={provider === "boardgamegeek" ? "default" : "outline"} onClick={() => setProvider("boardgamegeek")} role="tab" aria-selected={provider === "boardgamegeek"}>BoardGameGeek</Button>
-            <Button type="button" size="sm" variant={provider === "tesera" ? "default" : "outline"} onClick={() => setProvider("tesera")} role="tab" aria-selected={provider === "tesera"}>Tesera</Button>
-          </div>
-        </div>
+      {!selectedItem && !completedItem ? (
+        <LocalItemPicker
+          onSelect={(item) => {
+            setSelectedItem({
+              kind: "existing",
+              itemId: item.id,
+              title: item.title,
+            });
+            setError(null);
+          }}
+        />
+      ) : null}
 
-        <form
-          onSubmit={searchItems}
-          className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_12rem_13rem_auto]"
-        >
+      {!selectedItem && !completedItem ? (
+        <section className="grid gap-4 rounded-lg border bg-card p-4">
           <div>
-            <Label htmlFor="external-search">Название или ссылка</Label>
-            <div className="relative mt-2">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="external-search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="pl-9"
-                placeholder="Ark Nova или BGG URL"
-              />
+            <h2 className="text-base font-semibold tracking-normal">
+              1. Найти в каталогах
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Поиск выполняется по очереди: сначала BoardGameGeek, затем Tesera.
+            </p>
+            <div
+              className="mt-3 flex gap-2"
+              role="tablist"
+              aria-label="Источник поиска"
+            >
+              <Button
+                type="button"
+                size="sm"
+                variant={provider === "boardgamegeek" ? "default" : "outline"}
+                onClick={() => setProvider("boardgamegeek")}
+                role="tab"
+                aria-selected={provider === "boardgamegeek"}
+              >
+                BoardGameGeek
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={provider === "tesera" ? "default" : "outline"}
+                onClick={() => setProvider("tesera")}
+                role="tab"
+                aria-selected={provider === "tesera"}
+              >
+                Tesera
+              </Button>
             </div>
           </div>
 
-          <div>
-            <Label>Тип</Label>
-            <Select value={type} onValueChange={setType}>
-              <SelectTrigger className="mt-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {itemTypeOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <form
+            onSubmit={searchItems}
+            className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_12rem_13rem_auto]"
+          >
+            <div>
+              <Label htmlFor="external-search">Название или ссылка</Label>
+              <div className="relative mt-2">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="external-search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="pl-9"
+                  placeholder="Ark Nova или BGG URL"
+                />
+              </div>
+            </div>
 
-          <div>
-            <Label>Цель импорта</Label>
-            <Select
-              value={target}
-              onValueChange={(value) =>
-                setTarget(
-                  value as ManualQuickAction,
-                )
-              }
+            <div>
+              <Label>Тип</Label>
+              <Select value={type} onValueChange={setType}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {itemTypeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Цель импорта</Label>
+              <Select
+                value={target}
+                onValueChange={(value) => setTarget(value as ManualQuickAction)}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {targetOptions
+                    .filter(
+                      (option) =>
+                        features.mode === "full" ||
+                        ["collection", "preorder"].includes(option.value),
+                    )
+                    .map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <Button type="submit" disabled={loading} className="min-w-28">
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                Найти
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={reset}
+                title="Сбросить"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span className="sr-only">Сбросить</span>
+              </Button>
+            </div>
+          </form>
+
+          {externalWarnings.map((warning) => (
+            <div
+              key={warning}
+              className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground"
             >
-              <SelectTrigger className="mt-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {targetOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              {warning}
+            </div>
+          ))}
+        </section>
+      ) : null}
 
-          <div className="flex items-end gap-2">
-            <Button type="submit" disabled={loading} className="min-w-28">
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
-              Найти
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={reset}
-              title="Сбросить"
-            >
-              <RotateCcw className="h-4 w-4" />
-              <span className="sr-only">Сбросить</span>
-            </Button>
-          </div>
-        </form>
-
-        {externalWarnings.map((warning) => <div key={warning} className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">{warning}</div>)}
-      </section> : null}
-
-      {!selectedItem && !completedItem && searched && !loading && results.length === 0 && !error ? (
+      {!selectedItem &&
+      !completedItem &&
+      searched &&
+      !loading &&
+      results.length === 0 &&
+      !error ? (
         <EmptyState
           icon={Search}
           title="Ничего не найдено"
@@ -394,14 +606,15 @@ export function ExternalImportPageClient({
         </section>
       ) : null}
 
-      {!selectedItem && !completedItem && searched && !loading && results.length === 0 ? (
+      {!selectedItem && !completedItem ? (
         <section className="grid gap-4">
           <div>
             <h2 className="text-base font-semibold tracking-normal">
               3. Ввести данные вручную
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Ручной ввод доступен после поиска в обоих внешних каталогах.
+              Можно создать игру сразу, без поиска и подключения внешних
+              источников.
             </p>
           </div>
           <ManualItemForm
@@ -411,21 +624,42 @@ export function ExternalImportPageClient({
             onTargetChange={setTarget}
             onError={setError}
             onCreated={(request) => {
-              setSelectedItem({ kind: "manual", request, title: request.title });
+              setSelectedItem({
+                kind: "manual",
+                request,
+                title: request.title,
+              });
               setError(null);
             }}
           />
         </section>
       ) : null}
 
-      {selectedItem && !completedItem ? <PersonalDataStep
-        key={`${selectedItem.kind}:${selectedItem.kind === "external" ? selectedItem.result.externalId : selectedItem.title}:${target}`}
-        title={selectedItem.kind === "external" ? selectedItem.result.title : selectedItem.title}
-        target={target}
-        saving={saving}
-        onBack={() => setSelectedItem(null)}
-        onSubmit={completeItem}
-      /> : null}
+      {selectedItem && !completedItem ? (
+        <PersonalDataStep
+          key={`${selectedItem.kind}:${selectedItem.kind === "external" ? selectedItem.result.externalId : selectedItem.title}:${target}`}
+          title={
+            selectedItem.kind === "external"
+              ? selectedItem.result.title
+              : selectedItem.title
+          }
+          target={target}
+          externalBase={
+            selectedItem.kind === "external"
+              ? {
+                  provider: selectedItem.result.provider,
+                  externalId: selectedItem.result.externalId,
+                }
+              : undefined
+          }
+          baseItemId={
+            selectedItem.kind === "existing" ? selectedItem.itemId : undefined
+          }
+          saving={saving}
+          onBack={() => setSelectedItem(null)}
+          onSubmit={completeItem}
+        />
+      ) : null}
     </main>
   );
 }
@@ -436,13 +670,40 @@ function WizardProgress({ step }: { step: number }) {
     <ol className="grid grid-cols-4 gap-2" aria-label="Шаги добавления игры">
       {steps.map((label, index) => {
         const number = index + 1;
-        return <li key={label} className={`rounded-lg border px-2 py-3 text-center text-xs sm:text-sm ${number === step ? "border-primary bg-primary/5 font-medium" : number < step ? "bg-muted text-foreground" : "text-muted-foreground"}`} aria-current={number === step ? "step" : undefined}>{number}. {label}</li>;
+        return (
+          <li
+            key={label}
+            className={`rounded-lg border px-2 py-3 text-center text-xs sm:text-sm ${number === step ? "border-primary bg-primary/5 font-medium" : number < step ? "bg-muted text-foreground" : "text-muted-foreground"}`}
+            aria-current={number === step ? "step" : undefined}
+          >
+            {number}. {label}
+          </li>
+        );
       })}
     </ol>
   );
 }
 
-function PersonalDataStep({ title, target, saving, onBack, onSubmit }: { title: string; target: ManualQuickAction; saving: boolean; onBack: () => void; onSubmit: (data: PersonalData) => Promise<void> }) {
+function PersonalDataStep({
+  title,
+  baseItemId,
+  externalBase,
+  target,
+  saving,
+  onBack,
+  onSubmit,
+}: {
+  title: string;
+  baseItemId?: string;
+  externalBase?: { provider: ProviderCode; externalId: string };
+  target: ManualQuickAction;
+  saving: boolean;
+  onBack: () => void;
+  onSubmit: (data: PersonalData) => Promise<void>;
+}) {
+  const [expansionItems, setExpansionItems] = React.useState<ExpansionDraft[]>(
+    [],
+  );
   const [location, setLocation] = React.useState("");
   const [personalRating, setPersonalRating] = React.useState("");
   const [notes, setNotes] = React.useState("");
@@ -454,15 +715,28 @@ function PersonalDataStep({ title, target, saving, onBack, onSubmit }: { title: 
   const [interestLevel, setInterestLevel] = React.useState("");
   const [decisionNotes, setDecisionNotes] = React.useState("");
   const [preorderShop, setPreorderShop] = React.useState("");
+  const [pricingMode, setPricingMode] = React.useState<"lot" | "per_item">(
+    "lot",
+  );
+  const [paymentType, setPaymentType] = React.useState<
+    "one_time" | "installments"
+  >("one_time");
+  const [accessoryItems, setAccessoryItems] = React.useState<ExpansionDraft[]>(
+    [],
+  );
   const [preorderPrice, setPreorderPrice] = React.useState("");
   const [preorderCurrency, setPreorderCurrency] = React.useState("RUB");
   const [orderDate, setOrderDate] = React.useState("");
-  const [precision, setPrecision] = React.useState<ExpectedDatePrecision>("unknown");
+  const [precision, setPrecision] =
+    React.useState<ExpectedDatePrecision>("unknown");
   const [expectedDay, setExpectedDay] = React.useState("");
   const [expectedMonth, setExpectedMonth] = React.useState("");
   const [expectedQuarter, setExpectedQuarter] = React.useState("1");
-  const [expectedYear, setExpectedYear] = React.useState(String(new Date().getUTCFullYear()));
-  const [preorderStatus, setPreorderStatus] = React.useState<CreatePreorderRequest["status"]>("planned");
+  const [expectedYear, setExpectedYear] = React.useState(
+    String(new Date().getUTCFullYear()),
+  );
+  const [preorderStatus, setPreorderStatus] =
+    React.useState<CreatePreorderRequest["status"]>("planned");
   const [preorderComment, setPreorderComment] = React.useState("");
   const collectionTarget = target === "collection" || target === "play";
 
@@ -474,29 +748,52 @@ function PersonalDataStep({ title, target, saving, onBack, onSubmit }: { title: 
           location: nullableText(location),
           personalRating: personalRating ? Number(personalRating) : null,
           notes: nullableText(notes),
-          purchase: hasPurchase ? {
-            shop: purchaseShop.trim(),
-            price: Number(purchasePrice),
-            currency: purchaseCurrency.trim().toUpperCase(),
-            purchaseDate: dateIso(purchaseDate),
-            comment: null,
-          } : undefined,
+          purchase: hasPurchase
+            ? {
+                shop: purchaseShop.trim(),
+                price: Number(purchasePrice),
+                currency: purchaseCurrency.trim().toUpperCase(),
+                purchaseDate: dateIso(purchaseDate),
+                comment: null,
+              }
+            : undefined,
         },
       });
       return;
     }
     if (target === "wishlist") {
-      await onSubmit({ wishlist: { interestLevel: interestLevel ? Number(interestLevel) : undefined, decisionNotes: nullableText(decisionNotes) } });
+      await onSubmit({
+        wishlist: {
+          interestLevel: interestLevel ? Number(interestLevel) : undefined,
+          decisionNotes: nullableText(decisionNotes),
+        },
+      });
       return;
     }
     if (target === "preorder") {
       await onSubmit({
+        expansions: expansionPayload(
+          expansionItems,
+          pricingMode === "per_item",
+        ),
+        accessories: expansionPayload(
+          accessoryItems,
+          pricingMode === "per_item",
+        ),
         preorder: {
+          pricingMode,
+          paymentType,
           shop: preorderShop.trim(),
           price: Number(preorderPrice),
           currency: preorderCurrency.trim().toUpperCase(),
           orderDate: dateIso(orderDate),
-          expectedDate: expectedDateForPrecision({ precision, expectedDay, expectedMonth, expectedQuarter, expectedYear }),
+          expectedDate: expectedDateForPrecision({
+            precision,
+            expectedDay,
+            expectedMonth,
+            expectedQuarter,
+            expectedYear,
+          }),
           expectedDatePrecision: precision,
           status: preorderStatus,
           comment: nullableText(preorderComment),
@@ -510,45 +807,403 @@ function PersonalDataStep({ title, target, saving, onBack, onSubmit }: { title: 
   return (
     <section className="grid gap-4 rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h2 className="text-lg font-semibold">3. Личные данные</h2><p className="mt-1 text-sm text-muted-foreground">{title} · {targetLabel(target)}</p></div>
-        <Button type="button" variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Назад к результатам</Button>
+        <div>
+          <h2 className="text-lg font-semibold">3. Личные данные</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {title} · {targetLabel(target)}
+          </p>
+        </div>
+        <Button type="button" variant="ghost" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4" /> Назад к результатам
+        </Button>
       </div>
       <form onSubmit={submit} className="grid gap-4">
-        {collectionTarget ? <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div><Label htmlFor="personal-location">Место хранения</Label><Input id="personal-location" value={location} onChange={(event) => setLocation(event.target.value)} className="mt-2" placeholder="Стеллаж, полка" /></div>
-            <div><Label htmlFor="personal-rating">Личная оценка</Label><Input id="personal-rating" type="number" min={1} max={10} value={personalRating} onChange={(event) => setPersonalRating(event.target.value)} className="mt-2" /></div>
+        <fieldset disabled={saving} className="contents">
+          {collectionTarget ? (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="personal-location">Место хранения</Label>
+                  <Input
+                    id="personal-location"
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    className="mt-2"
+                    placeholder="Стеллаж, полка"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="personal-rating">Личная оценка</Label>
+                  <Input
+                    id="personal-rating"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={personalRating}
+                    onChange={(event) => setPersonalRating(event.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="personal-notes">Заметки</Label>
+                <Textarea
+                  id="personal-notes"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  className="mt-2"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={hasPurchase}
+                  onChange={(event) => setHasPurchase(event.target.checked)}
+                />{" "}
+                Добавить покупку
+              </label>
+              {hasPurchase ? (
+                <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <Label htmlFor="purchase-shop">Магазин</Label>
+                    <Input
+                      id="purchase-shop"
+                      value={purchaseShop}
+                      onChange={(event) => setPurchaseShop(event.target.value)}
+                      className="mt-2"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="purchase-price">Цена</Label>
+                    <Input
+                      id="purchase-price"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={purchasePrice}
+                      onChange={(event) => setPurchasePrice(event.target.value)}
+                      className="mt-2"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="purchase-currency">Валюта</Label>
+                    <Input
+                      id="purchase-currency"
+                      value={purchaseCurrency}
+                      onChange={(event) =>
+                        setPurchaseCurrency(event.target.value.toUpperCase())
+                      }
+                      maxLength={3}
+                      className="mt-2"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="purchase-date">Дата покупки</Label>
+                    <Input
+                      id="purchase-date"
+                      type="date"
+                      value={purchaseDate}
+                      onChange={(event) => setPurchaseDate(event.target.value)}
+                      className="mt-2"
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {target === "wishlist" ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label>Уровень интереса</Label>
+                <Select
+                  value={interestLevel || "none"}
+                  onValueChange={(value) =>
+                    setInterestLevel(value === "none" ? "" : value)
+                  }
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Не указан</SelectItem>
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <SelectItem key={value} value={String(value)}>
+                        {value}/5
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="decision-notes">Заметки к решению</Label>
+                <Textarea
+                  id="decision-notes"
+                  value={decisionNotes}
+                  onChange={(event) => setDecisionNotes(event.target.value)}
+                  className="mt-2"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {target === "preorder" ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="wizard-preorder-shop">Магазин</Label>
+                <Input
+                  id="wizard-preorder-shop"
+                  value={preorderShop}
+                  onChange={(event) => setPreorderShop(event.target.value)}
+                  className="mt-2"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="wizard-pricing-mode">
+                  Стоимость предзаказа
+                </Label>
+                <select
+                  id="wizard-pricing-mode"
+                  className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={pricingMode}
+                  onChange={(e) =>
+                    setPricingMode(e.target.value as "lot" | "per_item")
+                  }
+                >
+                  <option value="lot">Цена за весь лот</option>
+                  <option value="per_item">Цены по позициям</option>
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="wizard-payment-type">Способ оплаты</Label>
+                <select
+                  id="wizard-payment-type"
+                  className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={paymentType}
+                  onChange={(e) =>
+                    setPaymentType(
+                      e.target.value as "one_time" | "installments",
+                    )
+                  }
+                >
+                  <option value="one_time">Единоразовый платёж</option>
+                  <option value="installments">Рассрочка</option>
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="wizard-preorder-price">
+                  {pricingMode === "lot"
+                    ? "Стоимость всего лота"
+                    : "Стоимость основной игры"}
+                </Label>
+                <Input
+                  id="wizard-preorder-price"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={preorderPrice}
+                  onChange={(event) => setPreorderPrice(event.target.value)}
+                  className="mt-2"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="wizard-preorder-currency">Валюта</Label>
+                <Input
+                  id="wizard-preorder-currency"
+                  value={preorderCurrency}
+                  onChange={(event) =>
+                    setPreorderCurrency(event.target.value.toUpperCase())
+                  }
+                  maxLength={3}
+                  className="mt-2"
+                  required
+                />
+              </div>
+              <div>
+                <Label>Статус</Label>
+                <Select
+                  value={preorderStatus}
+                  onValueChange={(value) =>
+                    setPreorderStatus(value as CreatePreorderRequest["status"])
+                  }
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Планируется</SelectItem>
+                    <SelectItem value="ordered">Заказан</SelectItem>
+                    <SelectItem value="paid">Оплачен</SelectItem>
+                    <SelectItem value="shipped">Отправлен</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="wizard-order-date">Дата заказа</Label>
+                <Input
+                  id="wizard-order-date"
+                  type="date"
+                  value={orderDate}
+                  onChange={(event) => setOrderDate(event.target.value)}
+                  className="mt-2"
+                />
+              </div>
+              <div>
+                <Label>Точность срока</Label>
+                <Select
+                  value={precision}
+                  onValueChange={(value) =>
+                    setPrecision(value as ExpectedDatePrecision)
+                  }
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="day">Точный день</SelectItem>
+                    <SelectItem value="month">Месяц</SelectItem>
+                    <SelectItem value="quarter">Квартал</SelectItem>
+                    <SelectItem value="unknown">Неизвестно</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {precision === "day" ? (
+                <div>
+                  <Label htmlFor="wizard-expected-day">Ожидаемая дата</Label>
+                  <Input
+                    id="wizard-expected-day"
+                    type="date"
+                    value={expectedDay}
+                    onChange={(event) => setExpectedDay(event.target.value)}
+                    className="mt-2"
+                    required
+                  />
+                </div>
+              ) : null}
+              {precision === "month" ? (
+                <div>
+                  <Label htmlFor="wizard-expected-month">Ожидаемый месяц</Label>
+                  <Input
+                    id="wizard-expected-month"
+                    type="month"
+                    value={expectedMonth}
+                    onChange={(event) => setExpectedMonth(event.target.value)}
+                    className="mt-2"
+                    required
+                  />
+                </div>
+              ) : null}
+              {precision === "quarter" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="wizard-expected-year">Год</Label>
+                    <Input
+                      id="wizard-expected-year"
+                      type="number"
+                      min={1900}
+                      max={2200}
+                      value={expectedYear}
+                      onChange={(event) => setExpectedYear(event.target.value)}
+                      className="mt-2"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label>Квартал</Label>
+                    <Select
+                      value={expectedQuarter}
+                      onValueChange={setExpectedQuarter}
+                    >
+                      <SelectTrigger className="mt-2">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[1, 2, 3, 4].map((value) => (
+                          <SelectItem key={value} value={String(value)}>
+                            {value}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : null}
+              <div className="sm:col-span-2 grid gap-3 rounded-lg border p-4">
+                <h3 className="font-semibold">Дополнения к игре</h3>
+                <p className="text-sm text-muted-foreground">
+                  {pricingMode === "lot"
+                    ? "Укажите общую стоимость лота с учётом скидки. Цены отдельных позиций не обязательны."
+                    : "Укажите цену базы и каждой выбранной позиции. Итоговая стоимость складывается автоматически."}{" "}
+                  Получение и отмена применяются ко всему лоту.
+                </p>
+                <ExpansionSelection
+                  value={expansionItems}
+                  onChange={setExpansionItems}
+                  prices={pricingMode === "per_item"}
+                  currency={preorderCurrency}
+                  baseItemId={baseItemId}
+                  externalBase={externalBase}
+                />
+                <h3 className="mt-3 font-semibold">Аксессуары к игре</h3>
+                <ExpansionSelection
+                  kind="accessory"
+                  value={accessoryItems}
+                  onChange={setAccessoryItems}
+                  prices={pricingMode === "per_item"}
+                  currency={preorderCurrency}
+                  baseItemId={baseItemId}
+                  externalBase={externalBase}
+                />
+                <p className="font-medium">
+                  Итого:{" "}
+                  {new Intl.NumberFormat("ru-RU", {
+                    maximumFractionDigits: 2,
+                  }).format(
+                    Number(preorderPrice || 0) +
+                      (pricingMode === "per_item"
+                        ? [...expansionItems, ...accessoryItems].reduce(
+                            (sum, item) => sum + Number(item.price || 0),
+                            0,
+                          )
+                        : 0),
+                  )}{" "}
+                  {preorderCurrency}
+                </p>
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="wizard-preorder-comment">Комментарий</Label>
+                <Textarea
+                  id="wizard-preorder-comment"
+                  value={preorderComment}
+                  onChange={(event) => setPreorderComment(event.target.value)}
+                  className="mt-2"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {target === "reference_only" ? (
+            <p className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+              Будет сохранена только справочная карточка Item и внешний
+              идентификатор.
+            </p>
+          ) : null}
+          <div className="flex justify-end">
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              {saving ? "Сохраняем" : "Завершить"}
+            </Button>
           </div>
-          <div><Label htmlFor="personal-notes">Заметки</Label><Textarea id="personal-notes" value={notes} onChange={(event) => setNotes(event.target.value)} className="mt-2" /></div>
-          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={hasPurchase} onChange={(event) => setHasPurchase(event.target.checked)} /> Добавить покупку</label>
-          {hasPurchase ? <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div><Label htmlFor="purchase-shop">Магазин</Label><Input id="purchase-shop" value={purchaseShop} onChange={(event) => setPurchaseShop(event.target.value)} className="mt-2" required /></div>
-            <div><Label htmlFor="purchase-price">Цена</Label><Input id="purchase-price" type="number" min={0} step="0.01" value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} className="mt-2" required /></div>
-            <div><Label htmlFor="purchase-currency">Валюта</Label><Input id="purchase-currency" value={purchaseCurrency} onChange={(event) => setPurchaseCurrency(event.target.value.toUpperCase())} maxLength={3} className="mt-2" required /></div>
-            <div><Label htmlFor="purchase-date">Дата покупки</Label><Input id="purchase-date" type="date" value={purchaseDate} onChange={(event) => setPurchaseDate(event.target.value)} className="mt-2" /></div>
-          </div> : null}
-        </> : null}
-
-        {target === "wishlist" ? <div className="grid gap-4 sm:grid-cols-2">
-          <div><Label>Уровень интереса</Label><Select value={interestLevel || "none"} onValueChange={(value) => setInterestLevel(value === "none" ? "" : value)}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Не указан</SelectItem>{[1,2,3,4,5].map((value) => <SelectItem key={value} value={String(value)}>{value}/5</SelectItem>)}</SelectContent></Select></div>
-          <div><Label htmlFor="decision-notes">Заметки к решению</Label><Textarea id="decision-notes" value={decisionNotes} onChange={(event) => setDecisionNotes(event.target.value)} className="mt-2" /></div>
-        </div> : null}
-
-        {target === "preorder" ? <div className="grid gap-4 sm:grid-cols-2">
-          <div><Label htmlFor="wizard-preorder-shop">Магазин</Label><Input id="wizard-preorder-shop" value={preorderShop} onChange={(event) => setPreorderShop(event.target.value)} className="mt-2" required /></div>
-          <div><Label htmlFor="wizard-preorder-price">Стоимость</Label><Input id="wizard-preorder-price" type="number" min={0} step="0.01" value={preorderPrice} onChange={(event) => setPreorderPrice(event.target.value)} className="mt-2" required /></div>
-          <div><Label htmlFor="wizard-preorder-currency">Валюта</Label><Input id="wizard-preorder-currency" value={preorderCurrency} onChange={(event) => setPreorderCurrency(event.target.value.toUpperCase())} maxLength={3} className="mt-2" required /></div>
-          <div><Label>Статус</Label><Select value={preorderStatus} onValueChange={(value) => setPreorderStatus(value as CreatePreorderRequest["status"])}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="planned">Планируется</SelectItem><SelectItem value="ordered">Заказан</SelectItem><SelectItem value="paid">Оплачен</SelectItem><SelectItem value="shipped">Отправлен</SelectItem></SelectContent></Select></div>
-          <div><Label htmlFor="wizard-order-date">Дата заказа</Label><Input id="wizard-order-date" type="date" value={orderDate} onChange={(event) => setOrderDate(event.target.value)} className="mt-2" /></div>
-          <div><Label>Точность срока</Label><Select value={precision} onValueChange={(value) => setPrecision(value as ExpectedDatePrecision)}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="day">Точный день</SelectItem><SelectItem value="month">Месяц</SelectItem><SelectItem value="quarter">Квартал</SelectItem><SelectItem value="unknown">Неизвестно</SelectItem></SelectContent></Select></div>
-          {precision === "day" ? <div><Label htmlFor="wizard-expected-day">Ожидаемая дата</Label><Input id="wizard-expected-day" type="date" value={expectedDay} onChange={(event) => setExpectedDay(event.target.value)} className="mt-2" required /></div> : null}
-          {precision === "month" ? <div><Label htmlFor="wizard-expected-month">Ожидаемый месяц</Label><Input id="wizard-expected-month" type="month" value={expectedMonth} onChange={(event) => setExpectedMonth(event.target.value)} className="mt-2" required /></div> : null}
-          {precision === "quarter" ? <div className="grid grid-cols-2 gap-3"><div><Label htmlFor="wizard-expected-year">Год</Label><Input id="wizard-expected-year" type="number" min={1900} max={2200} value={expectedYear} onChange={(event) => setExpectedYear(event.target.value)} className="mt-2" required /></div><div><Label>Квартал</Label><Select value={expectedQuarter} onValueChange={setExpectedQuarter}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent>{[1,2,3,4].map((value) => <SelectItem key={value} value={String(value)}>{value}</SelectItem>)}</SelectContent></Select></div></div> : null}
-          <div className="sm:col-span-2"><Label htmlFor="wizard-preorder-comment">Комментарий</Label><Textarea id="wizard-preorder-comment" value={preorderComment} onChange={(event) => setPreorderComment(event.target.value)} className="mt-2" /></div>
-        </div> : null}
-
-        {target === "reference_only" ? <p className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">Будет сохранена только справочная карточка Item и внешний идентификатор.</p> : null}
-        <div className="flex justify-end"><Button type="submit" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{saving ? "Сохраняем" : "Завершить"}</Button></div>
+        </fieldset>
       </form>
     </section>
   );
@@ -571,11 +1226,21 @@ function SearchResultRow({
   return (
     <article className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-[5rem_1fr_auto] sm:items-center">
       <div className="aspect-[4/5] overflow-hidden rounded-md bg-muted">
-        {result.imageUrl ? <>
-          {/* Provider-controlled preview URL; native image keeps the search adapter domain-agnostic. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={result.imageUrl} alt={`Обложка ${result.title}`} className="h-full w-full object-cover" />
-        </> : <div className="flex h-full items-center justify-center"><ImageIcon className="h-6 w-6 text-muted-foreground" /></div>}
+        {result.imageUrl ? (
+          <>
+            {/* Provider-controlled preview URL; native image keeps the search adapter domain-agnostic. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={result.imageUrl}
+              alt={`Обложка ${result.title}`}
+              className="h-full w-full object-cover"
+            />
+          </>
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <ImageIcon className="h-6 w-6 text-muted-foreground" />
+          </div>
+        )}
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
@@ -593,11 +1258,19 @@ function SearchResultRow({
           ) : null}
         </div>
 
-        {result.originalTitle && result.originalTitle !== result.title ? <p className="mt-1 text-sm text-muted-foreground">{result.originalTitle}</p> : null}
+        {result.originalTitle && result.originalTitle !== result.title ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {result.originalTitle}
+          </p>
+        ) : null}
 
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>Игроки: {rangeLabel(result.minPlayers, result.maxPlayers)}</span>
-          <span>Время: {rangeLabel(result.minPlayTime, result.maxPlayTime, " мин")}</span>
+          <span>
+            Игроки: {rangeLabel(result.minPlayers, result.maxPlayers)}
+          </span>
+          <span>
+            Время: {rangeLabel(result.minPlayTime, result.maxPlayTime, " мин")}
+          </span>
           <span>Рейтинг: {result.rating ? result.rating.toFixed(1) : "—"}</span>
         </div>
 
@@ -650,6 +1323,7 @@ function ManualItemForm({
   onError: (message: string | null) => void;
   onCreated: (request: CreateManualItemRequest) => void;
 }) {
+  const features = useProductFeatures();
   const [saving, setSaving] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const [typeId, setTypeId] = React.useState("");
@@ -751,31 +1425,37 @@ function ManualItemForm({
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {quickActionOptions.map((option) => {
-          const Icon = option.icon;
-          const selected = target === option.value;
+        {quickActionOptions
+          .filter(
+            (option) =>
+              features.mode === "full" ||
+              ["collection", "preorder"].includes(option.value),
+          )
+          .map((option) => {
+            const Icon = option.icon;
+            const selected = target === option.value;
 
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onTargetChange(option.value)}
-              className={[
-                "flex min-h-28 flex-col gap-2 rounded-lg border p-3 text-left transition-colors",
-                selected
-                  ? "border-primary bg-primary/5 text-foreground"
-                  : "bg-background hover:bg-secondary",
-              ].join(" ")}
-              aria-pressed={selected}
-            >
-              <Icon className="h-5 w-5" />
-              <span className="text-sm font-medium">{option.label}</span>
-              <span className="text-xs leading-5 text-muted-foreground">
-                {option.description}
-              </span>
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onTargetChange(option.value)}
+                className={[
+                  "flex min-h-28 flex-col gap-2 rounded-lg border p-3 text-left transition-colors",
+                  selected
+                    ? "border-primary bg-primary/5 text-foreground"
+                    : "bg-background hover:bg-secondary",
+                ].join(" ")}
+                aria-pressed={selected}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="text-sm font-medium">{option.label}</span>
+                <span className="text-xs leading-5 text-muted-foreground">
+                  {option.description}
+                </span>
+              </button>
+            );
+          })}
       </div>
 
       <div className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_14rem_8rem_13rem]">
@@ -831,11 +1511,17 @@ function ManualItemForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {quickActionOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
+              {quickActionOptions
+                .filter(
+                  (option) =>
+                    features.mode === "full" ||
+                    ["collection", "preorder"].includes(option.value),
+                )
+                .map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         </div>
@@ -1107,23 +1793,65 @@ function completionForTarget(
   target: ManualQuickAction,
   itemId: string,
   title: string,
+  hasExpansions = false,
 ): CompletedItem {
-  if (target === "collection") return { title, href: `/collection/${itemId}`, actionLabel: "Открыть коллекцию" };
-  if (target === "play") return { title, href: `/plays?itemId=${encodeURIComponent(itemId)}`, actionLabel: "Добавить партию" };
-  if (target === "wishlist") return { title, href: `/wishlist/${itemId}`, actionLabel: "Открыть wishlist" };
-  if (target === "preorder") return { title, href: `/preorders?itemId=${encodeURIComponent(itemId)}`, actionLabel: "Открыть предзаказы" };
-  return { title, href: `/api/items/${encodeURIComponent(itemId)}`, actionLabel: "Открыть Item" };
+  if (target === "collection")
+    return {
+      title,
+      href: `/items/${itemId}`,
+      actionLabel: "Открыть коллекцию",
+    };
+  if (target === "play")
+    return {
+      title,
+      href: `/plays?itemId=${encodeURIComponent(itemId)}`,
+      actionLabel: "Добавить партию",
+    };
+  if (target === "wishlist")
+    return {
+      title,
+      href: `/wishlist/${itemId}`,
+      actionLabel: "Открыть wishlist",
+    };
+  if (target === "preorder")
+    return {
+      title,
+      href: hasExpansions
+        ? "/preorders"
+        : `/preorders?itemId=${encodeURIComponent(itemId)}`,
+      actionLabel: "Открыть предзаказы",
+    };
+  return {
+    title,
+    href: `/api/items/${encodeURIComponent(itemId)}`,
+    actionLabel: "Открыть Item",
+  };
 }
 
 function targetLabel(target: ManualQuickAction) {
-  return quickActionOptions.find((option) => option.value === target)?.label ?? target;
+  return (
+    quickActionOptions.find((option) => option.value === target)?.label ??
+    target
+  );
 }
 
 function dateIso(value: string) {
-  return value ? new Date(`${value}T00:00:00.000Z`).toISOString() : null;
+  return value ? calendarToIso(value) : null;
 }
 
-function expectedDateForPrecision({ precision, expectedDay, expectedMonth, expectedQuarter, expectedYear }: { precision: ExpectedDatePrecision; expectedDay: string; expectedMonth: string; expectedQuarter: string; expectedYear: string }) {
+function expectedDateForPrecision({
+  precision,
+  expectedDay,
+  expectedMonth,
+  expectedQuarter,
+  expectedYear,
+}: {
+  precision: ExpectedDatePrecision;
+  expectedDay: string;
+  expectedMonth: string;
+  expectedQuarter: string;
+  expectedYear: string;
+}) {
   if (precision === "unknown") return null;
   if (precision === "day") return dateIso(expectedDay);
   if (precision === "month") return dateIso(`${expectedMonth}-01`);
