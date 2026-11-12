@@ -1,3 +1,4 @@
+import { requireFullProduct } from "@/server/config/product-mode";
 import { Suspense } from "react";
 
 import { PlaysPageClient } from "./plays-page-client";
@@ -9,7 +10,12 @@ type PlaysPageProps = {
 };
 
 export default async function PlaysPage({ searchParams }: PlaysPageProps) {
+  requireFullProduct();
   const { itemId } = await searchParams;
 
-  return <Suspense><PlaysPageClient initialItemId={itemId} /></Suspense>;
+  return (
+    <Suspense>
+      <PlaysPageClient initialItemId={itemId} />
+    </Suspense>
+  );
 }

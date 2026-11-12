@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { ProductFeaturesProvider } from "@/components/product-features-provider";
+import { featuresForMode } from "@/shared/config/product-features";
 import { AppShell } from "@/components/app-shell";
 
 vi.mock("next/navigation", () => ({
@@ -31,5 +33,25 @@ describe("AppShell", () => {
     expect(markup).toContain('id="main-content"');
     expect(markup).toContain("Перейти к содержимому");
     expect(markup).not.toContain("shadow-[");
+  });
+  it("hides deferred navigation in MVP and restores it in full mode", () => {
+    const mvp = renderToStaticMarkup(
+      <AppShell>
+        <main>Core</main>
+      </AppShell>,
+    );
+    for (const href of ["/plays", "/statistics", "/wishlist", "/settings"])
+      expect(mvp).not.toContain(`href="${href}"`);
+    expect(mvp).toContain('href="/collection"');
+    expect(mvp).toContain('href="/preorders"');
+    const full = renderToStaticMarkup(
+      <ProductFeaturesProvider features={featuresForMode("full")}>
+        <AppShell>
+          <main>Full</main>
+        </AppShell>
+      </ProductFeaturesProvider>,
+    );
+    for (const href of ["/plays", "/statistics", "/wishlist", "/settings"])
+      expect(full).toContain(`href="${href}"`);
   });
 });

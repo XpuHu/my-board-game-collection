@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "@/components/toast-provider";
-import HomePage from "@/app/page";
+import HomePage from "@/app/dashboard-page-client";
 import { CollectionPageClient } from "@/app/collection/collection-page-client";
 import { CollectionItemPageClient } from "@/app/collection/[itemId]/collection-item-page-client";
 import { ExternalImportPageClient } from "@/app/items/new/external-import-page-client";

@@ -1,4 +1,5 @@
 "use client";
+import { useProductFeatures } from "@/components/product-features-provider";
 
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -46,6 +47,13 @@ const mobilePrimaryHrefs = ["/", "/collection", "/wishlist", "/preorders"];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const features = useProductFeatures();
+  const visibleItems = navItems.filter(
+    (item) =>
+      features.mode === "full" ||
+      ["/collection", "/preorders"].includes(item.href),
+  );
+  const homeHref = features.mode === "mvp" ? "/collection" : "/";
 
   return (
     <div className="min-h-svh bg-background text-foreground">
@@ -57,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[72px] flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-sidebar)] md:flex min-[1200px]:w-56">
         <Link
-          href="/"
+          href={homeHref}
           aria-label="Board Game Collection — главная"
           className="flex h-[72px] items-center justify-center gap-3 px-5 min-[1200px]:justify-start"
         >
@@ -73,7 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-label="Основная навигация"
           className="grid gap-1.5 px-3 py-4 min-[1200px]:px-4"
         >
-          {navItems.map((item) => (
+          {visibleItems.map((item) => (
             <SidebarNavLink key={item.href} item={item} pathname={pathname} />
           ))}
         </nav>
@@ -86,7 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="app-shell-content">
         <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
           <Link
-            href="/"
+            href={homeHref}
             className="flex items-center gap-3"
             aria-label="На главную"
           >
@@ -110,9 +118,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <nav
         aria-label="Мобильная навигация"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border-default)] bg-[var(--bg-sidebar)]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+        style={{
+          gridTemplateColumns: `repeat(${features.mode === "mvp" ? 2 : 5}, minmax(0, 1fr))`,
+        }}
+        className="fixed inset-x-0 bottom-0 z-40 grid border-t border-[var(--border-default)] bg-[var(--bg-sidebar)]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
       >
-        {navItems
+        {visibleItems
           .filter((item) => mobilePrimaryHrefs.includes(item.href))
           .map((item) => (
             <MobileNavLink key={item.href} item={item} pathname={pathname} />
@@ -202,6 +213,8 @@ function MobileMenu({
   pathname: string;
   bottomNav?: boolean;
 }) {
+  const features = useProductFeatures();
+  if (features.mode === "mvp") return null;
   const extraItems = navItems.filter(
     (item) => !mobilePrimaryHrefs.includes(item.href),
   );
