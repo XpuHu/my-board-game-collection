@@ -57,3 +57,29 @@ export function updateCollectionFavorite(itemId: string, favorite: boolean) {
     },
   );
 }
+
+export const itemCardRestAdapter = {
+  async load(
+    { itemId }: { itemId: string },
+    context?: { signal?: AbortSignal },
+  ): Promise<CollectionItemDetailDto> {
+    const data = await apiRequest<import("@/shared/api").ItemCardDto>(
+      `/api/items/${encodeURIComponent(itemId)}`,
+      { signal: context?.signal },
+    );
+    // Empty personal controls are a client view model. GET never creates a UserItem.
+    return {
+      ...data,
+      userItem: data.userItem ?? {
+        id: "",
+        owned: false,
+        wishlist: false,
+        states: [],
+        lifecycleStatus: "active",
+        ownedAt: null,
+        favorite: false,
+        tags: [],
+      },
+    };
+  },
+};

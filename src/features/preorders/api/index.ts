@@ -6,6 +6,7 @@ import type {
   PaginatedResponse,
   PreorderListItemDto,
   PreorderQueryDto,
+  UpdatePreorderRequest,
   UpdatePreorderExpectedDateRequest,
   UpdatePreorderExpectedDateResponse,
 } from "@/shared/api/types";
@@ -51,17 +52,36 @@ export function updatePreorderStatus(
   preorderId: string,
   status: "received" | "cancelled",
 ) {
-  return apiRequest<unknown>(`/api/preorders/${encodeURIComponent(preorderId)}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      status,
-      ...(status === "received" ? { receivedDate: new Date().toISOString() } : {}),
-    }),
-  });
+  return apiRequest<unknown>(
+    `/api/preorders/${encodeURIComponent(preorderId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        status,
+      }),
+    },
+  );
+}
+
+export function reactivatePreorder(preorderId: string) {
+  return apiRequest<unknown>(
+    `/api/preorders/${encodeURIComponent(preorderId)}/reactivate`,
+    { method: "POST" },
+  );
 }
 
 export function deletePreorder(preorderId: string) {
   return apiRequest<void>(`/api/preorders/${encodeURIComponent(preorderId)}`, {
     method: "DELETE",
   });
+}
+
+export function updatePreorder(
+  preorderId: string,
+  input: UpdatePreorderRequest,
+) {
+  return apiRequest<unknown>(
+    `/api/preorders/${encodeURIComponent(preorderId)}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
 }
