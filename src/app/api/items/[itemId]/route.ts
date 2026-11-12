@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 import { updateItemRequestSchema } from "@/shared/api";
 import { withApiErrorHandling } from "@/server/api/errors";
 import { parseJsonBody } from "@/server/api/request";
-import { updateItem } from "@/server/application/items/item-service";
+import {
+  getItemCard,
+  updateItem,
+} from "@/server/application/items/item-service";
 
 type RouteContext = {
   params: Promise<{
@@ -18,4 +21,10 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json(await updateItem(itemId, input));
   });
+}
+
+export async function GET(_request: Request, context: RouteContext) {
+  return withApiErrorHandling(async () =>
+    NextResponse.json(await getItemCard((await context.params).itemId)),
+  );
 }

@@ -8,10 +8,12 @@ import {
   type AddToCollectionInput,
   type CreateExternalReferenceInput,
   type CreateImageInput,
+  type CreateItemRelationInput,
   type CreateLinkInput,
   type UpdateExternalReferenceInput,
   type UpdateImageInput,
   type UpdateItemInput,
+  type UpdateItemRelationInput,
   type UpdateLinkInput,
   type UpdateUserItemInput,
 } from "@/shared/api";
@@ -19,6 +21,7 @@ import { ApiError } from "@/server/api/errors";
 
 import {
   mapItemDetails,
+  mapItemCard,
   mapUserItem,
   type ItemForDetails,
   type UserItemWithTags,
@@ -78,70 +81,76 @@ export async function createItem(input: CreateItemInput) {
     return existingExternalReference;
   }
 
-  const item = await prisma.$transaction(async (tx) => {
-    const created = await tx.item.create({
-      data: {
-        typeId: input.typeId,
-        title: input.title,
-        originalTitle: input.originalTitle,
-        description: input.description,
-        year: input.year,
-        minPlayers: input.minPlayers,
-        maxPlayers: input.maxPlayers,
-        minPlayTime: input.minPlayTime,
-        maxPlayTime: input.maxPlayTime,
-        minAge: input.minAge,
-        complexity: input.complexity,
-        rating: input.rating,
-        sourceMode: input.sourceMode,
-        categories: input.categories,
-        mechanics: input.mechanics,
-        designers: input.designers,
-        artists: input.artists,
-        publishers: input.publishers,
-        images: input.imageUrl
-          ? {
-              create: {
-                type: "user",
-                provider: "manual",
-                url: input.imageUrl,
-                caption: "Manual URL",
-                sortOrder: 0,
-              },
-            }
-          : undefined,
-        links: input.linkUrl
-          ? {
-              create: {
-                type: "other",
-                url: input.linkUrl,
-                title: "Manual link",
-              },
-            }
-          : undefined,
-        externalReferences: input.externalReference
-          ? {
-              create: {
-                provider: input.externalReference.provider,
-                externalId: input.externalReference.externalId,
-                url: input.externalReference.url,
-              },
-            }
-          : undefined,
-        userItem: {
-          create: {
-            owned: false,
-            wishlist: false,
-            status: "active",
-          },
+  const itemId = await prisma.$transaction((tx) =>
+    createItemInTransaction(tx, input),
+  );
+  return getItemDetails(itemId);
+}
+
+export async function createItemInTransaction(
+  tx: Prisma.TransactionClient,
+  input: CreateItemInput,
+) {
+  const created = await tx.item.create({
+    data: {
+      typeId: input.typeId,
+      title: input.title,
+      originalTitle: input.originalTitle,
+      description: input.description,
+      year: input.year,
+      minPlayers: input.minPlayers,
+      maxPlayers: input.maxPlayers,
+      minPlayTime: input.minPlayTime,
+      maxPlayTime: input.maxPlayTime,
+      minAge: input.minAge,
+      complexity: input.complexity,
+      rating: input.rating,
+      sourceMode: input.sourceMode,
+      categories: input.categories,
+      mechanics: input.mechanics,
+      designers: input.designers,
+      artists: input.artists,
+      publishers: input.publishers,
+      images: input.imageUrl
+        ? {
+            create: {
+              type: "user",
+              provider: "manual",
+              url: input.imageUrl,
+              caption: "Manual URL",
+              sortOrder: 0,
+            },
+          }
+        : undefined,
+      links: input.linkUrl
+        ? {
+            create: {
+              type: "other",
+              url: input.linkUrl,
+              title: "Manual link",
+            },
+          }
+        : undefined,
+      externalReferences: input.externalReference
+        ? {
+            create: {
+              provider: input.externalReference.provider,
+              externalId: input.externalReference.externalId,
+              url: input.externalReference.url,
+            },
+          }
+        : undefined,
+      userItem: {
+        create: {
+          owned: false,
+          wishlist: false,
+          status: "active",
         },
       },
-    });
-    await syncItemTaxonomy(tx, created.id, input);
-    return created;
+    },
   });
-
-  return getItemDetails(item.id);
+  await syncItemTaxonomy(tx, created.id, input);
+  return created.id;
 }
 
 export async function updateItem(itemId: string, input: UpdateItemInput) {
@@ -335,6 +344,100 @@ export async function deleteLink(itemId: string, linkId: string) {
   return getItemDetails(itemId);
 }
 
+export async function createItemRelation(
+  itemId: string,
+  input: CreateItemRelationInput,
+) {
+  await assertItemExists(itemId);
+  await assertItemExists(input.relatedItemId);
+
+  if (itemId === input.relatedItemId) {
+    throw ApiError.conflict(
+      "ITEM_RELATION_CONFLICT",
+      "An item cannot be related to itself",
+    );
+  }
+
+  await prisma.itemRelation.create({
+    data: {
+      parentItemId: input.direction === "child" ? itemId : input.relatedItemId,
+      childItemId: input.direction === "child" ? input.relatedItemId : itemId,
+      relationType: input.relationType,
+      comment: input.comment,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
+export async function deleteItemRelation(itemId: string, relationId: string) {
+  await assertItemExists(itemId);
+  const relation = await prisma.itemRelation.findFirst({
+    where: {
+      id: relationId,
+      OR: [{ parentItemId: itemId }, { childItemId: itemId }],
+    },
+    select: { id: true },
+  });
+
+  if (!relation) {
+    throw ApiError.notFound(
+      "ITEM_CHILD_NOT_FOUND",
+      "Item relation was not found",
+    );
+  }
+
+  await prisma.itemRelation.delete({ where: { id: relationId } });
+  return getItemDetails(itemId);
+}
+
+export async function updateItemRelation(
+  itemId: string,
+  relationId: string,
+  input: UpdateItemRelationInput,
+) {
+  await assertItemExists(itemId);
+  const current = await prisma.itemRelation.findFirst({
+    where: {
+      id: relationId,
+      OR: [{ parentItemId: itemId }, { childItemId: itemId }],
+    },
+  });
+
+  if (!current) {
+    throw ApiError.notFound(
+      "ITEM_CHILD_NOT_FOUND",
+      "Item relation was not found",
+    );
+  }
+
+  const currentDirection = current.parentItemId === itemId ? "child" : "parent";
+  const direction = input.direction ?? currentDirection;
+  const currentRelatedItemId =
+    currentDirection === "child" ? current.childItemId : current.parentItemId;
+  const relatedItemId = input.relatedItemId ?? currentRelatedItemId;
+
+  await assertItemExists(relatedItemId);
+  if (itemId === relatedItemId) {
+    throw ApiError.conflict(
+      "ITEM_RELATION_CONFLICT",
+      "An item cannot be related to itself",
+    );
+  }
+
+  await prisma.itemRelation.update({
+    where: { id: relationId },
+    data: {
+      parentItemId: direction === "child" ? itemId : relatedItemId,
+      childItemId: direction === "child" ? relatedItemId : itemId,
+      relationType: input.relationType,
+      comment: input.comment,
+    },
+  });
+
+  return getItemDetails(itemId);
+}
+
 export async function findByExternalReference(
   provider: string,
   externalId: string,
@@ -436,54 +539,60 @@ export async function addItemToCollection(
   addToCollectionRequestSchema.parse(input);
   await assertItemExists(itemId);
 
-  await prisma.$transaction(async (tx) => {
-    const current = await tx.userItem.findUnique({ where: { itemId } });
-    const next = resolveUserItemTransition(current, collectionTransition());
-    await tx.userItem.upsert({
-      where: {
-        itemId,
-      },
-      create: {
-        itemId,
-        ...next,
-        location: input.location,
-        personalRating: input.personalRating,
-        notes: input.notes,
-      },
-      update: {
-        ...next,
-        location: input.location,
-        personalRating: input.personalRating,
-        notes: input.notes,
-      },
-    });
-
-    if (input.purchase) {
-      const deliveryCost = input.purchase.deliveryCost ?? 0;
-      const discount = input.purchase.discount ?? 0;
-      const totalPrice =
-        input.purchase.totalPrice ??
-        input.purchase.price + deliveryCost - discount;
-
-      await tx.purchase.create({
-        data: {
-          itemId,
-          shop: input.purchase.shop,
-          price: input.purchase.price,
-          currency: input.purchase.currency,
-          deliveryCost: input.purchase.deliveryCost,
-          discount: input.purchase.discount,
-          totalPrice,
-          purchaseDate: input.purchase.purchaseDate
-            ? new Date(input.purchase.purchaseDate)
-            : undefined,
-          comment: input.purchase.comment,
-        },
-      });
-    }
+  await prisma.$transaction((tx) =>
+    addToCollectionInTransaction(tx, itemId, input),
+  );
+  return getItemDetails(itemId);
+}
+export async function addToCollectionInTransaction(
+  tx: Prisma.TransactionClient,
+  itemId: string,
+  input: AddToCollectionInput,
+) {
+  const current = await tx.userItem.findUnique({ where: { itemId } });
+  const next = resolveUserItemTransition(current, collectionTransition());
+  await tx.userItem.upsert({
+    where: {
+      itemId,
+    },
+    create: {
+      itemId,
+      ...next,
+      location: input.location,
+      personalRating: input.personalRating,
+      notes: input.notes,
+    },
+    update: {
+      ...next,
+      location: input.location,
+      personalRating: input.personalRating,
+      notes: input.notes,
+    },
   });
 
-  return getItemDetails(itemId);
+  if (input.purchase) {
+    const deliveryCost = input.purchase.deliveryCost ?? 0;
+    const discount = input.purchase.discount ?? 0;
+    const totalPrice =
+      input.purchase.totalPrice ??
+      input.purchase.price + deliveryCost - discount;
+
+    await tx.purchase.create({
+      data: {
+        itemId,
+        shop: input.purchase.shop,
+        price: input.purchase.price,
+        currency: input.purchase.currency,
+        deliveryCost: input.purchase.deliveryCost,
+        discount: input.purchase.discount,
+        totalPrice,
+        purchaseDate: input.purchase.purchaseDate
+          ? new Date(input.purchase.purchaseDate)
+          : undefined,
+        comment: input.purchase.comment,
+      },
+    });
+  }
 }
 
 export async function addItemToWishlist(itemId: string) {
@@ -624,6 +733,9 @@ export const itemDetailsInclude = {
   },
   preorders: {
     include: {
+      children: {
+        include: { item: { include: { type: true, images: true } } },
+      },
       events: {
         orderBy: {
           createdAt: "desc",
@@ -685,4 +797,36 @@ export const itemDetailsInclude = {
 
 export function asItemForDetails(item: unknown) {
   return item as ItemForDetails;
+}
+
+export async function getItemCard(itemId: string) {
+  const item = await prisma.item.findFirst({
+    where: { id: itemId, deletedAt: null },
+    include: itemDetailsInclude,
+  });
+  if (!item) throw ApiError.notFound("ITEM_NOT_FOUND", "Item was not found");
+  return mapItemCard(asItemForDetails(item));
+}
+export async function searchLocalItems(q: string, page = 1, typeCode?: string) {
+  const where = {
+    ...(typeCode ? { type: { code: typeCode } } : {}),
+    deletedAt: null,
+    ...(q
+      ? { OR: [{ title: { contains: q } }, { originalTitle: { contains: q } }] }
+      : {}),
+  };
+  const [total, items] = await prisma.$transaction([
+    prisma.item.count({ where }),
+    prisma.item.findMany({
+      where,
+      select: { id: true, title: true, type: { select: { name: true } } },
+      orderBy: [{ title: "asc" }, { id: "asc" }],
+      skip: (page - 1) * 24,
+      take: 24,
+    }),
+  ]);
+  return {
+    data: items,
+    pagination: { page, total, totalPages: Math.ceil(total / 24) },
+  };
 }

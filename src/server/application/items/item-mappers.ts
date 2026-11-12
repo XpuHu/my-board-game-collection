@@ -59,7 +59,10 @@ export type ItemForDetails = Item & {
   images: Image[];
   links: Link[];
   purchases: Purchase[];
-  preorders: (Preorder & { events: PreorderEvent[] })[];
+  preorders: (Preorder & {
+    events: PreorderEvent[];
+    children?: (Preorder & { item: ItemForCompact })[];
+  })[];
   playSessions: PlaySession[];
   notes: Note[];
   tags: Tag[];
@@ -567,14 +570,36 @@ export function mapPurchase(purchase: Purchase): PurchaseDto {
 }
 
 export function mapPreorderListItem(
-  preorder: Preorder & { item: ItemForCompact },
+  preorder: Preorder & {
+    item: ItemForCompact;
+    children?: (Preorder & { item: ItemForCompact })[];
+  },
   now = new Date(),
 ): PreorderListItemDto {
   return {
     id: preorder.id,
     item: mapItemCompact(preorder.item),
     shop: preorder.shop,
-    price: money(preorder.price, preorder.currency),
+    price: money(
+      Number(preorder.price) +
+        (preorder.pricingMode === "per_item"
+          ? (preorder.children ?? []).reduce(
+              (total, child) =>
+                total + (child.priceKnown ? Number(child.price) : 0),
+              0,
+            )
+          : 0),
+      preorder.currency,
+    ),
+    basePrice: Number(preorder.price),
+    priceKnown: preorder.priceKnown,
+    parentId: preorder.parentId,
+    pricingMode: preorder.pricingMode as "lot" | "per_item",
+    paymentType: preorder.paymentType as
+      "one_time" | "installments" | "unspecified",
+    children: (preorder.children ?? []).map((child) =>
+      mapPreorderListItem(child, now),
+    ),
     orderDate: preorder.orderDate?.toISOString() ?? null,
     expectedDate: preorder.expectedDate?.toISOString() ?? null,
     expectedDatePrecision: expectedDatePrecision(preorder),
@@ -921,4 +946,30 @@ function asRelationType(value: string): ItemRelationDto["relationType"] {
   return relationTypes.includes(value as ItemRelationDto["relationType"])
     ? (value as ItemRelationDto["relationType"])
     : "related";
+}
+
+export function mapItemCard(
+  item: ItemForDetails,
+): import("@/shared/api").ItemCardDto {
+  return {
+    item: mapItemReferenceDetail(item),
+    userItem: item.userItem ? mapUserItemDetail(item.userItem, item) : null,
+    purchases: item.purchases.map(mapPurchase),
+    preorders: item.preorders.map((preorder) =>
+      mapPreorderListItem({ ...preorder, item }),
+    ),
+    notes: item.notes.map(mapNote),
+    playSummary: {
+      count: item.playSessions.length,
+      lastPlayedAt: getLastPlayedAt(item.playSessions)?.toISOString() ?? null,
+      totalDurationMinutes: item.playSessions.reduce(
+        (sum, play) => sum + (play.durationMinutes ?? 0),
+        0,
+      ),
+    },
+    recentPlays: item.playSessions
+      .slice(0, 5)
+      .map((play) => mapPlayListItem({ ...play, item })),
+    primaryAction: item.userItem?.owned ? "edit_item" : "add_to_collection",
+  };
 }
