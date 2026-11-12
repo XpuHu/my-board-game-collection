@@ -490,6 +490,7 @@ export type AddToCollectionRequest = {
 };
 
 export type ExternalSearchResultDto = {
+  russianTitle?: string | null;
   provider: ProviderCode;
   externalId: string;
   title: string;

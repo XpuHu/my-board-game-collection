@@ -66,8 +66,74 @@ export class BoardGameGeekProvider implements ItemProvider {
     return item;
   }
 
-  async getRelatedItems(_externalId: string) {
-    return [];
+  async getRelatedItems(
+    externalId: string,
+    kind: "expansion" | "accessory" = "expansion",
+  ): Promise<ExternalSearchResultDto[]> {
+    if (!/^\d+$/.test(externalId))
+      throw ApiError.badRequest("VALIDATION_ERROR", "Invalid BoardGameGeek ID");
+    const xml = await fetchBggXml(
+      `/thing?id=${encodeURIComponent(externalId)}`,
+    );
+    const block = getElementBlocks(xml, "item").find(
+      (item) => item.attrs.id === externalId,
+    );
+    if (!block)
+      throw ApiError.notFound(
+        "ITEM_NOT_FOUND",
+        "BoardGameGeek item was not found",
+      );
+    const seen = new Set<string>();
+    const expansions: ExternalSearchResultDto[] = getSelfClosingElements(
+      block.body,
+      "link",
+    )
+      .filter(
+        (link) =>
+          link.type ===
+            (kind === "accessory"
+              ? "boardgameaccessory"
+              : "boardgameexpansion") &&
+          link.inbound !== "true" &&
+          Boolean(link.id) &&
+          link.id !== externalId,
+      )
+      .filter((link) => {
+        if (seen.has(link.id!)) return false;
+        seen.add(link.id!);
+        return true;
+      })
+      .map((link) => ({
+        provider: PROVIDER_CODE,
+        externalId: link.id!,
+        title: link.value || "Untitled",
+        itemTypeCode: kind,
+        url: bggItemUrl(
+          link.id!,
+          kind === "accessory" ? "boardgameaccessory" : "boardgameexpansion",
+        ),
+      }));
+    // The base game's links contain only IDs and names. Load publication data
+    // and alternate names in batches rather than requesting every expansion.
+    for (let offset = 0; offset < expansions.length; offset += 20) {
+      const batch = expansions.slice(offset, offset + 20);
+      try {
+        const details = await fetchBggXml(
+          `/thing?id=${batch.map((item) => item.externalId).join(",")}`,
+        );
+        for (const expansion of batch) {
+          const item = parseThing(details, expansion.externalId);
+          if (item) {
+            expansion.title = item.title;
+            expansion.russianTitle = item.russianTitle;
+            expansion.year = item.year;
+          }
+        }
+      } catch {
+        // Keep selectable expansions when optional publication metadata is unavailable.
+      }
+    }
+    return expansions;
   }
 
   async synchronizeItem(externalId: string) {
@@ -82,7 +148,7 @@ async function fetchBggXml(path: string) {
     headers: getBggRequestHeaders(),
   });
 
-  if (!response.ok) {
+  if (!response.ok || response.status === 202) {
     throw new ApiError(502, "PROVIDER_ERROR", "BoardGameGeek request failed", {
       provider: PROVIDER_CODE,
       status: response.status,
@@ -128,6 +194,7 @@ function parseThing(xml: string, externalId: string): ProviderItem | null {
     provider: PROVIDER_CODE,
     externalId,
     title: primaryName ?? "Untitled",
+    russianTitle: russianName(body),
     originalTitle: primaryName ?? null,
     itemTypeCode,
     description: getElementText(body, "description"),
@@ -149,6 +216,27 @@ function parseThing(xml: string, externalId: string): ProviderItem | null {
   };
 }
 
+function russianName(body: string): string | null {
+  const names = getSelfClosingElements(body, "name");
+  const explicit = names.find(
+    (name) =>
+      /^(ru|rus|russian)$/i.test(name.language ?? name.lang ?? "") &&
+      name.value,
+  );
+  if (explicit) return explicit.value;
+  // BGG alternate names usually omit language. Prefer a Russian Cyrillic name;
+  // do not translate titles or label other Cyrillic alphabets as Russian.
+  return (
+    names.find(
+      (name) =>
+        /[А-Яа-яЁё]/.test(name.value ?? "") &&
+        !/[\u0400-\u040F\u0450-\u045F\u0460-\u052F]/.test(
+          (name.value ?? "").replace(/[Ёё]/g, ""),
+        ),
+    )?.value ?? null
+  );
+}
+
 function providerItemToSearchResult(
   item: ProviderItem,
 ): ExternalSearchResultDto {
@@ -156,6 +244,7 @@ function providerItemToSearchResult(
     provider: item.provider,
     externalId: item.externalId,
     title: item.title,
+    russianTitle: item.russianTitle,
     originalTitle: item.originalTitle,
     itemTypeCode: item.itemTypeCode,
     year: item.year,

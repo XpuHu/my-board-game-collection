@@ -9,6 +9,7 @@ export type ItemProviderFilters = {
 };
 
 export type ProviderItem = {
+  russianTitle?: string | null;
   provider: ProviderCode;
   externalId: string;
   title: string;
