@@ -1,3 +1,4 @@
+import { validIsoDate } from "@/shared/lib/calendar-date";
 import { z } from "zod";
 
 import {
@@ -17,10 +18,20 @@ export const playResultSchema = z.enum(playResults);
 export const preorderStatusSchema = z.enum(preorderStatuses);
 export const expectedDatePrecisionSchema = z.enum(expectedDatePrecisions);
 
+const currencySchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .refine(
+    (value) =>
+      /^[A-Z]{3}$/.test(value) &&
+      [...Intl.supportedValuesOf("currency"), "XXX", "XTS"].includes(value),
+    "Expected a supported currency code",
+  );
 const nullableStringSchema = z.string().trim().min(1).nullable();
 
 const isoDateStringSchema = z.string().refine((value) => {
-  return !Number.isNaN(Date.parse(value));
+  return validIsoDate(value);
 }, "Expected an ISO 8601 date string");
 
 const optionalIsoDateStringSchema = isoDateStringSchema.nullable().optional();
@@ -31,7 +42,7 @@ export const createPurchaseRequestSchema = z
   .object({
     shop: z.string().trim().min(1),
     price: z.number().nonnegative(),
-    currency: z.string().trim().min(3).max(3),
+    currency: currencySchema,
     deliveryCost: z.number().nonnegative().nullable().optional(),
     discount: z.number().nonnegative().nullable().optional(),
     totalPrice: z.number().nonnegative().nullable().optional(),
@@ -140,6 +151,27 @@ export const createLinkRequestSchema = z
 
 export const updateLinkRequestSchema = createLinkRequestSchema.partial();
 
+export const createItemRelationRequestSchema = z
+  .object({
+    relatedItemId: uuidSchema,
+    direction: z.enum(["parent", "child"]),
+    relationType: z.enum([
+      "requires",
+      "expands",
+      "compatible_with",
+      "contains",
+      "part_of",
+      "localized_version_of",
+      "alternative_to",
+      "related",
+    ]),
+    comment: nullableStringSchema.optional(),
+  })
+  .strict();
+
+export const updateItemRelationRequestSchema =
+  createItemRelationRequestSchema.partial();
+
 export const importExternalItemRequestSchema = z
   .object({
     provider: providerCodeSchema,
@@ -168,11 +200,31 @@ export const createPlaySessionRequestSchema = z
 export const updatePlaySessionRequestSchema =
   createPlaySessionRequestSchema.partial();
 
-export const createPreorderRequestSchema = z
+export const preorderPositionSelectionSchema = z
   .object({
+    itemId: z.string().uuid().optional(),
+    title: z.string().trim().min(1).max(500).optional(),
+    external: z
+      .object({
+        provider: z.literal("boardgamegeek"),
+        externalId: z.string().regex(/^\d+$/),
+      })
+      .strict()
+      .optional(),
+    price: z.number().finite().nonnegative().optional(),
+  })
+  .strict()
+  .refine((v) => [v.itemId, v.title, v.external].filter(Boolean).length === 1, {
+    message: "Выберите дополнение или укажите название нового",
+  });
+
+const preorderFieldsSchema = z
+  .object({
+    pricingMode: z.enum(["per_item", "lot"]).optional(),
+    paymentType: z.enum(["one_time", "installments", "unspecified"]).optional(),
     shop: z.string().trim().min(1),
     price: z.number().nonnegative(),
-    currency: z.string().trim().min(3).max(3),
+    currency: currencySchema,
     orderDate: optionalIsoDateStringSchema,
     expectedDate: optionalIsoDateStringSchema,
     expectedDatePrecision: expectedDatePrecisionSchema.optional(),
@@ -182,6 +234,45 @@ export const createPreorderRequestSchema = z
     comment: nullableStringSchema.optional(),
   })
   .strict();
+
+export const createPreorderRequestSchema = preorderFieldsSchema.refine(
+  (input) =>
+    ["planned", "ordered", "paid", "shipped"].includes(input.status) &&
+    !input.receivedDate,
+  {
+    message: "Create an active preorder without a received date",
+    path: ["status"],
+  },
+);
+export const updatePreorderRequestSchema = preorderFieldsSchema
+  .partial()
+  .extend({
+    operationId: z.string().uuid().optional(),
+    expansions: z
+      .array(preorderPositionSelectionSchema)
+      .min(1)
+      .max(50)
+      .optional(),
+    positionPrices: z
+      .array(
+        z
+          .object({
+            preorderId: z.string().uuid(),
+            price: z.number().finite().nonnegative(),
+          })
+          .strict(),
+      )
+      .max(100)
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.expansions?.length && !value.operationId)
+      context.addIssue({
+        code: "custom",
+        path: ["operationId"],
+        message: "Для добавления позиций нужен идентификатор операции",
+      });
+  });
 
 export const updatePreorderExpectedDateRequestSchema = z
   .object({
@@ -382,7 +473,7 @@ const backupPurchaseSchema = z
     itemId: uuidSchema,
     shop: z.string().trim().min(1),
     price: z.number().nonnegative(),
-    currency: z.string().trim().min(3).max(3),
+    currency: currencySchema,
     deliveryCost: z.number().nonnegative().nullable().optional(),
     discount: z.number().nonnegative().nullable().optional(),
     totalPrice: z.number().nonnegative(),
@@ -408,12 +499,16 @@ const backupPreorderEventSchema = z
 
 const backupPreorderSchema = z
   .object({
+    parentId: uuidSchema.nullable().optional(),
+    pricingMode: z.enum(["per_item", "lot"]).optional(),
+    paymentType: z.enum(["one_time", "installments", "unspecified"]).optional(),
+    priceKnown: z.boolean().optional(),
     id: uuidSchema,
     itemId: uuidSchema,
     itemTitle: z.string(),
     shop: z.string().trim().min(1),
     price: z.number().nonnegative(),
-    currency: z.string().trim().min(3).max(3),
+    currency: currencySchema,
     orderDate: isoDateStringSchema.nullable().optional(),
     expectedDate: isoDateStringSchema.nullable().optional(),
     expectedDatePrecision: expectedDatePrecisionSchema.optional(),
@@ -557,6 +652,12 @@ export type CreateImageInput = z.infer<typeof createImageRequestSchema>;
 export type UpdateImageInput = z.infer<typeof updateImageRequestSchema>;
 export type CreateLinkInput = z.infer<typeof createLinkRequestSchema>;
 export type UpdateLinkInput = z.infer<typeof updateLinkRequestSchema>;
+export type CreateItemRelationInput = z.infer<
+  typeof createItemRelationRequestSchema
+>;
+export type UpdateItemRelationInput = z.infer<
+  typeof updateItemRelationRequestSchema
+>;
 export type UpdateUserItemInput = z.infer<typeof updateUserItemRequestSchema>;
 export type AddToCollectionInput = z.infer<typeof addToCollectionRequestSchema>;
 export type AddToWishlistInput = z.infer<typeof addToWishlistRequestSchema>;

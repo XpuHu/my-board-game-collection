@@ -274,6 +274,12 @@ model Purchase {
 model Preorder {
   id                    String    @id @default(uuid())
   itemId                String    @map("item_id")
+  parentId              String?   @map("parent_id")
+  pricingMode           String    @default("per_item") @map("pricing_mode")
+  paymentType           String    @default("unspecified") @map("payment_type")
+  priceKnown            Boolean   @default(true) @map("price_known")
+  parent                Preorder? @relation("PreorderLot", fields: [parentId], references: [id], onDelete: Cascade)
+  children              Preorder[] @relation("PreorderLot")
   shop                  String
   price                 Decimal
   currency              String
@@ -293,6 +299,7 @@ model Preorder {
   @@index([itemId])
   @@index([status])
   @@index([expectedDate])
+  @@index([parentId])
   @@map("preorders")
 }
 
@@ -386,4 +393,13 @@ model Tag {
   items Item[] @relation("ItemTags")
 
   @@map("tags")
+}
+
+model CommandReceipt {
+  id String @id
+  kind String
+  fingerprint String
+  result String
+  createdAt DateTime @default(now()) @map("created_at")
+  @@map("command_receipts")
 }

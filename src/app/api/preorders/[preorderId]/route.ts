@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { createPreorderRequestSchema } from "@/shared/api";
+import { updatePreorderRequestSchema } from "@/shared/api";
 import { withApiErrorHandling } from "@/server/api/errors";
 import { parseJsonBody } from "@/server/api/request";
 import {
   deletePreorder,
   updatePreorder,
 } from "@/server/application/preorders/preorder-service";
-
-const updatePreorderRequestSchema = createPreorderRequestSchema.partial();
 
 type RouteContext = {
   params: Promise<{

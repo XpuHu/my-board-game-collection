@@ -253,21 +253,35 @@ export type NoteDto = {
   updatedAt: string;
 };
 
+export const itemRelationTypes = [
+  "requires",
+  "expands",
+  "compatible_with",
+  "contains",
+  "part_of",
+  "localized_version_of",
+  "alternative_to",
+  "related",
+] as const;
+
+export type ItemRelationType = (typeof itemRelationTypes)[number];
+
 export type ItemRelationDto = {
   id: string;
   direction: "parent" | "child";
-  relationType:
-    | "requires"
-    | "expands"
-    | "compatible_with"
-    | "contains"
-    | "part_of"
-    | "localized_version_of"
-    | "alternative_to"
-    | "related";
+  relationType: ItemRelationType;
   relatedItem: ItemCompactDto;
   comment?: string | null;
 };
+
+export type CreateItemRelationRequest = {
+  relatedItemId: string;
+  direction: "parent" | "child";
+  relationType: ItemRelationType;
+  comment?: string | null;
+};
+
+export type UpdateItemRelationRequest = Partial<CreateItemRelationRequest>;
 
 export type ItemDto = {
   id: string;
@@ -401,7 +415,7 @@ export type ItemDetailsDto = {
 
 export type CollectionItemDetailsDto = ItemDetailsDto & {
   recentPlays: PlaySessionDto[];
-  primaryAction: "add_play";
+  primaryAction: "add_play" | "edit_item" | "add_to_collection";
 };
 
 export type WishlistItemDetailsDto = ItemDetailsDto & {
@@ -458,7 +472,7 @@ export type CollectionItemDetailDto = ItemDetailDto & {
   purchases: PurchaseDto[];
   preorders: PreorderListItemDto[];
   notes: NoteDto[];
-  primaryAction: "add_play";
+  primaryAction: "add_play" | "edit_item" | "add_to_collection";
 };
 
 export type WishlistItemDetailDto = ItemDetailDto & {
@@ -609,7 +623,15 @@ export type PreorderSummaryDto = {
   expectedDatePrecision: ExpectedDatePrecision;
 };
 
+export type PreorderPricingMode = "per_item" | "lot";
+export type PreorderPaymentType = "one_time" | "installments" | "unspecified";
 export type PreorderListItemDto = PreorderSummaryDto & {
+  parentId?: string | null;
+  pricingMode?: PreorderPricingMode;
+  paymentType?: PreorderPaymentType;
+  priceKnown?: boolean;
+  basePrice?: number;
+  children?: PreorderListItemDto[];
   item: ItemCompactDto;
   shop: string;
   price: MoneyAmountDto;
@@ -650,6 +672,8 @@ export type UpdatePreorderExpectedDateResponse = {
 };
 
 export type CreatePreorderRequest = {
+  pricingMode?: PreorderPricingMode;
+  paymentType?: PreorderPaymentType;
   shop: string;
   price: number;
   currency: string;
@@ -660,6 +684,18 @@ export type CreatePreorderRequest = {
   trackingNumber?: string | null;
   status: PreorderStatus;
   comment?: string | null;
+};
+
+export type PreorderPositionInput = {
+  itemId?: string;
+  title?: string;
+  external?: ExpansionExternalSource;
+  price?: number;
+};
+export type UpdatePreorderRequest = Partial<CreatePreorderRequest> & {
+  operationId?: string;
+  expansions?: PreorderPositionInput[];
+  positionPrices?: { preorderId: string; price: number }[];
 };
 
 export type UpdatePreorderExpectedDateRequest = {
@@ -940,6 +976,10 @@ export type BackupPreorderEventDto = {
 };
 
 export type BackupPreorderDto = {
+  parentId?: string | null;
+  pricingMode?: PreorderPricingMode;
+  paymentType?: PreorderPaymentType;
+  priceKnown?: boolean;
   id: string;
   itemId: string;
   itemTitle: string;
@@ -1008,4 +1048,29 @@ export type JsonImportReportDto = {
     tags: number;
     preorders: number;
   };
+};
+
+export type ItemCardDto = Omit<
+  CollectionItemDetailDto,
+  "userItem" | "primaryAction"
+> & {
+  userItem: UserItemDetailDto | null;
+  primaryAction: "edit_item" | "add_to_collection";
+};
+
+export type ExpansionExternalSource = {
+  provider: ProviderCode;
+  externalId: string;
+};
+export type ExpansionOptionDto = {
+  russianTitle?: string | null;
+  year?: number | null;
+  id: string;
+  title: string;
+  itemId?: string;
+  external?: ExpansionExternalSource;
+};
+export type ExpansionOptionsResponse = {
+  data: ExpansionOptionDto[];
+  warnings?: { message: string }[];
 };
