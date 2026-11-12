@@ -1,12 +1,21 @@
-import { Prisma } from "@prisma/client";
+import { updatePreorderRequestSchema } from "@/shared/api";
+import { runCommand } from "@/server/application/items/command-receipt";
+import {
+  linkExpansionsInTransaction,
+  prepareExpansionImports,
+  type ExpansionSelection,
+} from "@/server/application/items/expansion-service";
+import { Prisma, type Preorder } from "@prisma/client";
 
 import { prisma } from "@/infrastructure/database/prisma";
 import type {
   CreatePreorderInput,
+  UpdatePreorderRequest,
   ExpectedDatePrecision,
   PaginatedResponse,
   PreorderListItemDto,
   PreorderQueryDto,
+  PreorderStatus,
   UpdatePreorderExpectedDateResponse,
   UpdatePreorderExpectedDateInput,
 } from "@/shared/api";
@@ -23,9 +32,18 @@ import {
   resolveUserItemTransition,
 } from "@/server/application/items/user-item-transition";
 
-type UpdatePreorderInput = Partial<CreatePreorderInput>;
+type UpdatePreorderInput = Partial<CreatePreorderInput> & {
+  operationId?: string;
+  expansions?: ExpansionSelection[];
+  positionPrices?: { preorderId: string; price: number }[];
+};
 
-const activeStatuses = ["planned", "ordered", "paid", "shipped"];
+const activeStatuses = [
+  "planned",
+  "ordered",
+  "paid",
+  "shipped",
+] satisfies PreorderStatus[];
 
 export async function listPreorders(): Promise<LegacyPreorderDto[]> {
   const preorders = await prisma.preorder.findMany({
@@ -61,7 +79,7 @@ export async function listPreorderItems(
     prisma.preorder.count({ where }),
     prisma.preorder.findMany({
       where,
-      select: preorderListSelect,
+      select: preorderLotSelect,
       orderBy: [{ expectedDate: "asc" }, { createdAt: "desc" }, { id: "asc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -83,149 +101,359 @@ export async function createPreorder(
   itemId: string,
   input: CreatePreorderInput,
 ): Promise<LegacyPreorderDto> {
-  await assertItemExists(itemId);
+  const preorder = await prisma.$transaction((tx) =>
+    createPreorderInTransaction(tx, itemId, input),
+  );
+  return mapLegacyPreorder(preorder, preorder.item.title);
+}
+
+export async function createPreorderInTransaction(
+  tx: Prisma.TransactionClient,
+  itemId: string,
+  input: CreatePreorderInput,
+  group?: { parentId: string; priceKnown: boolean },
+) {
+  const item = await tx.item.findFirst({
+    where: { id: itemId, deletedAt: null },
+  });
+  if (!item) throw ApiError.notFound("ITEM_NOT_FOUND", "Item was not found");
+  if (!isActiveStatus(input.status) || input.receivedDate)
+    throw ApiError.badRequest(
+      "INVALID_PREORDER_STATE",
+      "Create an active preorder without a received date",
+    );
   const expected = resolveExpectedDate(
     input.expectedDate,
     input.expectedDatePrecision,
   );
-
-  const preorder = await prisma.$transaction(async (tx) => {
-    const created = await tx.preorder.create({
-      data: {
-        itemId,
-        shop: input.shop,
-        price: input.price,
-        currency: input.currency,
-        orderDate: toDate(input.orderDate),
-        expectedDate: expected.date,
-        expectedDatePrecision: expected.precision,
-        receivedDate: toDate(input.receivedDate),
-        trackingNumber: input.trackingNumber,
-        status: input.status,
-        comment: input.comment,
-      },
-      include: preorderInclude,
-    });
-
-    await tx.userItem.upsert({
-      where: {
-        itemId,
-      },
-      create: {
-        itemId,
-        owned: false,
-        wishlist: false,
-        status: "active",
-      },
-      update: {},
-    });
-
-    return created;
+  const created = await tx.preorder.create({
+    data: {
+      itemId,
+      parentId: group?.parentId,
+      priceKnown: group?.priceKnown ?? true,
+      pricingMode: input.pricingMode ?? "per_item",
+      paymentType: input.paymentType ?? "unspecified",
+      shop: input.shop,
+      price: input.price,
+      currency: input.currency,
+      orderDate: toDate(input.orderDate),
+      expectedDate: expected.date,
+      expectedDatePrecision: expected.precision,
+      receivedDate: null,
+      trackingNumber: input.trackingNumber,
+      status: input.status,
+      comment: input.comment,
+    },
+    include: preorderInclude,
   });
-
-  return mapLegacyPreorder(preorder, preorder.item.title);
+  const current = await tx.userItem.findUnique({ where: { itemId } });
+  await tx.userItem.upsert({
+    where: { itemId },
+    create: { itemId, owned: false, wishlist: false, status: "active" },
+    update: !current?.owned ? { status: "active" } : {},
+  });
+  return created;
 }
 
 export async function updatePreorder(
   preorderId: string,
-  input: UpdatePreorderInput,
+  input: UpdatePreorderRequest,
 ): Promise<LegacyPreorderDto> {
-  const existing = await getPreorderOrThrow(preorderId);
-  const nextExpected = resolveExpectedDateUpdate(existing, input);
-  const nextReceivedDate = resolveReceivedDate(existing.receivedDate, input);
-
-  const preorder = await prisma.$transaction(async (tx) => {
-    const updated = await tx.preorder.update({
-      where: {
-        id: preorderId,
-      },
-      data: {
-        shop: input.shop,
-        price: input.price,
-        currency: input.currency,
-        orderDate: "orderDate" in input ? toDate(input.orderDate) : undefined,
-        expectedDate: nextExpected?.date,
-        expectedDatePrecision: nextExpected?.precision,
-        receivedDate: nextReceivedDate,
-        trackingNumber: input.trackingNumber,
-        status: input.status,
-        comment: input.comment,
-      },
-      include: preorderInclude,
-    });
-
+  const { operationId, ...payload } = updatePreorderRequestSchema.parse(input);
+  if (!operationId) return changePreorder(preorderId, payload, false);
+  let prepared: Awaited<ReturnType<typeof prepareExpansionImports>> = new Map();
+  return runCommand(
+    operationId,
+    "edit-preorder",
+    { preorderId, ...payload },
+    async (tx) => {
+      const updated = await changePreorderInTransaction(
+        tx,
+        preorderId,
+        payload,
+        false,
+        prepared,
+      );
+      return mapLegacyPreorder(updated, updated.item.title);
+    },
+    payload.expansions?.some((item) => item.external)
+      ? async () => {
+          prepared = await prepareExpansionImports(payload.expansions ?? []);
+        }
+      : undefined,
+  );
+}
+export async function reactivatePreorder(
+  preorderId: string,
+): Promise<LegacyPreorderDto> {
+  return changePreorder(preorderId, {}, true);
+}
+async function changePreorder(
+  preorderId: string,
+  request: UpdatePreorderInput,
+  reactivate: boolean,
+) {
+  const updated = await prisma.$transaction((tx) =>
+    changePreorderInTransaction(tx, preorderId, request, reactivate),
+  );
+  return mapLegacyPreorder(updated, updated.item.title);
+}
+async function changePreorderInTransaction(
+  tx: Prisma.TransactionClient,
+  preorderId: string,
+  request: UpdatePreorderInput,
+  reactivate: boolean,
+  prepared: Awaited<ReturnType<typeof prepareExpansionImports>> = new Map(),
+) {
+  const existing = await tx.preorder.findFirst({
+    where: { id: preorderId, item: { deletedAt: null } },
+    include: { children: { where: { item: { deletedAt: null } } } },
+  });
+  if (!existing) throw preorderNotFound();
+  if (existing.parentId)
+    throw ApiError.conflict(
+      "EDIT_LOT",
+      "Позиция входит в лот. Измените предзаказ основной игры.",
+    );
+  const { positionPrices, expansions = [], ...rootRequest } = request;
+  const childPrices = new Map(
+    (positionPrices ?? []).map((position) => [
+      position.preorderId,
+      position.price,
+    ]),
+  );
+  if (
+    childPrices.size !== (positionPrices?.length ?? 0) ||
+    [...childPrices.keys()].some(
+      (id) => !existing.children.some((child) => child.id === id),
+    )
+  )
+    throw ApiError.badRequest(
+      "INVALID_POSITION",
+      "Позиция не входит в этот лот",
+    );
+  const mode = rootRequest.pricingMode ?? existing.pricingMode;
+  if (
+    mode === "per_item" &&
+    existing.children.some(
+      (child) => !child.priceKnown && !childPrices.has(child.id),
+    )
+  )
+    throw ApiError.badRequest(
+      "POSITION_PRICE_REQUIRED",
+      "Укажите стоимость каждой позиции для режима цен по позициям",
+    );
+  const result = await applyPreorderChange(
+    tx,
+    existing,
+    rootRequest,
+    reactivate,
+  );
+  for (const child of existing.children) {
+    if (reactivate && child.status !== "received") continue;
+    const childInput: UpdatePreorderInput = {
+      ...rootRequest,
+      price: mode === "lot" ? 0 : childPrices.get(child.id),
+      pricingMode: mode as "lot" | "per_item",
+    };
     if (
-      nextExpected &&
-      (!sameDate(existing.expectedDate, nextExpected.date) ||
-        existing.expectedDatePrecision !== nextExpected.precision)
-    ) {
-      await tx.preorderEvent.create({
-        data: {
-          preorderId,
-          type: "expected_date_changed",
-          oldValue: JSON.stringify({
-            expectedDate: existing.expectedDate?.toISOString() ?? null,
-            expectedDatePrecision: storedExpectedDatePrecision(existing),
-          }),
-          newValue: JSON.stringify({
-            expectedDate: nextExpected.date?.toISOString() ?? null,
-            expectedDatePrecision: nextExpected.precision,
-          }),
+      ["received", "cancelled"].includes(child.status) &&
+      childInput.status !== child.status &&
+      !reactivate
+    )
+      childInput.status = child.status as PreorderStatus;
+    await applyPreorderChange(tx, child, childInput, reactivate);
+    await tx.preorder.update({
+      where: { id: child.id },
+      data: { priceKnown: mode !== "lot" },
+    });
+  }
+  if (expansions.length) {
+    if (mode !== "lot" && expansions.some((item) => item.price === undefined))
+      throw ApiError.badRequest(
+        "POSITION_PRICE_REQUIRED",
+        "Укажите стоимость добавляемых дополнений или выберите цену всего лота",
+      );
+    const additions = await linkExpansionsInTransaction(
+      tx,
+      existing.itemId,
+      expansions,
+      prepared,
+    );
+    for (const addition of additions) {
+      if (existing.children.some((child) => child.itemId === addition.itemId))
+        throw ApiError.conflict(
+          "POSITION_ALREADY_IN_LOT",
+          "Это дополнение уже входит в лот",
+        );
+      const child = await createPreorderInTransaction(
+        tx,
+        addition.itemId,
+        {
+          shop: result.shop,
+          currency: result.currency,
+          price: mode === "lot" ? 0 : addition.price!,
+          pricingMode: mode as "lot" | "per_item",
+          paymentType: result.paymentType as
+            "one_time" | "installments" | "unspecified",
+          orderDate: result.orderDate?.toISOString() ?? null,
+          expectedDate: result.expectedDate?.toISOString() ?? null,
+          expectedDatePrecision: storedExpectedDatePrecision(result),
+          trackingNumber: result.trackingNumber,
+          comment: result.comment,
+          status: isActiveStatus(result.status) ? result.status : "ordered",
         },
-      });
+        { parentId: existing.id, priceKnown: mode !== "lot" },
+      );
+      if (result.status === "received" || result.status === "cancelled")
+        await applyPreorderChange(
+          tx,
+          child,
+          {
+            status: result.status,
+            ...(result.status === "received" && result.receivedDate
+              ? { receivedDate: result.receivedDate.toISOString() }
+              : {}),
+          },
+          false,
+        );
     }
-
-    if (input.status && input.status !== existing.status) {
-      await tx.preorderEvent.create({
-        data: {
-          preorderId,
-          type: "status_changed",
-          oldValue: existing.status,
-          newValue: input.status,
-        },
-      });
-    }
-
-    if (input.status === "received") {
+  }
+  return result;
+}
+async function applyPreorderChange(
+  tx: Prisma.TransactionClient,
+  existing: Preorder,
+  request: UpdatePreorderInput,
+  reactivate: boolean,
+) {
+  const preorderId = existing.id;
+  let input = { ...request };
+  if (reactivate) {
+    if (existing.status !== "received")
+      throw ApiError.conflict(
+        "PREORDER_NOT_RECEIVED",
+        "Only a received preorder can be reactivated",
+      );
+    const previous = await tx.preorderEvent.findFirst({
+      where: { preorderId, type: "status_changed", newValue: "received" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    input = {
+      status: isActiveStatus(previous?.oldValue)
+        ? previous.oldValue
+        : "shipped",
+      receivedDate: null,
+    };
+  }
+  const status = input.status ?? existing.status;
+  const statusChanged = status !== existing.status;
+  if (statusChanged && !isActiveStatus(existing.status) && !reactivate)
+    throw ApiError.conflict(
+      "INVALID_PREORDER_TRANSITION",
+      "A completed preorder requires an explicit reactivation command",
+    );
+  if (status !== "received" && input.receivedDate)
+    throw ApiError.badRequest(
+      "INVALID_RECEIVED_DATE",
+      "Only received preorders have a received date",
+    );
+  if (status === "received" && input.receivedDate === null)
+    throw ApiError.badRequest(
+      "RECEIVED_DATE_REQUIRED",
+      "Received date cannot be null",
+    );
+  const receivedDate =
+    status === "received"
+      ? existing.status === "received"
+        ? (existing.receivedDate ?? new Date())
+        : (toDate(input.receivedDate) ?? new Date())
+      : null;
+  const expected = resolveExpectedDateUpdate(existing, input);
+  await tx.preorder.update({
+    where: { id: preorderId },
+    data: {
+      pricingMode: input.pricingMode,
+      paymentType: input.paymentType,
+      shop: input.shop,
+      price: input.price,
+      currency: input.currency,
+      trackingNumber: input.trackingNumber,
+      comment: input.comment,
+      orderDate: "orderDate" in input ? toDate(input.orderDate) : undefined,
+      expectedDate: expected?.date,
+      expectedDatePrecision: expected?.precision,
+      status,
+      receivedDate,
+    },
+  });
+  if (
+    expected &&
+    (!sameDate(existing.expectedDate, expected.date) ||
+      storedExpectedDatePrecision(existing) !== expected.precision)
+  ) {
+    await tx.preorderEvent.create({
+      data: {
+        preorderId,
+        type: "expected_date_changed",
+        oldValue: JSON.stringify({
+          expectedDate: existing.expectedDate?.toISOString() ?? null,
+          expectedDatePrecision: storedExpectedDatePrecision(existing),
+        }),
+        newValue: JSON.stringify({
+          expectedDate: expected.date?.toISOString() ?? null,
+          expectedDatePrecision: expected.precision,
+        }),
+      },
+    });
+  }
+  if (statusChanged) {
+    await tx.preorderEvent.create({
+      data: {
+        preorderId,
+        type: "status_changed",
+        oldValue: existing.status,
+        newValue: status,
+      },
+    });
+    if (status === "received") {
       const current = await tx.userItem.findUnique({
         where: { itemId: existing.itemId },
       });
       const next = resolveUserItemTransition(current, collectionTransition());
       await tx.userItem.upsert({
-        where: {
-          itemId: existing.itemId,
-        },
-        create: {
-          itemId: existing.itemId,
-          ...next,
-        },
+        where: { itemId: existing.itemId },
+        create: { itemId: existing.itemId, ...next },
         update: next,
       });
     }
-
-    if (input.status === "cancelled") {
-      const userItem = await tx.userItem.findUnique({
+    if (status === "cancelled") {
+      const current = await tx.userItem.findUnique({
+        where: { itemId: existing.itemId },
+      });
+      const remaining = await tx.preorder.count({
         where: {
-          itemId: existing.itemId,
+          OR: [
+            { itemId: existing.itemId },
+            { children: { some: { itemId: existing.itemId } } },
+          ],
+          id: { not: existing.parentId ?? preorderId },
+          status: { in: activeStatuses },
         },
       });
-
-      if (userItem && !userItem.owned) {
+      if (current && !current.owned)
         await tx.userItem.update({
-          where: {
-            itemId: existing.itemId,
-          },
+          where: { itemId: existing.itemId },
           data: {
-            status: userItem.wishlist ? "active" : "archived",
+            status: current.wishlist || remaining > 0 ? "active" : "archived",
           },
         });
-      }
     }
-
-    return updated;
+  }
+  return tx.preorder.findUniqueOrThrow({
+    where: { id: preorderId },
+    include: preorderInclude,
   });
-
-  return getPreorderDto(preorder.id);
 }
 
 export async function updatePreorderExpectedDate(
@@ -240,10 +468,8 @@ export async function updatePreorderExpectedDateTarget(
   preorderId: string,
   input: UpdatePreorderExpectedDateInput,
 ): Promise<UpdatePreorderExpectedDateResponse> {
-  const { preorder, event, precision } = await updatePreorderExpectedDateCommand(
-    preorderId,
-    input,
-  );
+  const { preorder, event, precision } =
+    await updatePreorderExpectedDateCommand(preorderId, input);
   return {
     preorder: {
       ...mapPreorderListItem(preorder),
@@ -258,22 +484,59 @@ async function updatePreorderExpectedDateCommand(
   input: UpdatePreorderExpectedDateInput,
 ) {
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.preorder.findUnique({
-      where: { id: preorderId },
+    const existing = await tx.preorder.findFirst({
+      where: { id: preorderId, item: { deletedAt: null } },
     });
     if (!existing) throw preorderNotFound();
+    if (existing.parentId)
+      throw ApiError.conflict(
+        "EDIT_LOT",
+        "Измените срок всего лота через предзаказ основной игры.",
+      );
 
     const nextExpected = resolveExpectedDate(
       input.expectedDate,
       input.expectedDatePrecision,
     );
+    const children = await tx.preorder.findMany({
+      where: { parentId: preorderId },
+    });
+    for (const child of children) {
+      await tx.preorder.update({
+        where: { id: child.id },
+        data: {
+          expectedDate: nextExpected.date,
+          expectedDatePrecision: nextExpected.precision,
+        },
+      });
+      if (
+        !sameDate(child.expectedDate, nextExpected.date) ||
+        storedExpectedDatePrecision(child) !== nextExpected.precision
+      )
+        await tx.preorderEvent.create({
+          data: {
+            preorderId: child.id,
+            type: "expected_date_changed",
+            oldValue: JSON.stringify({
+              expectedDate: child.expectedDate?.toISOString() ?? null,
+              expectedDatePrecision: storedExpectedDatePrecision(child),
+            }),
+            newValue: JSON.stringify({
+              expectedDate: nextExpected.date?.toISOString() ?? null,
+              expectedDatePrecision: nextExpected.precision,
+            }),
+            reason: input.reason,
+            comment: input.comment,
+          },
+        });
+    }
     const preorder = await tx.preorder.update({
       where: { id: preorderId },
       data: {
         expectedDate: nextExpected.date,
         expectedDatePrecision: nextExpected.precision,
       },
-      select: preorderListSelect,
+      select: preorderLotSelect,
     });
     const event = await tx.preorderEvent.create({
       data: {
@@ -297,19 +560,25 @@ async function updatePreorderExpectedDateCommand(
 }
 
 export async function deletePreorder(preorderId: string) {
-  await getPreorderOrThrow(preorderId);
-
-  await prisma.preorder.delete({
-    where: {
-      id: preorderId,
-    },
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.preorder.findFirst({
+      where: { id: preorderId, item: { deletedAt: null } },
+    });
+    if (!existing) throw preorderNotFound();
+    if (existing.parentId)
+      throw ApiError.conflict(
+        "EDIT_LOT",
+        "Удалите лот через предзаказ основной игры.",
+      );
+    await tx.preorder.delete({ where: { id: preorderId } });
   });
 }
 
 async function getPreorderDto(preorderId: string) {
-  const preorder = await prisma.preorder.findUnique({
+  const preorder = await prisma.preorder.findFirst({
     where: {
       id: preorderId,
+      item: { deletedAt: null },
     },
     include: preorderInclude,
   });
@@ -322,9 +591,10 @@ async function getPreorderDto(preorderId: string) {
 }
 
 async function getPreorderOrThrow(preorderId: string) {
-  const preorder = await prisma.preorder.findUnique({
+  const preorder = await prisma.preorder.findFirst({
     where: {
       id: preorderId,
+      item: { deletedAt: null },
     },
   });
 
@@ -415,10 +685,12 @@ function resolveExpectedDateUpdate(
     return null;
   }
 
-  const value = "expectedDate" in input
-    ? input.expectedDate
-    : existing.expectedDate?.toISOString() ?? null;
-  const precision = input.expectedDatePrecision ??
+  const value =
+    "expectedDate" in input
+      ? input.expectedDate
+      : (existing.expectedDate?.toISOString() ?? null);
+  const precision =
+    input.expectedDatePrecision ??
     ("expectedDate" in input
       ? value
         ? "day"
@@ -443,30 +715,29 @@ function sameDate(left?: Date | null, right?: Date | null) {
   return (left?.getTime() ?? null) === (right?.getTime() ?? null);
 }
 
-function resolveReceivedDate(
-  existingReceivedDate: Date | null,
-  input: UpdatePreorderInput,
-) {
-  if ("receivedDate" in input) {
-    return toDate(input.receivedDate);
-  }
-
-  if (input.status === "received" && !existingReceivedDate) {
-    return new Date();
-  }
-
-  return undefined;
+function isActive(preorder: { status: string }) {
+  return isActiveStatus(preorder.status);
 }
 
-function isActive(preorder: { status: string }) {
-  return activeStatuses.includes(preorder.status);
+function isActiveStatus(
+  status: string | null | undefined,
+): status is PreorderStatus {
+  return activeStatuses.some((activeStatus) => activeStatus === status);
 }
 
 function buildPreorderWhere(
   query: PreorderQueryDto,
 ): Prisma.PreorderWhereInput {
   return {
-    itemId: query.itemId,
+    parentId: null,
+    ...(query.itemId
+      ? {
+          OR: [
+            { itemId: query.itemId },
+            { children: { some: { itemId: query.itemId } } },
+          ],
+        }
+      : {}),
     status:
       query.group === "active"
         ? { in: activeStatuses }
@@ -497,6 +768,10 @@ const preorderInclude = {
 
 export const preorderListSelect = {
   id: true,
+  parentId: true,
+  pricingMode: true,
+  paymentType: true,
+  priceKnown: true,
   itemId: true,
   shop: true,
   price: true,
@@ -527,5 +802,13 @@ export const preorderListSelect = {
         take: 1,
       },
     },
+  },
+} satisfies Prisma.PreorderSelect;
+
+export const preorderLotSelect = {
+  ...preorderListSelect,
+  children: {
+    select: preorderListSelect,
+    orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
   },
 } satisfies Prisma.PreorderSelect;

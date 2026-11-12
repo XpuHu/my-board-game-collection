@@ -1,3 +1,4 @@
+import { ApiError } from "@/server/api/errors";
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/infrastructure/database/prisma";
@@ -176,6 +177,11 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
         updatedAt: purchase.updatedAt.toISOString(),
       })),
       preorders: preorders.map((preorder) => ({
+        parentId: preorder.parentId,
+        pricingMode: preorder.pricingMode as "lot" | "per_item",
+        paymentType: preorder.paymentType as
+          "one_time" | "installments" | "unspecified",
+        priceKnown: preorder.priceKnown,
         id: preorder.id,
         itemId: preorder.itemId,
         itemTitle: preorder.item.title,
@@ -802,6 +808,9 @@ async function importPreorders(
       where: { id: preorder.id },
       update: {
         itemId,
+        pricingMode: preorder.pricingMode,
+        paymentType: preorder.paymentType,
+        priceKnown: preorder.priceKnown,
         shop: preorder.shop,
         price: preorder.price,
         currency: preorder.currency,
@@ -817,6 +826,9 @@ async function importPreorders(
       create: {
         id: preorder.id,
         itemId,
+        pricingMode: preorder.pricingMode,
+        paymentType: preorder.paymentType,
+        priceKnown: preorder.priceKnown,
         shop: preorder.shop,
         price: preorder.price,
         currency: preorder.currency,
@@ -835,6 +847,34 @@ async function importPreorders(
     increment(existing ? report.updated : report.created, "preorders");
   }
 
+  for (const preorder of backup.data.preorders) {
+    if (preorder.parentId === undefined || !preorderIdMap.has(preorder.id))
+      continue;
+    const parent = preorder.parentId
+      ? backup.data.preorders.find(
+          (candidate) => candidate.id === preorder.parentId,
+        )
+      : null;
+    if (
+      preorder.parentId &&
+      (preorder.parentId === preorder.id || parent?.parentId)
+    )
+      throw ApiError.badRequest(
+        "INVALID_LOT",
+        "Некорректная структура лота в резервной копии",
+      );
+    const parentId = preorder.parentId
+      ? preorderIdMap.get(preorder.parentId)
+      : null;
+    if (preorder.parentId && !parentId) {
+      report.skippedMissingReferences.preorders += 1;
+      continue;
+    }
+    await tx.preorder.update({
+      where: { id: preorderIdMap.get(preorder.id)! },
+      data: { parentId: parentId ?? null },
+    });
+  }
   return preorderIdMap;
 }
 

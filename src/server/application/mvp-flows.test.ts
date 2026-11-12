@@ -33,6 +33,7 @@ import {
 import {
   createPreorder,
   listPreorderItems,
+  reactivatePreorder,
   updatePreorder,
   updatePreorderExpectedDate,
   updatePreorderExpectedDateTarget,
@@ -645,6 +646,52 @@ describe("MVP service flows", () => {
     expect(userItem.status).toBe("active");
   });
 
+  it("reactivates a received preorder with its previous active status", async () => {
+    const item = await createTestItem({ wishlist: true });
+    const preorder = await createPreorder(item.id, {
+      shop: "Gamefound",
+      price: 80,
+      currency: "USD",
+      expectedDate: "2026-08-01T00:00:00.000Z",
+      status: "paid",
+    });
+
+    await updatePreorder(preorder.id, {
+      status: "received",
+      receivedDate: "2026-08-20T00:00:00.000Z",
+    });
+    const reactivated = await reactivatePreorder(preorder.id);
+    const stored = await prisma.preorder.findUniqueOrThrow({
+      where: { id: preorder.id },
+      include: { events: { orderBy: { createdAt: "asc" } } },
+    });
+
+    expect(reactivated.status).toBe("paid");
+    expect(reactivated.receivedDate).toBeNull();
+    expect(stored.events).toEqual([
+      expect.objectContaining({
+        type: "status_changed",
+        oldValue: "paid",
+        newValue: "received",
+      }),
+      expect.objectContaining({
+        type: "status_changed",
+        oldValue: "received",
+        newValue: "paid",
+      }),
+    ]);
+    await expect(
+      prisma.userItem.findUniqueOrThrow({ where: { itemId: item.id } }),
+    ).resolves.toMatchObject({
+      owned: true,
+      status: "active",
+    });
+    await expect(reactivatePreorder(preorder.id)).rejects.toMatchObject({
+      code: "PREORDER_NOT_RECEIVED",
+      status: 409,
+    });
+  });
+
   it("manages purchases manually and includes them in statistics", async () => {
     const item = await createTestItem({ owned: false, wishlist: true });
 
@@ -788,7 +835,10 @@ describe("MVP service flows", () => {
 
   it("sorts collection and dashboard recently added by ownedAt", async () => {
     const first = await createTestItem({ title: "First created", owned: true });
-    const second = await createTestItem({ title: "Second created", owned: true });
+    const second = await createTestItem({
+      title: "Second created",
+      owned: true,
+    });
 
     await prisma.userItem.update({
       where: { itemId: first.id },
@@ -951,10 +1001,12 @@ describe("MVP service flows", () => {
 
     const backup = await exportJsonBackup();
     expect(backup.schemaVersion).toBe(2);
-    expect(backup.data.userItems.find(({ itemId }) => itemId === base.id)?.ownedAt)
-      .toBeTruthy();
-    expect(backup.data.userItems.find(({ itemId }) => itemId === base.id)?.favorite)
-      .toBe(true);
+    expect(
+      backup.data.userItems.find(({ itemId }) => itemId === base.id)?.ownedAt,
+    ).toBeTruthy();
+    expect(
+      backup.data.userItems.find(({ itemId }) => itemId === base.id)?.favorite,
+    ).toBe(true);
     expect(backup.data.preorders[0].expectedDatePrecision).toBe("day");
     const duplicateExternalReference = {
       ...backup.data.externalReferences[0],
@@ -1032,7 +1084,8 @@ describe("MVP service flows", () => {
       prisma.userItem.findUniqueOrThrow({ where: { itemId: base.id } }),
     ).resolves.toMatchObject({
       ownedAt: new Date(
-        backup.data.userItems.find(({ itemId }) => itemId === base.id)!.ownedAt!,
+        backup.data.userItems.find(({ itemId }) => itemId === base.id)!
+          .ownedAt!,
       ),
       favorite: true,
     });
