@@ -1,5 +1,7 @@
 import type {
   ProviderCode,
+  SyncItemChangeDto,
+  SyncItemField,
   SyncItemInput,
   SyncItemResponse,
 } from "@/shared/api";
@@ -51,13 +53,30 @@ export async function syncItemReference(
   const provider = getProvider(reference.provider as ProviderCode);
   const before = await getItemSnapshot(itemId);
   const providerItem = await provider.synchronizeItem(reference.externalId);
-  const syncedAt = new Date();
   const typeId = await resolveTypeId(providerItem.itemTypeCode);
-  const updatedFields = buildUpdatedFields(
+  const changes = buildChanges(
     before,
     providerItem,
     Boolean(typeId),
+    reference.url,
   );
+
+  if (input.preview) {
+    return {
+      item: await getItemDetails(itemId),
+      preview: true,
+      updatedFields: changes.map(({ field }) => field),
+      changes,
+    };
+  }
+
+  const selectedFields = new Set<SyncItemField>(
+    input.fields ?? changes.map(({ field }) => field),
+  );
+  const appliedChanges = changes.filter(({ field }) =>
+    selectedFields.has(field),
+  );
+  const syncedAt = new Date();
 
   await prisma.$transaction(async (tx) => {
     await tx.item.update({
@@ -65,82 +84,128 @@ export async function syncItemReference(
         id: itemId,
       },
       data: {
-        typeId: typeId ?? undefined,
-        title: providerItem.title,
-        originalTitle: providerItem.originalTitle,
-        description: providerItem.description,
-        year: providerItem.year,
-        minPlayers: providerItem.minPlayers,
-        maxPlayers: providerItem.maxPlayers,
-        minPlayTime: providerItem.minPlayTime,
-        maxPlayTime: providerItem.maxPlayTime,
-        minAge: providerItem.minAge,
-        complexity: providerItem.complexity,
-        rating: providerItem.rating,
+        typeId: selectedFields.has("type") && typeId ? typeId : undefined,
+        title: selectedFields.has("title") ? providerItem.title : undefined,
+        originalTitle: selectedFields.has("originalTitle")
+          ? providerItem.originalTitle
+          : undefined,
+        description: selectedFields.has("description")
+          ? providerItem.description
+          : undefined,
+        year: selectedFields.has("year") ? providerItem.year : undefined,
+        minPlayers: selectedFields.has("minPlayers")
+          ? providerItem.minPlayers
+          : undefined,
+        maxPlayers: selectedFields.has("maxPlayers")
+          ? providerItem.maxPlayers
+          : undefined,
+        minPlayTime: selectedFields.has("minPlayTime")
+          ? providerItem.minPlayTime
+          : undefined,
+        maxPlayTime: selectedFields.has("maxPlayTime")
+          ? providerItem.maxPlayTime
+          : undefined,
+        minAge: selectedFields.has("minAge") ? providerItem.minAge : undefined,
+        complexity: selectedFields.has("complexity")
+          ? providerItem.complexity
+          : undefined,
+        rating: selectedFields.has("rating") ? providerItem.rating : undefined,
         sourceMode: "imported",
-        categories: providerItem.categories,
-        mechanics: providerItem.mechanics,
-        designers: providerItem.designers,
-        artists: providerItem.artists,
-        publishers: providerItem.publishers,
+        categories: selectedFields.has("categories")
+          ? providerItem.categories
+          : undefined,
+        mechanics: selectedFields.has("mechanics")
+          ? providerItem.mechanics
+          : undefined,
+        designers: selectedFields.has("designers")
+          ? providerItem.designers
+          : undefined,
+        artists: selectedFields.has("artists")
+          ? providerItem.artists
+          : undefined,
+        publishers: selectedFields.has("publishers")
+          ? providerItem.publishers
+          : undefined,
       },
     });
-    await syncItemTaxonomy(tx, itemId, providerItem);
+    await syncItemTaxonomy(tx, itemId, {
+      categories: selectedFields.has("categories")
+        ? providerItem.categories
+        : undefined,
+      mechanics: selectedFields.has("mechanics")
+        ? providerItem.mechanics
+        : undefined,
+      designers: selectedFields.has("designers")
+        ? providerItem.designers
+        : undefined,
+      artists: selectedFields.has("artists") ? providerItem.artists : undefined,
+      publishers: selectedFields.has("publishers")
+        ? providerItem.publishers
+        : undefined,
+    });
 
     await tx.externalReference.update({
       where: {
         id: reference.id,
       },
       data: {
-        url: providerItem.url,
+        url: selectedFields.has("externalReferences")
+          ? providerItem.url
+          : undefined,
         lastSync: syncedAt,
       },
     });
 
-    await tx.image.deleteMany({
-      where: {
-        itemId,
-        type: "reference",
-        provider: reference.provider,
-      },
-    });
-
-    if (providerItem.imageUrl) {
-      await tx.image.create({
-        data: {
+    if (selectedFields.has("images")) {
+      await tx.image.deleteMany({
+        where: {
           itemId,
           type: "reference",
           provider: reference.provider,
-          url: providerItem.imageUrl,
-          caption: PROVIDER_LABELS[reference.provider as ProviderCode],
-          sortOrder: 0,
         },
       });
+
+      if (providerItem.imageUrl) {
+        await tx.image.create({
+          data: {
+            itemId,
+            type: "reference",
+            provider: reference.provider,
+            url: providerItem.imageUrl,
+            caption: PROVIDER_LABELS[reference.provider as ProviderCode],
+            sortOrder: 0,
+          },
+        });
+      }
     }
 
-    await tx.link.deleteMany({
-      where: {
-        itemId,
-        title: PROVIDER_LABELS[reference.provider as ProviderCode],
-      },
-    });
-
-    if (providerItem.url) {
-      await tx.link.create({
-        data: {
+    if (selectedFields.has("links")) {
+      await tx.link.deleteMany({
+        where: {
           itemId,
-          type: "other",
-          url: providerItem.url,
           title: PROVIDER_LABELS[reference.provider as ProviderCode],
         },
       });
+
+      if (providerItem.url) {
+        await tx.link.create({
+          data: {
+            itemId,
+            type: "other",
+            url: providerItem.url,
+            title: PROVIDER_LABELS[reference.provider as ProviderCode],
+          },
+        });
+      }
     }
   });
 
   return {
     item: await getItemDetails(itemId),
+    preview: false,
     syncedAt: syncedAt.toISOString(),
-    updatedFields,
+    updatedFields: appliedChanges.map(({ field }) => field),
+    changes: appliedChanges,
   };
 }
 
@@ -253,12 +318,13 @@ async function resolveTypeId(itemTypeCode?: string | null) {
   return itemType?.id ?? null;
 }
 
-function buildUpdatedFields(
+export function buildChanges(
   before: ItemReferenceSnapshot,
   providerItem: ProviderItem,
   willUpdateType: boolean,
-) {
-  const changes: string[] = [];
+  referenceUrl?: string | null,
+): SyncItemChangeDto[] {
+  const changes: SyncItemChangeDto[] = [];
 
   addChange(changes, "type", before.type.code, providerItem.itemTypeCode, {
     enabled: willUpdateType,
@@ -329,16 +395,21 @@ function buildUpdatedFields(
     jsonStringArray(before.publishers),
     providerItem.publishers,
   );
-  changes.push("externalReferences");
-  changes.push("images");
-  changes.push("links");
+  addChange(
+    changes,
+    "externalReferences",
+    referenceUrl ?? null,
+    providerItem.url ?? null,
+  );
+  addChange(changes, "images", null, providerItem.imageUrl ?? null);
+  addChange(changes, "links", referenceUrl ?? null, providerItem.url ?? null);
 
   return changes;
 }
 
 function addChange(
-  changes: string[],
-  field: string,
+  changes: SyncItemChangeDto[],
+  field: SyncItemField,
   before: unknown,
   after: unknown,
   options: { enabled?: boolean } = {},
@@ -348,8 +419,22 @@ function addChange(
   }
 
   if (JSON.stringify(before ?? null) !== JSON.stringify(after ?? null)) {
-    changes.push(field);
+    changes.push({
+      field,
+      currentValue: before ?? null,
+      incomingValue: after ?? null,
+      selectedByDefault: isEmptyReferenceValue(before),
+    });
   }
+}
+
+function isEmptyReferenceValue(value: unknown) {
+  return (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    (Array.isArray(value) && value.length === 0)
+  );
 }
 
 function toNumber(value: unknown) {

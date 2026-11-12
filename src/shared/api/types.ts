@@ -670,12 +670,48 @@ export type UpdatePreorderExpectedDateRequest = {
 
 export type SyncItemRequest = {
   provider?: ProviderCode;
+  preview?: boolean;
+  fields?: SyncItemField[];
+};
+
+export const syncItemFields = [
+  "type",
+  "title",
+  "originalTitle",
+  "description",
+  "year",
+  "minPlayers",
+  "maxPlayers",
+  "minPlayTime",
+  "maxPlayTime",
+  "minAge",
+  "complexity",
+  "rating",
+  "categories",
+  "mechanics",
+  "designers",
+  "artists",
+  "publishers",
+  "externalReferences",
+  "images",
+  "links",
+] as const;
+
+export type SyncItemField = (typeof syncItemFields)[number];
+
+export type SyncItemChangeDto = {
+  field: SyncItemField;
+  currentValue: unknown;
+  incomingValue: unknown;
+  selectedByDefault: boolean;
 };
 
 export type SyncItemResponse = {
   item: ItemDetailsDto;
-  syncedAt: string;
-  updatedFields: string[];
+  preview: boolean;
+  syncedAt?: string;
+  updatedFields: SyncItemField[];
+  changes: SyncItemChangeDto[];
   warnings?: ProviderWarningDto[];
 };
 

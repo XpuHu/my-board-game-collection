@@ -226,6 +226,37 @@ export const syncBggPlaysRequestSchema = z
 export const syncItemRequestSchema = z
   .object({
     provider: providerCodeSchema.optional(),
+    preview: z.boolean().optional(),
+    fields: z
+      .array(
+        z.enum([
+          "type",
+          "title",
+          "originalTitle",
+          "description",
+          "year",
+          "minPlayers",
+          "maxPlayers",
+          "minPlayTime",
+          "maxPlayTime",
+          "minAge",
+          "complexity",
+          "rating",
+          "categories",
+          "mechanics",
+          "designers",
+          "artists",
+          "publishers",
+          "externalReferences",
+          "images",
+          "links",
+        ]),
+      )
+      .optional(),
+  })
+  .refine((input) => input.preview !== true || input.fields === undefined, {
+    message: "Preview request cannot select fields",
+    path: ["fields"],
   })
   .strict();
 
