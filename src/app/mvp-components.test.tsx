@@ -29,7 +29,8 @@ describe("MVP component contracts", () => {
     expect(markup).toContain("Моя коллекция");
     expect(markup).toContain("Поиск по коллекции");
     expect(markup).toContain("Добавить игру");
-    expect(markup).toContain("Недавние партии");
+    expect(markup).not.toContain("Недавние партии");
+    expect(markup).toContain("Название");
     expect(markup).toContain("Загружаем данные");
   });
 

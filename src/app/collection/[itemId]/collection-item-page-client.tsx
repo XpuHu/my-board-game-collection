@@ -1,4 +1,11 @@
 "use client";
+import { AddExpansionsDialog } from "@/components/add-expansions-dialog";
+import {
+  formatExpectedDate,
+  formatCalendarDate as formatDate,
+} from "@/shared/lib/calendar-date";
+import { useProductFeatures } from "@/components/product-features-provider";
+import { itemCardRestAdapter } from "@/features/collection/api";
 
 import * as React from "react";
 import Link from "next/link";
@@ -33,6 +40,7 @@ import {
   type CollectionEditMode,
 } from "@/components/collection-edit-panels";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
+import { EditPreorderDialog } from "@/components/edit-preorder-dialog";
 import { ExpectedDateDialog } from "@/components/expected-date-dialog";
 import { GameCover } from "@/components/game-cover";
 import { OverflowMenu, OverflowMenuItem } from "@/components/overflow-menu";
@@ -91,15 +99,28 @@ const tabLabels: Record<DetailTab, string> = {
   details: "Подробнее",
 };
 
-export function CollectionItemPageClient({ itemId }: { itemId: string }) {
+export function CollectionItemPageClient({
+  itemId,
+  neutral = false,
+}: {
+  itemId: string;
+  neutral?: boolean;
+}) {
+  const features = useProductFeatures();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const requestedTab = searchParams.get("tab") as DetailTab | null;
   const activeTab =
-    requestedTab && tabs.includes(requestedTab) ? requestedTab : "overview";
+    requestedTab &&
+    tabs.includes(requestedTab) &&
+    (features.plays || requestedTab !== "plays")
+      ? requestedTab
+      : "overview";
   const query = useAdapterQuery(
-    collectionDetailRestAdapter,
+    neutral || features.mode === "mvp"
+      ? itemCardRestAdapter
+      : collectionDetailRestAdapter,
     { itemId },
     { key: itemId },
   );
@@ -109,24 +130,55 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
   );
   const [confirmAction, setConfirmAction] =
     React.useState<ConfirmAction | null>(null);
+  const [expansionsOpen, setExpansionsOpen] = React.useState(false);
   const [photoOpen, setPhotoOpen] = React.useState(false);
+  const [editingPreorder, setEditingPreorder] =
+    React.useState<PreorderListItemDto | null>(null);
   const [expectedDatePreorder, setExpectedDatePreorder] =
     React.useState<PreorderListItemDto | null>(null);
-  const [savingAction, setSavingAction] = React.useState<string | null>(null);
+  const [savingActions, setSavingActions] = React.useState(
+    () => new Set<string>(),
+  );
+  const [quickOwnerOverride, setQuickOwnerOverride] = React.useState<
+    Partial<{
+      status: "active" | "for_sale" | "sold" | "archived";
+      personalRating: number | null;
+      favorite: boolean;
+    }>
+  >({});
+
+  /*
+   * Optimistic values are layered over the current query result below. This
+   * avoids a second synchronization effect and lets a failed request restore
+   * only the control that initiated it.
+   */
+  type QuickOwnerState = {
+    status: "active" | "for_sale" | "sold" | "archived";
+    personalRating: number | null;
+    favorite: boolean;
+  };
 
   function setTab(tab: DetailTab) {
     const next = new URLSearchParams(searchParams.toString());
     if (tab === "overview") next.delete("tab");
     else next.set("tab", tab);
     const suffix = next.toString();
-    router.push(`/collection/${itemId}${suffix ? `?${suffix}` : ""}`);
+    router.push(
+      `${neutral ? "/items" : "/collection"}/${itemId}${suffix ? `?${suffix}` : ""}`,
+    );
   }
 
   async function patchOwner(
     input: Record<string, unknown>,
     successMessage: string,
+    control = "owner",
+    optimistic?: Partial<QuickOwnerState>,
   ) {
-    setSavingAction(successMessage);
+    const previous = quickOwner;
+    if (optimistic) {
+      setQuickOwnerOverride((current) => ({ ...current, ...optimistic }));
+    }
+    setSavingActions((current) => new Set(current).add(control));
     try {
       await apiRequest(`/api/items/${encodeURIComponent(itemId)}/user-item`, {
         method: "PATCH",
@@ -135,13 +187,28 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
       toast({ title: successMessage, variant: "success" });
       query.reload();
     } catch (error) {
+      if (optimistic) {
+        setQuickOwnerOverride((current) => {
+          const restored = { ...current };
+          for (const key of Object.keys(optimistic) as Array<
+            keyof QuickOwnerState
+          >) {
+            Object.assign(restored, { [key]: previous[key] });
+          }
+          return restored;
+        });
+      }
       toast({
         title: "Не удалось обновить карточку",
         description: errorMessage(error),
         variant: "error",
       });
     } finally {
-      setSavingAction(null);
+      setSavingActions((current) => {
+        const next = new Set(current);
+        next.delete(control);
+        return next;
+      });
     }
   }
 
@@ -197,6 +264,14 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
   }
 
   const details = query.data;
+  const quickOwner: QuickOwnerState = {
+    status: quickOwnerOverride.status ?? details.userItem.lifecycleStatus,
+    personalRating:
+      quickOwnerOverride.personalRating !== undefined
+        ? quickOwnerOverride.personalRating
+        : (details.userItem.personalRating ?? null),
+    favorite: quickOwnerOverride.favorite ?? details.userItem.favorite,
+  };
   const isArchived = details.userItem.lifecycleStatus === "archived";
 
   return (
@@ -255,20 +330,42 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
 
         <aside className={styles.ownerPanel} aria-label="Личные данные">
           <div className={styles.heroActions}>
-            <Button
-              type="button"
-              className={styles.addPlayButton}
-              disabled={isArchived}
-              onClick={() => setPlayOpen(true)}
-              title={
-                isArchived
-                  ? "Верните игру из архива, чтобы добавлять партии"
-                  : undefined
-              }
-            >
-              <CalendarPlus aria-hidden="true" />
-              Добавить партию
-            </Button>
+            {features.plays ? (
+              <Button
+                type="button"
+                className={styles.addPlayButton}
+                disabled={isArchived}
+                onClick={() => setPlayOpen(true)}
+                title={
+                  isArchived
+                    ? "Верните игру из архива, чтобы добавлять партии"
+                    : undefined
+                }
+              >
+                <CalendarPlus aria-hidden="true" />
+                Добавить партию
+              </Button>
+            ) : (
+              <Button type="button" onClick={() => setEditMode("owner")}>
+                Редактировать игру
+              </Button>
+            )}
+            {!features.plays ? (
+              <Button asChild variant="outline">
+                <Link
+                  href={`/items/new?target=preorder&itemId=${encodeURIComponent(itemId)}`}
+                >
+                  Оформить предзаказ
+                </Link>
+              </Button>
+            ) : null}
+            {!features.plays ? (
+              <Button asChild variant="outline">
+                <Link href={`/preorders?itemId=${encodeURIComponent(itemId)}`}>
+                  Все предзаказы игры
+                </Link>
+              </Button>
+            ) : null}
             <OverflowMenu>
               <OverflowMenuItem onClick={() => setEditMode("owner")}>
                 <Pencil aria-hidden="true" className={styles.menuIcon} />
@@ -279,7 +376,9 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
                 Справочные данные
               </OverflowMenuItem>
               <OverflowMenuItem
-                disabled={savingAction != null}
+                disabled={
+                  savingActions.has("status") || !details.userItem.owned
+                }
                 onClick={() =>
                   patchOwner(
                     {
@@ -291,6 +390,13 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
                     details.userItem.lifecycleStatus === "for_sale"
                       ? "Игра возвращена в активные"
                       : "Игра отмечена для продажи",
+                    "status",
+                    {
+                      status:
+                        details.userItem.lifecycleStatus === "for_sale"
+                          ? "active"
+                          : "for_sale",
+                    },
                   )
                 }
               >
@@ -315,32 +421,63 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
 
           <dl className={styles.ownerSummary}>
             <Summary label="Наличие">
-              <StatusBadge variant="success">В коллекции</StatusBadge>
+              <StatusBadge
+                variant={details.userItem.owned ? "success" : "info"}
+              >
+                {details.userItem.owned ? "В коллекции" : "Нет в коллекции"}
+              </StatusBadge>
             </Summary>
             <Summary label="Статус">
-              <StatusBadge
-                variant={lifecycleStatus(details.userItem.lifecycleStatus).tone}
+              <select
+                aria-label="Изменить статус игры"
+                className="h-8 max-w-40 rounded-md border bg-background px-2 text-xs"
+                value={quickOwner.status}
+                disabled={
+                  savingActions.has("status") || !details.userItem.owned
+                }
+                onChange={(event) => {
+                  const status = event.target.value as "active" | "for_sale";
+                  void patchOwner(
+                    { status },
+                    status === "for_sale"
+                      ? "Игра отмечена для продажи"
+                      : "Игра возвращена в активные",
+                    "status",
+                    { status },
+                  );
+                }}
               >
-                {lifecycleStatus(details.userItem.lifecycleStatus).label}
-              </StatusBadge>
+                <option value="active">Активна</option>
+                <option value="for_sale">На продажу</option>
+                {quickOwner.status === "sold" ? (
+                  <option value="sold" disabled>
+                    Продана
+                  </option>
+                ) : null}
+                {quickOwner.status === "archived" ? (
+                  <option value="archived" disabled>
+                    Архивирована
+                  </option>
+                ) : null}
+              </select>
             </Summary>
             <Summary label="Добавлена">
               {formatDate(details.userItem.ownedAt)}
             </Summary>
             <Summary label="Моя оценка">
-              <Rating
-                value={
-                  details.userItem.personalRating != null
-                    ? details.userItem.personalRating / 2
-                    : null
+              <QuickRating
+                value={quickOwner.personalRating}
+                disabled={savingActions.has("rating")}
+                onChange={(personalRating) =>
+                  void patchOwner(
+                    { personalRating },
+                    personalRating == null
+                      ? "Личная оценка очищена"
+                      : "Личная оценка обновлена",
+                    "rating",
+                    { personalRating },
+                  )
                 }
-                label={
-                  details.userItem.personalRating != null
-                    ? `Личная оценка: ${details.userItem.personalRating} из 10`
-                    : "Без личной оценки"
-                }
-                tone="accent"
-                size="md"
               />
             </Summary>
           </dl>
@@ -350,21 +487,23 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
               type="button"
               className={cn(
                 styles.favoriteButton,
-                details.userItem.favorite && styles.favoriteActive,
+                quickOwner.favorite && styles.favoriteActive,
               )}
-              disabled={savingAction != null}
-              aria-pressed={details.userItem.favorite}
+              disabled={savingActions.has("favorite")}
+              aria-pressed={quickOwner.favorite}
               onClick={() =>
                 patchOwner(
-                  { favorite: !details.userItem.favorite },
-                  details.userItem.favorite
+                  { favorite: !quickOwner.favorite },
+                  quickOwner.favorite
                     ? "Удалено из избранного"
                     : "Добавлено в избранное",
+                  "favorite",
+                  { favorite: !quickOwner.favorite },
                 )
               }
             >
               <Heart aria-hidden="true" />
-              {details.userItem.favorite ? "В избранном" : "В избранное"}
+              {quickOwner.favorite ? "В избранном" : "В избранное"}
             </button>
             <TagList
               tags={details.userItem.tags}
@@ -383,10 +522,12 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
         onEditOwner={() => setEditMode("owner")}
         onEditReference={() => setEditMode("reference")}
         onAddPhoto={() => setPhotoOpen(true)}
+        onAddExpansion={() => setExpansionsOpen(true)}
         onEditExpectedDate={setExpectedDatePreorder}
+        onEditPreorder={setEditingPreorder}
       />
 
-      {playOpen ? (
+      {features.plays && playOpen ? (
         <AddPlayDialog
           open={playOpen}
           onOpenChange={setPlayOpen}
@@ -404,8 +545,16 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
           onOpenChange={(open) => {
             if (!open) setEditMode(null);
           }}
-          onSaved={(status) => {
-            if (status === "sold" || status === "archived") {
+          onSaved={(result) => {
+            setQuickOwnerOverride({});
+            if (
+              result?.destination &&
+              (features.wishlist || !result.destination.startsWith("/wishlist"))
+            ) {
+              router.push(result.destination);
+              return;
+            }
+            if (result?.status === "sold" || result?.status === "archived") {
               router.push("/collection");
               return;
             }
@@ -414,7 +563,16 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
         />
       ) : null}
 
+      {editingPreorder ? (
+        <EditPreorderDialog
+          key={editingPreorder.id}
+          preorder={editingPreorder}
+          onClose={() => setEditingPreorder(null)}
+          onSaved={query.reload}
+        />
+      ) : null}
       <ExpectedDateDialog
+        key={expectedDatePreorder?.id ?? "closed"}
         preorder={expectedDatePreorder}
         open={expectedDatePreorder != null}
         onOpenChange={(open) => {
@@ -422,6 +580,17 @@ export function CollectionItemPageClient({ itemId }: { itemId: string }) {
         }}
         onSaved={query.reload}
       />
+
+      {expansionsOpen ? (
+        <AddExpansionsDialog
+          itemId={details.item.id}
+          existingIds={expansions(details)
+            .filter((r) => r.direction === "child")
+            .map((r) => r.relatedItem.id)}
+          onClose={() => setExpansionsOpen(false)}
+          onSaved={query.reload}
+        />
+      ) : null}
 
       <PhotoDialog
         details={details}
@@ -464,26 +633,29 @@ function TabBar({
   details: CollectionItemDetailDto;
   onSelect: (tab: DetailTab) => void;
 }) {
+  const features = useProductFeatures();
+  const visibleTabs = tabs.filter((tab) => features.plays || tab !== "plays");
   function onKeyDown(
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
   ) {
     let nextIndex: number | null = null;
-    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    if (event.key === "ArrowRight")
+      nextIndex = (index + 1) % visibleTabs.length;
     if (event.key === "ArrowLeft")
-      nextIndex = (index - 1 + tabs.length) % tabs.length;
+      nextIndex = (index - 1 + visibleTabs.length) % visibleTabs.length;
     if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = tabs.length - 1;
+    if (event.key === "End") nextIndex = visibleTabs.length - 1;
     if (nextIndex == null) return;
     event.preventDefault();
-    const nextTab = tabs[nextIndex];
+    const nextTab = visibleTabs[nextIndex];
     onSelect(nextTab);
     document.getElementById(`collection-tab-${nextTab}`)?.focus();
   }
 
   return (
     <div className={styles.tabs} role="tablist" aria-label="Разделы карточки">
-      {tabs.map((tab, index) => {
+      {visibleTabs.map((tab, index) => {
         const count = tabCount(tab, details);
         return (
           <button
@@ -516,7 +688,9 @@ function DetailContent({
   onEditOwner,
   onEditReference,
   onAddPhoto,
+  onAddExpansion,
   onEditExpectedDate,
+  onEditPreorder,
 }: {
   tab: DetailTab;
   details: CollectionItemDetailDto;
@@ -524,7 +698,9 @@ function DetailContent({
   onEditOwner: () => void;
   onEditReference: () => void;
   onAddPhoto: () => void;
+  onAddExpansion: () => void;
   onEditExpectedDate: (preorder: PreorderListItemDto) => void;
+  onEditPreorder: (preorder: PreorderListItemDto) => void;
 }) {
   let content: React.ReactNode;
 
@@ -535,7 +711,9 @@ function DetailContent({
         onAddPlay={onAddPlay}
         onEditOwner={onEditOwner}
         onAddPhoto={onAddPhoto}
+        onAddExpansion={onAddExpansion}
         onEditExpectedDate={onEditExpectedDate}
+        onEditPreorder={onEditPreorder}
       />
     );
   } else if (tab === "plays") {
@@ -546,6 +724,7 @@ function DetailContent({
         title="Дополнения"
         relations={expansions(details)}
         emptyTitle="Дополнений пока нет"
+        onAddExpansion={onAddExpansion}
       />
     );
   } else if (tab === "photos") {
@@ -577,14 +756,19 @@ function Overview({
   onAddPlay,
   onEditOwner,
   onAddPhoto,
+  onAddExpansion,
   onEditExpectedDate,
+  onEditPreorder,
 }: {
   details: CollectionItemDetailDto;
   onAddPlay: () => void;
   onEditOwner: () => void;
   onAddPhoto: () => void;
+  onAddExpansion: () => void;
   onEditExpectedDate: (preorder: PreorderListItemDto) => void;
+  onEditPreorder: (preorder: PreorderListItemDto) => void;
 }) {
+  const features = useProductFeatures();
   const activePreorder = details.preorders.find(
     ({ uiStatus }) => uiStatus === "active" || uiStatus === "delayed",
   );
@@ -600,61 +784,91 @@ function Overview({
           <Summary label="Добавлена">
             {formatDate(details.userItem.ownedAt)}
           </Summary>
-          <Summary label="Всего партий">{details.playSummary.count}</Summary>
-          <Summary label="Последняя партия">
-            {formatDate(details.playSummary.lastPlayedAt)}
-          </Summary>
-          <Summary label="Общее время">
-            {formatDuration(details.playSummary.totalDurationMinutes)}
-          </Summary>
+          {features.plays ? (
+            <>
+              <Summary label="Всего партий">
+                {details.playSummary.count}
+              </Summary>
+              <Summary label="Последняя партия">
+                {formatDate(details.playSummary.lastPlayedAt)}
+              </Summary>
+              <Summary label="Общее время">
+                {formatDuration(details.playSummary.totalDurationMinutes)}
+              </Summary>
+            </>
+          ) : (
+            <Summary label="Наличие">
+              {details.userItem.owned
+                ? "В коллекции"
+                : "Ожидается / нет в коллекции"}
+            </Summary>
+          )}
         </dl>
-        <Button asChild variant="outline" className={styles.panelButton}>
-          <Link
-            href={`/statistics?itemId=${encodeURIComponent(details.item.id)}`}
-          >
-            <Trophy aria-hidden="true" />
-            Статистика игры
-          </Link>
-        </Button>
-      </Panel>
-
-      <Panel
-        title="Последние партии"
-        className={cn(styles.overviewPanel, styles.recentPanel)}
-      >
-        {details.recentPlays.length ? (
-          <div className={styles.playList}>
-            {details.recentPlays.slice(0, 3).map((play) => (
-              <PlayRow key={play.id} play={play} />
-            ))}
-          </div>
-        ) : (
-          <CompactEmpty
-            icon={Gamepad2}
-            title="Вы ещё не играли"
-            description="Добавьте первую партию, чтобы начать историю игры."
-            action={
-              <Button type="button" size="sm" onClick={onAddPlay}>
-                <Plus aria-hidden="true" />
-                Добавить первую партию
-              </Button>
-            }
-          />
-        )}
-        {details.recentPlays.length ? (
-          <Button asChild variant="ghost" className={styles.panelLink}>
-            <Link href={`/plays?itemId=${encodeURIComponent(details.item.id)}`}>
-              Все партии ({details.playSummary.count})
-              <ChevronRight aria-hidden="true" />
-            </Link>
-          </Button>
+        {features.statistics ? (
+          <>
+            <Button asChild variant="outline" className={styles.panelButton}>
+              <Link
+                href={`/statistics?itemId=${encodeURIComponent(details.item.id)}`}
+              >
+                <Trophy aria-hidden="true" />
+                Статистика игры
+              </Link>
+            </Button>
+          </>
         ) : null}
       </Panel>
 
+      {features.plays ? (
+        <>
+          <Panel
+            title="Последние партии"
+            className={cn(styles.overviewPanel, styles.recentPanel)}
+          >
+            {details.recentPlays.length ? (
+              <div className={styles.playList}>
+                {details.recentPlays.slice(0, 3).map((play) => (
+                  <PlayRow key={play.id} play={play} />
+                ))}
+              </div>
+            ) : (
+              <CompactEmpty
+                icon={Gamepad2}
+                title="Вы ещё не играли"
+                description="Добавьте первую партию, чтобы начать историю игры."
+                action={
+                  <Button type="button" size="sm" onClick={onAddPlay}>
+                    <Plus aria-hidden="true" />
+                    Добавить первую партию
+                  </Button>
+                }
+              />
+            )}
+            {details.recentPlays.length ? (
+              <Button asChild variant="ghost" className={styles.panelLink}>
+                <Link
+                  href={`/plays?itemId=${encodeURIComponent(details.item.id)}`}
+                >
+                  Все партии ({details.playSummary.count})
+                  <ChevronRight aria-hidden="true" />
+                </Link>
+              </Button>
+            ) : null}
+          </Panel>
+        </>
+      ) : null}
       {latestPurchase || activePreorder ? (
-        <div className={styles.stackColumn}>
+        <Panel
+          title={
+            latestPurchase && activePreorder
+              ? "Покупка и предзаказ"
+              : latestPurchase
+                ? "Покупка"
+                : "Активный предзаказ"
+          }
+          className={styles.overviewPanel}
+        >
           {latestPurchase ? (
-            <Panel title="Покупка" className={styles.overviewPanel}>
+            <div className={styles.commerceSection}>
               <dl className={styles.metricList}>
                 <Summary label="Магазин">{latestPurchase.shop}</Summary>
                 <Summary label="Дата">
@@ -673,10 +887,10 @@ function Overview({
                   <ChevronRight aria-hidden="true" />
                 </Link>
               </Button>
-            </Panel>
+            </div>
           ) : null}
           {activePreorder ? (
-            <Panel title="Активный предзаказ" className={styles.overviewPanel}>
+            <div className={styles.commerceSection}>
               <div className={styles.preorderTitleRow}>
                 <strong>{activePreorder.item.title}</strong>
                 <StatusBadge
@@ -692,20 +906,56 @@ function Overview({
                   {formatExpectedDate(activePreorder)}
                 </Summary>
                 <Summary label="Магазин">{activePreorder.shop}</Summary>
+                <Summary label="Оплата">
+                  {activePreorder.paymentType === "installments"
+                    ? "Рассрочка"
+                    : activePreorder.paymentType === "one_time"
+                      ? "Единоразовый платёж"
+                      : "Не указана"}
+                </Summary>
+                <Summary label="Стоимость">
+                  {activePreorder.priceKnown === false
+                    ? "Входит в стоимость лота"
+                    : new Intl.NumberFormat("ru-RU", {
+                        style: "currency",
+                        currency: activePreorder.price.currency,
+                      }).format(activePreorder.price.amount)}
+                </Summary>
               </dl>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className={styles.panelButton}
-                onClick={() => onEditExpectedDate(activePreorder)}
-              >
-                <CalendarDays aria-hidden="true" />
-                Изменить дату
-              </Button>
-            </Panel>
+              {activePreorder.parentId ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link
+                    href={`/preorders?itemId=${encodeURIComponent(details.item.id)}`}
+                  >
+                    Открыть лот
+                  </Link>
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className={styles.panelButton}
+                    onClick={() => onEditExpectedDate(activePreorder)}
+                  >
+                    <CalendarDays aria-hidden="true" />
+                    Изменить дату
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onEditPreorder(activePreorder)}
+                  >
+                    <Pencil aria-hidden="true" />
+                    Редактировать предзаказ
+                  </Button>
+                </>
+              )}
+            </div>
           ) : null}
-        </div>
+        </Panel>
       ) : null}
 
       <Panel title="Заметки" className={styles.overviewPanel}>
@@ -747,7 +997,16 @@ function Overview({
         )}
       </Panel>
 
-      <Panel title="Дополнения" className={styles.overviewPanel}>
+      <Panel
+        title="Дополнения"
+        className={styles.overviewPanel}
+        action={
+          <Button type="button" size="sm" onClick={onAddExpansion}>
+            <Plus aria-hidden="true" />
+            Добавить дополнение
+          </Button>
+        }
+      >
         {itemExpansions.length ? (
           <div className={styles.expansionList}>
             {itemExpansions.map((relation) => (
@@ -763,7 +1022,7 @@ function Overview({
         )}
         {itemExpansions.length ? (
           <Button asChild variant="ghost" className={styles.panelLink}>
-            <Link href={`/collection/${details.item.id}?tab=expansions`}>
+            <Link href={`/items/${details.item.id}?tab=expansions`}>
               Все дополнения ({expansions(details).length})
               <ChevronRight aria-hidden="true" />
             </Link>
@@ -771,7 +1030,13 @@ function Overview({
         ) : null}
       </Panel>
 
-      <Panel title="Фотографии" className={styles.overviewPanel}>
+      <Panel
+        title="Фотографии"
+        className={cn(
+          styles.overviewPanel,
+          !latestPurchase && !activePreorder && styles.widePanel,
+        )}
+      >
         <div className={styles.photoPreviewGrid}>
           {photos.map((image) => (
             <Photo key={image.id} image={image} title={details.item.title} />
@@ -848,13 +1113,25 @@ function RelationsTab({
   title,
   relations,
   emptyTitle,
+  onAddExpansion,
 }: {
   title: string;
   relations: ItemRelationDto[];
   emptyTitle: string;
+  onAddExpansion?: () => void;
 }) {
   return (
-    <Panel title={title}>
+    <Panel
+      title={title}
+      action={
+        onAddExpansion ? (
+          <Button type="button" size="sm" onClick={onAddExpansion}>
+            <Plus aria-hidden="true" />
+            Добавить дополнение
+          </Button>
+        ) : undefined
+      }
+    >
       {relations.length ? (
         <div className={styles.relationGrid}>
           {relations.map((relation) => (
@@ -1078,7 +1355,9 @@ function ProviderRatings({ details }: { details: CollectionItemDetailDto }) {
           <>
             <span>{source.label}</span>
             <strong>
-              {source.rating != null ? `${source.rating.toFixed(1)} / 10` : "—"}
+              {source.rating != null
+                ? `${source.rating.toFixed(1)} / 10`
+                : "Нет данных"}
             </strong>
             {source.url ? <ExternalLink aria-hidden="true" /> : null}
           </>
@@ -1136,6 +1415,44 @@ function Summary({
     <div className={styles.summary}>
       <dt>{label}</dt>
       <dd>{children}</dd>
+    </div>
+  );
+}
+
+function QuickRating({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: number | null;
+  disabled: boolean;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <div className="relative inline-flex min-h-8 items-center">
+      <Rating
+        value={value != null ? value / 2 : null}
+        label={
+          value != null ? `Личная оценка: ${value} из 10` : "Без личной оценки"
+        }
+        tone="accent"
+        size="md"
+      />
+      <input
+        type="range"
+        min="0"
+        max="10"
+        step="1"
+        value={value ?? 0}
+        disabled={disabled}
+        aria-label="Изменить личную оценку"
+        aria-valuetext={value != null ? `${value} из 10` : "Без оценки"}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-wait"
+        onChange={(event) => {
+          const nextValue = Number(event.target.value);
+          onChange(nextValue === 0 ? null : nextValue);
+        }}
+      />
     </div>
   );
 }
@@ -1212,7 +1529,7 @@ function RelationRow({
 }) {
   return (
     <Link
-      href={`/collection/${relation.relatedItem.id}`}
+      href={`/items/${relation.relatedItem.id}`}
       className={cn(styles.relationRow, expanded && styles.relationRowExpanded)}
     >
       <GameCover
@@ -1396,23 +1713,26 @@ function heroSubtitle(details: CollectionItemDetailDto) {
     return details.item.originalTitle;
   }
   if (!details.item.description) return null;
-  return details.item.description.split(/\n|(?<=[.!?])\s/)[0];
+  return decodeReferenceText(
+    details.item.description.split(/\n|(?<=[.!?])\s/)[0],
+  );
+}
+
+function decodeReferenceText(value: string) {
+  return value
+    .replaceAll("&hellip;", "…")
+    .replaceAll("&rsquo;", "’")
+    .replaceAll("&lsquo;", "‘")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&amp;", "&")
+    .replaceAll("&mdash;", "—")
+    .replaceAll("&ndash;", "–");
 }
 
 function range(min?: number | null, max?: number | null, suffix = "") {
   if (min == null && max == null) return "—";
   if (min === max) return `${min ?? max}${suffix}`;
   return `${min ?? "?"}–${max ?? "?"}${suffix}`;
-}
-
-function formatDate(value?: string | null) {
-  return value
-    ? new Intl.DateTimeFormat("ru-RU", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      }).format(new Date(value))
-    : "—";
 }
 
 function formatDuration(minutes: number) {
@@ -1427,7 +1747,6 @@ function formatMoney(amount: number, currency: string) {
   return new Intl.NumberFormat("ru-RU", {
     style: "currency",
     currency,
-    maximumFractionDigits: 0,
   }).format(amount);
 }
 
@@ -1477,7 +1796,8 @@ function tabCount(tab: DetailTab, details: CollectionItemDetailDto) {
 
 function expansions(details: CollectionItemDetailDto) {
   return details.item.relations.filter(
-    ({ relationType }) => relationType === "expands",
+    ({ relationType, direction }) =>
+      relationType === "expands" && direction === "child",
   );
 }
 
@@ -1501,24 +1821,6 @@ function preorderStatusLabel(preorder: PreorderListItemDto) {
   if (preorder.uiStatus === "received") return "Получен";
   if (preorder.uiStatus === "cancelled") return "Отменён";
   return "Активный";
-}
-
-function formatExpectedDate(preorder: PreorderListItemDto) {
-  if (!preorder.expectedDate || preorder.expectedDatePrecision === "unknown") {
-    return "Дата неизвестна";
-  }
-  const date = new Date(preorder.expectedDate);
-  if (preorder.expectedDatePrecision === "quarter") {
-    return `${Math.floor(date.getUTCMonth() / 3) + 1}-й квартал ${date.getUTCFullYear()}`;
-  }
-  if (preorder.expectedDatePrecision === "month") {
-    return new Intl.DateTimeFormat("ru-RU", {
-      month: "long",
-      year: "numeric",
-      timeZone: "UTC",
-    }).format(date);
-  }
-  return formatDate(preorder.expectedDate);
 }
 
 function providerSources(details: CollectionItemDetailDto) {
@@ -1549,19 +1851,35 @@ function providerSources(details: CollectionItemDetailDto) {
   ];
   const primaryProvider = details.item.externalReferences[0]?.provider;
 
-  return providers.flatMap((provider) => {
+  return providers.map((provider) => {
     const reference = details.item.externalReferences.find(
       ({ provider: code }) => code === provider.code,
     );
     const link = details.item.links.find(({ url }) =>
       url.toLowerCase().includes(provider.host),
     );
-    const url = reference?.url ?? link?.url ?? null;
+    const url =
+      reference?.url ??
+      link?.url ??
+      providerSearchUrl(provider.code, details.item.title);
     const rating =
       primaryProvider === provider.code ? details.item.communityRating : null;
-    if (!url && rating == null) return [];
-    return [{ ...provider, url, rating }];
+    return { ...provider, url, rating };
   });
+}
+
+function providerSearchUrl(
+  provider: Exclude<ProviderCode, "manual">,
+  title: string,
+) {
+  const query = encodeURIComponent(title);
+  if (provider === "boardgamegeek") {
+    return `https://boardgamegeek.com/geeksearch.php?action=search&objecttype=boardgame&q=${query}`;
+  }
+  if (provider === "tesera") {
+    return `https://tesera.ru/search/?q=${query}`;
+  }
+  return `https://nastol.io/search?q=${query}`;
 }
 
 function errorMessage(error: unknown) {

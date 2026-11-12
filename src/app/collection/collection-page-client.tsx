@@ -1,4 +1,5 @@
 "use client";
+import { useProductFeatures } from "@/components/product-features-provider";
 
 import * as React from "react";
 import Link from "next/link";
@@ -55,13 +56,27 @@ const sortOptions = [
 ] as const;
 
 export function CollectionPageClient() {
+  const features = useProductFeatures();
   const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const query = React.useMemo(
-    () => collectionQueryFromUrl(searchParams),
-    [searchParams],
-  );
+  const query = React.useMemo(() => {
+    const parsed = collectionQueryFromUrl(searchParams);
+    return features.plays
+      ? parsed
+      : {
+          ...parsed,
+          sort:
+            parsed.sort === "plays" ||
+            parsed.sort === "lastPlayed" ||
+            !searchParams.has("sort")
+              ? ("title" as const)
+              : parsed.sort,
+          direction: !searchParams.has("sort")
+            ? ("asc" as const)
+            : parsed.direction,
+        };
+  }, [searchParams, features.plays]);
   const result = useAdapterQuery(collectionRestAdapter, query);
   const counts = {
     all: useCollectionCount(query.q),
@@ -184,11 +199,18 @@ export function CollectionPageClient() {
                 onChange={changeSort}
                 value={sortSelection(query)}
               >
-                {sortOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+                {sortOptions
+                  .filter(
+                    (option) =>
+                      features.plays ||
+                      (!option.value.startsWith("plays") &&
+                        !option.value.startsWith("lastPlayed")),
+                  )
+                  .map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
               </select>
               <ChevronDown aria-hidden="true" />
             </span>
@@ -260,7 +282,7 @@ export function CollectionPageClient() {
         </>
       ) : null}
 
-      {playCard ? (
+      {features.plays && playCard ? (
         <AddPlayDialog
           initialItemId={playCard.item.id}
           initialItemTitle={playCard.item.title}
@@ -286,6 +308,7 @@ function CollectionCard({
   onToggleFavorite: () => void;
   onAddPlay: () => void;
 }) {
+  const features = useProductFeatures();
   const activity = playActivity(card.plays.lastPlayedAt);
   const result = playResult(card.plays.lastResult);
   const rating =
@@ -309,57 +332,71 @@ function CollectionCard({
         <Link
           aria-label={`Открыть ${card.item.title}`}
           className={styles.cardLink}
-          href={`/collection/${card.item.id}`}
+          href={`${features.mode === "mvp" ? "/items" : "/collection"}/${card.item.id}`}
         >
           <div className={styles.cardTop}>
             <h2>{card.item.title}</h2>
             <Rating className={styles.rating} value={rating} />
-            <span
-              className={cn(
-                styles.activityBadge,
-                styles[`activity-${activity.tone}`],
-              )}
-            >
-              {activity.label}
-            </span>
-          </div>
-
-          <div className={styles.cardStats}>
-            <strong>{card.plays.count}</strong>
-            <span>
-              {plural(card.plays.count, "партия", "партии", "партий")}
-            </span>
-            <div className={styles.playMeta}>
-              <span>
-                <Users aria-hidden="true" />
-                {playersLabel(card)}
-              </span>
-              <span>
-                <Clock3 aria-hidden="true" />
-                {durationLabel(card)}
-              </span>
+            {features.plays ? (
               <span
                 className={cn(
-                  result.tone === "success" && styles.resultSuccess,
-                  result.tone === "danger" && styles.resultDanger,
+                  styles.activityBadge,
+                  styles[`activity-${activity.tone}`],
                 )}
               >
-                <Trophy aria-hidden="true" />
-                {result.label}
+                {activity.label}
               </span>
-            </div>
+            ) : (
+              <span>{card.item.type.name}</span>
+            )}
           </div>
+
+          {features.plays ? (
+            <div className={styles.cardStats}>
+              <strong>{card.plays.count}</strong>
+              <span>
+                {plural(card.plays.count, "партия", "партии", "партий")}
+              </span>
+              <div className={styles.playMeta}>
+                <span>
+                  <Users aria-hidden="true" />
+                  {playersLabel(card)}
+                </span>
+                <span>
+                  <Clock3 aria-hidden="true" />
+                  {durationLabel(card)}
+                </span>
+                <span
+                  className={cn(
+                    result.tone === "success" && styles.resultSuccess,
+                    result.tone === "danger" && styles.resultDanger,
+                  )}
+                >
+                  <Trophy aria-hidden="true" />
+                  {result.label}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <span className="text-xs">
+              {card.userItem.personalRating != null
+                ? "Моя оценка"
+                : "Рейтинг источника"}
+            </span>
+          )}
         </Link>
 
-        <button
-          aria-label={`Добавить партию в ${card.item.title}`}
-          className={styles.quickPlay}
-          onClick={onAddPlay}
-          title="Добавить партию"
-          type="button"
-        >
-          <Plus aria-hidden="true" />
-        </button>
+        {features.plays ? (
+          <button
+            aria-label={`Добавить партию в ${card.item.title}`}
+            className={styles.quickPlay}
+            onClick={onAddPlay}
+            title="Добавить партию"
+            type="button"
+          >
+            <Plus aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
       <footer className={styles.cardFooter}>
@@ -389,10 +426,12 @@ function CollectionCard({
               ? "Убрать из избранного"
               : "Добавить в избранное"}
           </OverflowMenuItem>
-          <OverflowMenuItem onClick={onAddPlay}>
-            <CalendarPlus aria-hidden="true" />
-            Добавить партию
-          </OverflowMenuItem>
+          {features.plays ? (
+            <OverflowMenuItem onClick={onAddPlay}>
+              <CalendarPlus aria-hidden="true" />
+              Добавить партию
+            </OverflowMenuItem>
+          ) : null}
         </OverflowMenu>
       </footer>
     </article>

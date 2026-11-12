@@ -58,8 +58,8 @@
 
 .heroMain {
   min-width: 0;
-  align-self: center;
-  padding-block: 8px;
+  align-self: start;
+  padding-top: 3px;
 }
 
 .titleRow {
@@ -226,10 +226,6 @@ a.providerLink:hover {
 .menuIcon {
   width: 17px;
   height: 17px;
-}
-
-.menuIcon {
-  margin-right: 9px;
 }
 
 .dangerMenuItem {
@@ -412,12 +408,16 @@ a.providerLink:hover {
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
-  align-items: start;
+  grid-auto-rows: 1fr;
+  align-items: stretch;
   gap: 12px;
 }
 
 .overviewPanel {
+  display: flex;
   min-width: 0;
+  height: 100%;
+  flex-direction: column;
   padding: 17px;
   background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
 }
@@ -440,7 +440,7 @@ a.providerLink:hover {
 
 .panelButton {
   width: 100%;
-  margin-top: 18px;
+  margin-top: auto;
 }
 
 .panelButton svg,
@@ -452,7 +452,7 @@ a.providerLink:hover {
 .panelLink {
   width: 100%;
   justify-content: space-between;
-  margin-top: 12px;
+  margin-top: auto;
   padding-inline: 3px;
   color: var(--accent-primary-hover);
 }
@@ -537,10 +537,19 @@ a.providerLink:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.stackColumn {
+.widePanel {
+  grid-column: span 2;
+}
+
+.commerceSection {
   display: grid;
-  min-width: 0;
-  gap: 12px;
+  gap: 14px;
+}
+
+.commerceSection + .commerceSection {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .preorderTitleRow {
@@ -857,6 +866,10 @@ a.providerLink:hover {
   .overviewGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .widePanel {
+    grid-column: auto;
+  }
 }
 
 @media (max-width: 47.99rem) {
@@ -881,7 +894,7 @@ a.providerLink:hover {
   }
 
   .heroMain {
-    padding-block: 0;
+    padding-top: 0;
   }
 
   .primaryFacts {
