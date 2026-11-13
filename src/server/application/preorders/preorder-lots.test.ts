@@ -385,7 +385,7 @@ describe("preorder lots", () => {
       );
       db.exec(
         readFileSync(
-          "prisma/migrations/20261112190000_preorder_lots/migration.sql",
+          "prisma/sqlite-archive/migrations/20261112190000_preorder_lots/migration.sql",
           "utf8",
         ),
       );

@@ -15,6 +15,11 @@ pnpm-debug.log*
 uploads/
 dev.db
 dev.db-journal
+dev.db-wal
+dev.db-shm
+private-backups/
+*.dump
+*.dump.enc
 
 # Local project documentation
 /docs/

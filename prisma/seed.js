@@ -1,13 +1,7 @@
 require("dotenv/config");
 
-const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
+const { PrismaPg } = require("@prisma/adapter-pg");
 const { PrismaClient } = require("@prisma/client");
-
-const adapter = new PrismaBetterSqlite3({
-  url: process.env.DATABASE_URL ?? "file:./dev.db",
-});
-
-const prisma = new PrismaClient({ adapter, log: ["error"] });
 
 const itemTypes = [
   { code: "base_game", name: "Base game" },
@@ -24,26 +18,35 @@ const itemTypes = [
 ];
 
 async function main() {
-  for (const itemType of itemTypes) {
-    await prisma.itemType.upsert({
-      where: { code: itemType.code },
-      update: {
-        name: itemType.name,
-        isSystem: true,
-      },
-      create: {
-        ...itemType,
-        isSystem: true,
-      },
-    });
+  const { requirePostgresUrl } = await import("../scripts/lib/connection.mjs");
+  const adapter = new PrismaPg({
+    connectionString: requirePostgresUrl(
+      process.env.DATABASE_URL,
+      "DATABASE_URL",
+    ),
+    max: 1,
+  });
+  const prisma = new PrismaClient({ adapter, log: ["error"] });
+  try {
+    for (const itemType of itemTypes) {
+      await prisma.itemType.upsert({
+        where: { code: itemType.code },
+        update: {
+          name: itemType.name,
+          isSystem: true,
+        },
+        create: {
+          ...itemType,
+          isSystem: true,
+        },
+      });
+    }
+  } finally {
+    await prisma.$disconnect();
   }
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

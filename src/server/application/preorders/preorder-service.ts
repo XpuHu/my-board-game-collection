@@ -55,7 +55,7 @@ export async function listPreorders(): Promise<LegacyPreorderDto[]> {
     include: preorderInclude,
     orderBy: [
       {
-        expectedDate: "asc",
+        expectedDate: { sort: "asc", nulls: "first" },
       },
       {
         createdAt: "desc",
@@ -80,7 +80,7 @@ export async function listPreorderItems(
     prisma.preorder.findMany({
       where,
       select: preorderLotSelect,
-      orderBy: [{ expectedDate: "asc" }, { createdAt: "desc" }, { id: "asc" }],
+      orderBy: [{ expectedDate: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }, { id: "asc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),

@@ -808,11 +808,11 @@ export async function getItemCard(itemId: string) {
   return mapItemCard(asItemForDetails(item));
 }
 export async function searchLocalItems(q: string, page = 1, typeCode?: string) {
-  const where = {
+  const where: Prisma.ItemWhereInput = {
     ...(typeCode ? { type: { code: typeCode } } : {}),
     deletedAt: null,
     ...(q
-      ? { OR: [{ title: { contains: q } }, { originalTitle: { contains: q } }] }
+      ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { originalTitle: { contains: q, mode: "insensitive" } }] }
       : {}),
   };
   const [total, items] = await prisma.$transaction([

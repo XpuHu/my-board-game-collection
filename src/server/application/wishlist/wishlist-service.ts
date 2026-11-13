@@ -138,8 +138,8 @@ async function buildWishlistWhere(
   if (query.q) {
     itemAnd.push({
       OR: [
-        { title: { contains: query.q } },
-        { originalTitle: { contains: query.q } },
+        { title: { contains: query.q, mode: "insensitive" } },
+        { originalTitle: { contains: query.q, mode: "insensitive" } },
       ],
     });
   }
@@ -283,15 +283,15 @@ function buildWishlistOrder(
   const direction = query.direction ?? "desc";
   switch (query.sort) {
     case "rating":
-      return [{ item: { rating: direction } }, { id: "asc" }];
+      return [{ item: { rating: { sort: direction, nulls: direction === "asc" ? "first" : "last" } } }, { id: "asc" }];
     case "year":
-      return [{ item: { year: direction } }, { id: "asc" }];
+      return [{ item: { year: { sort: direction, nulls: direction === "asc" ? "first" : "last" } } }, { id: "asc" }];
     case "title":
       return [{ item: { title: direction } }, { id: "asc" }];
     case "updated":
       return [{ updatedAt: direction }, { id: "asc" }];
     default:
-      return [{ interestLevel: direction }, { id: "asc" }];
+      return [{ interestLevel: { sort: direction, nulls: direction === "asc" ? "first" : "last" } }, { id: "asc" }];
   }
 }
 
@@ -361,7 +361,7 @@ const userItemWishlistCardSelect = {
           price: true,
           currency: true,
         },
-        orderBy: [{ expectedDate: "asc" }, { id: "asc" }],
+        orderBy: [{ expectedDate: { sort: "asc", nulls: "first" } }, { id: "asc" }],
         take: 1,
       },
       links: {

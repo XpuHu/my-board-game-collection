@@ -1,0 +1,39 @@
+name: Encrypted collection backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 2 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collection-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    if: vars.BGC_BACKUP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - name: Create encrypted, consistent backup
+        env:
+          DATABASE_URL_UNPOOLED: ${{ secrets.NEON_BACKUP_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          BGC_BACKUP_TARGET: ${{ vars.BGC_BACKUP_TARGET }}
+        run: npm run db:backup -- --target "$BGC_BACKUP_TARGET" --out private-backups/collection.json.enc --encrypted
+      - uses: actions/upload-artifact@v7
+        with:
+          name: collection-backup-${{ github.run_id }}
+          path: private-backups/collection.json.enc
+          retention-days: 7
+          if-no-files-found: error

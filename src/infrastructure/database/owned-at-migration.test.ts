@@ -31,7 +31,7 @@ describe("ownedAt migration", () => {
     const migration = readFileSync(
       resolve(
         process.cwd(),
-        "prisma/migrations/20260722190000_add_user_item_owned_at/migration.sql",
+        "prisma/sqlite-archive/migrations/20260722190000_add_user_item_owned_at/migration.sql",
       ),
       "utf8",
     );

@@ -38,7 +38,7 @@ describe("taxonomy and play fields migration", () => {
     const migration = readFileSync(
       resolve(
         process.cwd(),
-        "prisma/migrations/20260723120000_normalize_taxonomy_and_play_fields/migration.sql",
+        "prisma/sqlite-archive/migrations/20260723120000_normalize_taxonomy_and_play_fields/migration.sql",
       ),
       "utf8",
     );

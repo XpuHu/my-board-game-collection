@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -9,6 +9,8 @@ export default defineConfig({
     seed: "node prisma/seed.js",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    // Generation and SQL diff work without credentials. Mutating commands are
+    // launched by scripts/database.mjs, which requires an explicit direct URL.
+    url: process.env.DATABASE_URL_UNPOOLED,
   },
 });

@@ -181,7 +181,7 @@ export async function getCollectionItemDetail(
 
 function buildCollectionMatchesSql(query: CollectionQuery) {
   const where: Prisma.Sql[] = [
-    Prisma.sql`ui.owned = 1`,
+    Prisma.sql`ui.owned = true`,
     Prisma.sql`i.deleted_at IS NULL`,
   ];
   const having: Prisma.Sql[] = [];
@@ -191,7 +191,7 @@ function buildCollectionMatchesSql(query: CollectionQuery) {
 
   if (query.q) {
     const pattern = `%${query.q}%`;
-    where.push(Prisma.sql`(i.title LIKE ${pattern} OR i.original_title LIKE ${pattern})`);
+    where.push(Prisma.sql`(i.title ILIKE ${pattern} OR i.original_title ILIKE ${pattern})`);
   }
 
   if (query.type) {
@@ -205,7 +205,7 @@ function buildCollectionMatchesSql(query: CollectionQuery) {
         SELECT 1 FROM "_ItemTags" AS item_tags
         JOIN tags AS tag ON tag.id = item_tags."B"
         WHERE item_tags."A" = i.id
-          AND (tag.id = ${tag} OR tag.name LIKE ${pattern})
+          AND (tag.id = ${tag} OR tag.name ILIKE ${pattern})
       )`);
     }
   }
@@ -252,7 +252,7 @@ function buildCollectionMatchesSql(query: CollectionQuery) {
   }
 
   if (personalRating !== undefined) where.push(Prisma.sql`ui.personal_rating = ${personalRating}`);
-  if (query.location) where.push(Prisma.sql`ui.location LIKE ${`%${query.location}%`}`);
+  if (query.location) where.push(Prisma.sql`ui.location ILIKE ${`%${query.location}%`}`);
 
   const havingSql = having.length
     ? Prisma.sql`HAVING ${Prisma.join(having, " AND ")}`
@@ -270,7 +270,7 @@ function buildCollectionMatchesSql(query: CollectionQuery) {
     JOIN item_types AS it ON it.id = i.type_id
     LEFT JOIN play_sessions AS ps ON ps.item_id = i.id
     WHERE ${Prisma.join(where, " AND ")}
-    GROUP BY ui.id
+    GROUP BY ui.id, i.title
     ${havingSql}
   `;
 }
@@ -284,9 +284,10 @@ function collectionOrderSql(query: CollectionQuery) {
       : query.sort === "rating"
         ? "personal_rating"
         : query.sort === "title"
-          ? "title COLLATE NOCASE"
+          ? "LOWER(title)"
           : "added_at";
-  return Prisma.raw(`${field} ${direction === "asc" ? "ASC" : "DESC"}`);
+  // Preserve SQLite's previous ordering of missing dates/ratings.
+  return Prisma.raw(`${field} ${direction === "asc" ? "ASC NULLS FIRST" : "DESC NULLS LAST"}`);
 }
 
 function endOfDay(value: string) {
@@ -347,7 +348,7 @@ export const userItemCardSelect = {
           price: true,
           currency: true,
         },
-        orderBy: [{ expectedDate: "asc" }, { id: "asc" }],
+        orderBy: [{ expectedDate: { sort: "asc", nulls: "first" } }, { id: "asc" }],
         take: 1,
       },
       purchases: {

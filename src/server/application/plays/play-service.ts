@@ -242,10 +242,10 @@ function buildPlayOrder(
   const direction = query.direction ?? "desc";
   switch (query.sort) {
     case "duration":
-      return [{ durationMinutes: direction }, { id: "asc" }];
+      return [{ durationMinutes: { sort: direction, nulls: direction === "asc" ? "first" : "last" } }, { id: "asc" }];
     case "rating":
       return [
-        { personalRating: direction },
+        { personalRating: { sort: direction, nulls: direction === "asc" ? "first" : "last" } },
         { playedAt: "desc" },
         { id: "asc" },
       ];

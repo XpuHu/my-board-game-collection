@@ -35,7 +35,7 @@ describe("P1 user fields migration", () => {
     const migration = readFileSync(
       resolve(
         process.cwd(),
-        "prisma/migrations/20260722210000_add_p1_user_fields/migration.sql",
+        "prisma/sqlite-archive/migrations/20260722210000_add_p1_user_fields/migration.sql",
       ),
       "utf8",
     );

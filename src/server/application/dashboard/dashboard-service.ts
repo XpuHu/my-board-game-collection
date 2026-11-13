@@ -44,7 +44,7 @@ export async function getDashboard(now = new Date()): Promise<DashboardDto> {
         item: { deletedAt: null },
       },
       select: preorderListSelect,
-      orderBy: [{ expectedDate: "asc" }, { createdAt: "desc" }],
+      orderBy: [{ expectedDate: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }],
       take: 3,
     }),
     prisma.userItem.findMany({

@@ -1,0 +1,12 @@
+.git/
+.env
+.env.*
+!.env.example
+.test/
+private-backups/
+dev.db
+dev.db-*
+*.dump
+*.dump.enc
+docs/
+uploads/
