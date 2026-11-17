@@ -134,6 +134,8 @@ describe("preorder lots", () => {
   it("receives and reactivates the entire lot without losing its composition or duplicating status events", async () => {
     const created = await lot();
     await updatePreorder(created.id, { status: "received" });
+    const firstReceipt = (await compact(created.id)).receivedDate;
+    expect(firstReceipt).toBeTruthy();
     await updatePreorder(created.id, { status: "received" });
     for (const item of [created.base, created.extra, created.accessory]) {
       expect(
@@ -141,6 +143,10 @@ describe("preorder lots", () => {
       ).toMatchObject({ owned: true });
     }
     const row = await compact(created.id);
+    expect(row.receivedDate).toBe(firstReceipt);
+    expect(
+      row.children?.every((child) => child.receivedDate === firstReceipt),
+    ).toBe(true);
     expect(row.children?.every((child) => child.status === "received")).toBe(
       true,
     );
@@ -160,6 +166,7 @@ describe("preorder lots", () => {
         (child) => child.status === "paid",
       ),
     ).toBe(true);
+    expect((await compact(created.id)).receivedDate).toBeNull();
     expect((await getItemCard(created.accessory.id)).userItem?.owned).toBe(
       true,
     );

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { ApiError } from "@/server/api/errors";
 import { createItemInTransaction, createItemSchema } from "./item-service";
 import { runCommand } from "./command-receipt";
+import { syncItemTaxonomies, type ItemTaxonomyDraft } from "./taxonomy-service";
 
 export const expansionSelectionSchema = preorderPositionSelectionSchema;
 export type ExpansionSelection = z.infer<typeof expansionSelectionSchema>;
@@ -58,6 +59,18 @@ export async function linkExpansionsInTransaction(
   if (!base) throw ApiError.notFound("ITEM_NOT_FOUND", "Игра не найдена");
   const seen = new Set<string>();
   const items: { itemId: string; price?: number }[] = [];
+  const taxonomyBatch: ItemTaxonomyDraft[] = [];
+  const importedImages = new Map<string, string[]>();
+  let typeId: string | undefined;
+  async function resolveTypeId() {
+    if (!typeId) {
+      const type = await tx.itemType.findUniqueOrThrow({
+        where: { code: kind },
+      });
+      typeId = type.id;
+    }
+    return typeId;
+  }
   for (const selection of selections) {
     let itemId = selection.itemId;
     if (selection.external) {
@@ -73,13 +86,10 @@ export async function linkExpansionsInTransaction(
             "INVALID_EXPANSION",
             "Не удалось получить данные дополнения",
           );
-        const type = await tx.itemType.findUniqueOrThrow({
-          where: { code: kind },
-        });
         itemId = await createItemInTransaction(
           tx,
           createItemSchema.parse({
-            typeId: type.id,
+            typeId: await resolveTypeId(),
             title: imported.title,
             originalTitle: imported.originalTitle,
             description: imported.description,
@@ -94,25 +104,21 @@ export async function linkExpansionsInTransaction(
             linkUrl: imported.url,
             externalReference: { ...external, url: imported.url },
           }),
+          { taxonomyBatch },
         );
-        await tx.image.updateMany({
-          where: { itemId },
-          data: { type: "reference", provider: external.provider },
-        });
+        const images = importedImages.get(external.provider) ?? [];
+        images.push(itemId);
+        importedImages.set(external.provider, images);
       }
     }
     if (!itemId) {
-      const type = await tx.itemType.findUnique({
-        where: { code: kind },
-      });
-      if (!type)
-        throw ApiError.notFound(
-          "ITEM_TYPE_NOT_FOUND",
-          "Тип дополнения не найден",
-        );
       itemId = await createItemInTransaction(
         tx,
-        createItemSchema.parse({ typeId: type.id, title: selection.title }),
+        createItemSchema.parse({
+          typeId: await resolveTypeId(),
+          title: selection.title,
+        }),
+        { taxonomyBatch },
       );
     }
     const item = await tx.item.findFirst({
@@ -128,23 +134,23 @@ export async function linkExpansionsInTransaction(
       );
     }
     seen.add(itemId);
-    await tx.itemRelation.upsert({
-      where: {
-        parentItemId_childItemId_relationType: {
-          parentItemId: baseItemId,
-          childItemId: itemId,
-          relationType: kind === "accessory" ? "compatible_with" : "expands",
-        },
-      },
-      create: {
+    items.push({ itemId, price: selection.price });
+  }
+  await syncItemTaxonomies(tx, taxonomyBatch);
+  for (const [provider, ids] of importedImages)
+    await tx.image.updateMany({
+      where: { itemId: { in: ids } },
+      data: { type: "reference", provider },
+    });
+  if (items.length)
+    await tx.itemRelation.createMany({
+      data: items.map(({ itemId }) => ({
         parentItemId: baseItemId,
         childItemId: itemId,
         relationType: kind === "accessory" ? "compatible_with" : "expands",
-      },
-      update: {},
+      })),
+      skipDuplicates: true,
     });
-    items.push({ itemId, price: selection.price });
-  }
   return items;
 }
 

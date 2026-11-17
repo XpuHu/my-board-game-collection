@@ -625,9 +625,15 @@ export type PreorderSummaryDto = {
 
 export type PreorderPricingMode = "per_item" | "lot";
 export type PreorderPaymentType = "one_time" | "installments" | "unspecified";
+export type { PreorderDeliveryMethod } from "@/shared/lib/preorder-delivery";
 export type PreorderListItemDto = PreorderSummaryDto & {
+  deliveryMethod?: import("@/shared/lib/preorder-delivery").PreorderDeliveryMethod;
+  deliveryCost?: number | null;
+  paymentSchedule?: import("@/shared/lib/payment-schedule").PaymentRow[] | null;
+  paymentVersion?: number;
   parentId?: string | null;
   pricingMode?: PreorderPricingMode;
+  fullyPaid?: boolean;
   paymentType?: PreorderPaymentType;
   priceKnown?: boolean;
   basePrice?: number;
@@ -637,6 +643,7 @@ export type PreorderListItemDto = PreorderSummaryDto & {
   price: MoneyAmountDto;
   orderDate?: string | null;
   receivedDate?: string | null;
+  orderUrl?: string | null;
   trackingNumber?: string | null;
   comment?: string | null;
   updatedAt: string;
@@ -672,7 +679,10 @@ export type UpdatePreorderExpectedDateResponse = {
 };
 
 export type CreatePreorderRequest = {
+  deliveryMethod?: import("@/shared/lib/preorder-delivery").PreorderDeliveryMethod;
+  deliveryCost?: number | null;
   pricingMode?: PreorderPricingMode;
+  fullyPaid?: boolean;
   paymentType?: PreorderPaymentType;
   shop: string;
   price: number;
@@ -681,6 +691,7 @@ export type CreatePreorderRequest = {
   expectedDate?: string | null;
   expectedDatePrecision?: ExpectedDatePrecision;
   receivedDate?: string | null;
+  orderUrl?: string | null;
   trackingNumber?: string | null;
   status: PreorderStatus;
   comment?: string | null;
@@ -695,6 +706,7 @@ export type PreorderPositionInput = {
 export type UpdatePreorderRequest = Partial<CreatePreorderRequest> & {
   operationId?: string;
   expansions?: PreorderPositionInput[];
+  accessories?: PreorderPositionInput[];
   positionPrices?: { preorderId: string; price: number }[];
 };
 
@@ -976,6 +988,10 @@ export type BackupPreorderEventDto = {
 };
 
 export type BackupPreorderDto = {
+  deliveryMethod?: import("@/shared/lib/preorder-delivery").PreorderDeliveryMethod;
+  deliveryCost?: number | null;
+  fullyPaid?: boolean | null;
+  paymentSchedule?: import("@/shared/lib/payment-schedule").PaymentRow[] | null;
   parentId?: string | null;
   pricingMode?: PreorderPricingMode;
   paymentType?: PreorderPaymentType;
@@ -990,6 +1006,7 @@ export type BackupPreorderDto = {
   expectedDate?: string | null;
   expectedDatePrecision: ExpectedDatePrecision;
   receivedDate?: string | null;
+  orderUrl?: string | null;
   trackingNumber?: string | null;
   status: PreorderStatus;
   comment?: string | null;

@@ -1,4 +1,17 @@
 "use client";
+import { PaymentSchedule } from "@/components/payment-schedule";
+import { ReceivePreorderDialog } from "@/components/receive-preorder-dialog";
+import {
+  PreorderActionButton,
+  preorderActions,
+  type PreorderAction,
+} from "@/components/preorder-action-button";
+import {
+  preorderTotal,
+  preorderDeliveryLabels,
+} from "@/shared/lib/preorder-delivery";
+import { PreorderPaymentStatus } from "@/components/preorder-payment-status";
+import { LotItemType } from "@/components/lot-item-type";
 import {
   formatExpectedDate,
   formatCalendarDate as formatDate,
@@ -10,13 +23,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CalendarClock,
-  CheckCircle2,
   Package,
   Pencil,
   Plus,
-  RotateCcw,
-  Trash2,
-  XCircle,
+  WalletCards,
 } from "lucide-react";
 
 import { EditPreorderDialog } from "@/components/edit-preorder-dialog";
@@ -62,17 +72,25 @@ export function PreordersPageClient({
 
   const [editingPreorder, setEditingPreorder] =
     React.useState<PreorderListItemDto | null>(null);
-  const [pending, setPending] = React.useState<Set<string>>(() => new Set());
-  const pendingIds = React.useRef(new Set<string>());
-  async function mutate(id: string, action: () => Promise<void>) {
+  const [receivingPreorder, setReceivingPreorder] =
+    React.useState<PreorderListItemDto | null>(null);
+  const [pending, setPending] = React.useState<Map<string, PreorderAction>>(
+    () => new Map(),
+  );
+  const pendingIds = React.useRef(new Map<string, PreorderAction>());
+  async function mutate(
+    id: string,
+    kind: PreorderAction,
+    action: () => Promise<void>,
+  ) {
     if (pendingIds.current.has(id)) return;
-    pendingIds.current.add(id);
-    setPending(new Set(pendingIds.current));
+    pendingIds.current.set(id, kind);
+    setPending(new Map(pendingIds.current));
     try {
       await action();
     } finally {
       pendingIds.current.delete(id);
-      setPending(new Set(pendingIds.current));
+      setPending(new Map(pendingIds.current));
     }
   }
   React.useEffect(() => {
@@ -99,9 +117,11 @@ export function PreordersPageClient({
   async function changeStatus(
     preorder: PreorderListItemDto,
     status: "received" | "cancelled",
+    receivedDate?: string,
   ) {
     try {
-      await updatePreorderStatus(preorder.id, status);
+      await updatePreorderStatus(preorder.id, status, receivedDate);
+      if (status === "received") setReceivingPreorder(null);
       toast({
         title:
           status === "received" ? "Предзаказ получен" : "Предзаказ отменён",
@@ -232,24 +252,23 @@ export function PreordersPageClient({
               <PreorderRow
                 key={preorder.id}
                 preorder={preorder}
-                pending={pending.has(preorder.id)}
+                pendingAction={pending.get(preorder.id)}
+                onPaymentsSaved={result.reload}
                 onChangeDate={() => setDatePreorder(preorder)}
                 onEdit={() => setEditingPreorder(preorder)}
-                onReceive={() =>
-                  void mutate(preorder.id, () =>
-                    changeStatus(preorder, "received"),
-                  )
-                }
+                onReceive={() => setReceivingPreorder(preorder)}
                 onCancel={() =>
-                  void mutate(preorder.id, () =>
+                  void mutate(preorder.id, "cancel", () =>
                     changeStatus(preorder, "cancelled"),
                   )
                 }
                 onReactivate={() =>
-                  void mutate(preorder.id, () => reactivate(preorder))
+                  void mutate(preorder.id, "reactivate", () =>
+                    reactivate(preorder),
+                  )
                 }
                 onDelete={() =>
-                  void mutate(preorder.id, () => remove(preorder))
+                  void mutate(preorder.id, "delete", () => remove(preorder))
                 }
               />
             ))}
@@ -269,6 +288,18 @@ export function PreordersPageClient({
         />
       ) : null}
 
+      {receivingPreorder ? (
+        <ReceivePreorderDialog
+          title={receivingPreorder.item.title}
+          saving={pending.get(receivingPreorder.id) === "receive"}
+          onClose={() => setReceivingPreorder(null)}
+          onSubmit={(date) =>
+            mutate(receivingPreorder.id, "receive", () =>
+              changeStatus(receivingPreorder, "received", date),
+            )
+          }
+        />
+      ) : null}
       {editingPreorder ? (
         <EditPreorderDialog
           key={editingPreorder.id}
@@ -293,30 +324,39 @@ export function PreordersPageClient({
 
 function PreorderRow({
   preorder,
-  pending,
+  pendingAction,
   onChangeDate,
   onEdit,
   onReceive,
   onCancel,
   onReactivate,
   onDelete,
+  onPaymentsSaved,
 }: {
   preorder: PreorderListItemDto;
-  pending: boolean;
+  pendingAction?: PreorderAction;
   onChangeDate: () => void;
   onEdit: () => void;
   onReceive: () => void;
   onCancel: () => void;
   onReactivate: () => void;
   onDelete: () => void;
+  onPaymentsSaved: () => void;
 }) {
   const active =
     preorder.uiStatus === "active" || preorder.uiStatus === "delayed";
   const received = preorder.uiStatus === "received";
+  const pending = Boolean(pendingAction);
   const relativeExpectedDate = formatRelativeExpectedDate(preorder);
+  const [paymentScheduleOpen, setPaymentScheduleOpen] = React.useState(false);
+  const paymentPanelId = React.useId();
+  const total = preorderTotal(preorder);
   return (
     <div>
-      <article className="grid gap-4 px-4 py-4 lg:grid-cols-[72px_minmax(0,1fr)_9rem_11rem_9rem_auto] lg:items-center">
+      <article
+        aria-busy={pending}
+        className="grid gap-4 px-4 py-4 xl:grid-cols-[72px_minmax(0,1fr)_8rem_11rem_9rem_7rem_17.5rem] xl:items-center"
+      >
         <GameCover
           src={preorder.item.cover?.url ?? preorder.item.cover?.path}
           alt={preorder.item.title}
@@ -330,7 +370,18 @@ function PreorderRow({
             {preorder.item.title}
           </Link>
           <p className="mt-1 text-sm text-muted-foreground">
-            {preorder.shop}
+            {preorder.orderUrl ? (
+              <a
+                href={preorder.orderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {preorder.shop} · Открыть предзаказ
+              </a>
+            ) : (
+              preorder.shop
+            )}
             {preorder.trackingNumber ? ` · ${preorder.trackingNumber}` : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -344,6 +395,17 @@ function PreorderRow({
               ? "Цена за весь лот"
               : "Цены по позициям"}
           </p>
+          {preorder.deliveryMethod &&
+          preorder.deliveryMethod !== "unspecified" ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Доставка: {preorderDeliveryLabels[preorder.deliveryMethod]}
+            </p>
+          ) : null}
+          {pendingAction ? (
+            <p role="status" className="mt-2 text-sm font-medium text-primary">
+              {preorderActions[pendingAction].pending}
+            </p>
+          ) : null}
         </div>
         <div>
           <span className="block text-xs text-muted-foreground">Заказан</span>
@@ -352,24 +414,79 @@ function PreorderRow({
           </strong>
         </div>
         <div className="rounded-lg bg-primary/10 p-3">
-          <span className="block text-xs text-muted-foreground">Ожидается</span>
-          <strong>{formatExpectedDate(preorder)}</strong>
-          {relativeExpectedDate ? (
+          <span className="block text-xs text-muted-foreground">
+            {received ? "Получен" : "Ожидается"}
+          </span>
+          <strong>
+            {received ? (
+              preorder.receivedDate ? (
+                <time dateTime={preorder.receivedDate}>
+                  {formatDate(preorder.receivedDate)}
+                </time>
+              ) : (
+                "Дата не указана"
+              )
+            ) : (
+              formatExpectedDate(preorder)
+            )}
+          </strong>
+          {received &&
+          preorder.expectedDate &&
+          preorder.expectedDatePrecision !== "unknown" ? (
+            <span className="mt-1 block text-xs font-normal text-muted-foreground">
+              Ожидался: {formatExpectedDate(preorder)}
+            </span>
+          ) : !received && relativeExpectedDate ? (
             <span className="mt-1 block text-xs font-normal text-muted-foreground">
               {relativeExpectedDate}
             </span>
           ) : null}
         </div>
         <div>
-          <span className="block text-xs text-muted-foreground">Стоимость</span>
-          <strong>
-            {formatMoney(preorder.price.amount, preorder.price.currency)}
-          </strong>
+          <span className="block text-xs text-muted-foreground">Итого</span>
+          <div className="flex items-center gap-2">
+            <strong>{formatMoney(total, preorder.price.currency)}</strong>
+            {!preorder.parentId ? (
+              <PreorderPaymentStatus
+                total={total}
+                currency={preorder.price.currency}
+                rows={preorder.paymentSchedule}
+                fullyPaid={preorder.fullyPaid}
+              />
+            ) : null}
+          </div>
+          {preorder.deliveryCost != null ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Доставка:{" "}
+              {preorder.deliveryCost === 0
+                ? "бесплатно"
+                : formatMoney(preorder.deliveryCost, preorder.price.currency)}
+            </p>
+          ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+        <div>
           <Badge variant={statusVariant(preorder.uiStatus)}>
             {statusLabel(preorder.uiStatus)}
           </Badge>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+          {!preorder.parentId && !preorder.fullyPaid ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              disabled={pending}
+              onClick={() => setPaymentScheduleOpen((open) => !open)}
+              aria-label="График оплаты"
+              title={
+                paymentScheduleOpen ? "Свернуть график оплаты" : "График оплаты"
+              }
+              aria-expanded={paymentScheduleOpen}
+              aria-controls={paymentPanelId}
+            >
+              <WalletCards className="h-4 w-4" />
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -394,56 +511,47 @@ function PreorderRow({
           </Button>
           {active ? (
             <>
-              <Button
-                disabled={pending}
-                type="button"
-                variant="outline"
-                size="icon"
+              <PreorderActionButton
+                action="receive"
+                pendingAction={pendingAction}
                 onClick={onReceive}
-                aria-label="Отметить полученным"
-                title="Отметить полученным"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-              </Button>
-              <Button
-                disabled={pending}
-                type="button"
-                variant="outline"
-                size="icon"
+              />
+              <PreorderActionButton
+                action="cancel"
+                pendingAction={pendingAction}
                 onClick={onCancel}
-                aria-label="Отменить предзаказ"
-                title="Отменить предзаказ"
-              >
-                <XCircle className="h-4 w-4" />
-              </Button>
+              />
             </>
           ) : null}
           {received ? (
-            <Button
-              disabled={pending}
-              type="button"
-              variant="outline"
-              size="icon"
+            <PreorderActionButton
+              action="reactivate"
+              pendingAction={pendingAction}
               onClick={onReactivate}
-              aria-label="Вернуть в активные"
-              title="Вернуть в активные"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
+            />
           ) : null}
-          <Button
-            disabled={pending}
-            type="button"
-            variant="outline"
-            size="icon"
+          <PreorderActionButton
+            action="delete"
+            pendingAction={pendingAction}
             onClick={onDelete}
-            aria-label="Удалить предзаказ"
-            title="Удалить предзаказ"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          />
         </div>
       </article>
+      {!preorder.parentId ? (
+        <PaymentSchedule
+          key={`${preorder.id}:${preorder.paymentVersion}:${total}:${preorder.fullyPaid}`}
+          id={preorder.id}
+          total={total}
+          currency={preorder.price.currency}
+          initialRows={preorder.paymentSchedule}
+          initialVersion={preorder.paymentVersion}
+          fullyPaid={preorder.fullyPaid}
+          status={preorder.status}
+          open={paymentScheduleOpen}
+          panelId={paymentPanelId}
+          onSaved={onPaymentsSaved}
+        />
+      ) : null}
       {preorder.children?.length ? (
         <details className="mx-4 mb-4 rounded-lg border bg-muted/20">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
@@ -451,7 +559,10 @@ function PreorderRow({
           </summary>
           <ul className="divide-y border-t px-4">
             <li className="flex flex-wrap justify-between gap-2 py-3 text-sm">
-              <span>{preorder.item.title} · основная игра</span>
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <LotItemType code={preorder.item.type.code} />
+                {preorder.item.title}
+              </span>
               <span>
                 {preorder.pricingMode === "lot"
                   ? "Входит в стоимость лота"
@@ -466,18 +577,14 @@ function PreorderRow({
                 key={child.id}
                 className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
               >
-                <div>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <LotItemType code={child.item.type.code} />
                   <Link
                     href={`/items/${child.item.id}`}
                     className="font-medium hover:underline"
                   >
                     {child.item.title}
                   </Link>
-                  <span className="ml-2 text-muted-foreground">
-                    {child.item.type.code === "accessory"
-                      ? "Аксессуар"
-                      : "Дополнение"}
-                  </span>
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge variant={statusVariant(child.uiStatus)}>

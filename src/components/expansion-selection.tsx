@@ -1,4 +1,5 @@
 "use client";
+import { Dropdown } from "@/components/ui/dropdown";
 import * as React from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -161,7 +162,7 @@ export function ExpansionSelection({
         <Label htmlFor={selectId}>
           {accessory ? "Аксессуары к этой игре" : "Дополнения к этой игре"}
         </Label>
-        <select
+        <Dropdown
           id={selectId}
           className="h-10 w-full rounded-md border bg-background px-3 text-sm disabled:opacity-50"
           value=""
@@ -170,9 +171,9 @@ export function ExpansionSelection({
             Boolean(loaded.error) ||
             !loaded.options.some((item) => !excluded.includes(item.id))
           }
-          onChange={(event) => {
+          onValueChange={(selectedValue) => {
             const item = loaded.options.find(
-              (item) => item.id === event.target.value,
+              (item) => item.id === selectedValue,
             );
             if (item) add(item);
           }}
@@ -193,7 +194,7 @@ export function ExpansionSelection({
                   </option>
                 ))
             : null}
-        </select>
+        </Dropdown>
         {!loading && loaded.warnings.length ? (
           <div className="text-sm text-muted-foreground">
             {loaded.warnings.map((warning, index) => (

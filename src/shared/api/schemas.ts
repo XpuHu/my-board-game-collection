@@ -1,3 +1,5 @@
+import { paymentScheduleSchema } from "@/shared/lib/payment-schedule";
+import { preorderDeliveryMethods } from "@/shared/lib/preorder-delivery";
 import { validIsoDate } from "@/shared/lib/calendar-date";
 import { z } from "zod";
 
@@ -220,6 +222,9 @@ export const preorderPositionSelectionSchema = z
 
 const preorderFieldsSchema = z
   .object({
+    deliveryMethod: z.enum(preorderDeliveryMethods).optional(),
+    deliveryCost: z.number().nonnegative().nullable().optional(),
+    fullyPaid: z.boolean().optional(),
     pricingMode: z.enum(["per_item", "lot"]).optional(),
     paymentType: z.enum(["one_time", "installments", "unspecified"]).optional(),
     shop: z.string().trim().min(1),
@@ -229,6 +234,19 @@ const preorderFieldsSchema = z
     expectedDate: optionalIsoDateStringSchema,
     expectedDatePrecision: expectedDatePrecisionSchema.optional(),
     receivedDate: optionalIsoDateStringSchema,
+    orderUrl: z
+      .string()
+      .trim()
+      .url()
+      .refine((value) => {
+        try {
+          return ["http:", "https:"].includes(new URL(value).protocol);
+        } catch {
+          return false;
+        }
+      })
+      .nullable()
+      .optional(),
     trackingNumber: nullableStringSchema.optional(),
     status: preorderStatusSchema,
     comment: nullableStringSchema.optional(),
@@ -248,6 +266,11 @@ export const updatePreorderRequestSchema = preorderFieldsSchema
   .partial()
   .extend({
     operationId: z.string().uuid().optional(),
+    accessories: z
+      .array(preorderPositionSelectionSchema)
+      .min(1)
+      .max(50)
+      .optional(),
     expansions: z
       .array(preorderPositionSelectionSchema)
       .min(1)
@@ -266,7 +289,10 @@ export const updatePreorderRequestSchema = preorderFieldsSchema
       .optional(),
   })
   .superRefine((value, context) => {
-    if (value.expansions?.length && !value.operationId)
+    if (
+      (value.expansions?.length || value.accessories?.length) &&
+      !value.operationId
+    )
       context.addIssue({
         code: "custom",
         path: ["operationId"],
@@ -499,6 +525,10 @@ const backupPreorderEventSchema = z
 
 const backupPreorderSchema = z
   .object({
+    deliveryMethod: z.enum(preorderDeliveryMethods).optional(),
+    deliveryCost: z.number().nonnegative().nullable().optional(),
+    fullyPaid: z.boolean().nullable().optional(),
+    paymentSchedule: paymentScheduleSchema.nullable().optional(),
     parentId: uuidSchema.nullable().optional(),
     pricingMode: z.enum(["per_item", "lot"]).optional(),
     paymentType: z.enum(["one_time", "installments", "unspecified"]).optional(),
@@ -513,6 +543,18 @@ const backupPreorderSchema = z
     expectedDate: isoDateStringSchema.nullable().optional(),
     expectedDatePrecision: expectedDatePrecisionSchema.optional(),
     receivedDate: isoDateStringSchema.nullable().optional(),
+    orderUrl: z
+      .string()
+      .url()
+      .refine((value) => {
+        try {
+          return ["http:", "https:"].includes(new URL(value).protocol);
+        } catch {
+          return false;
+        }
+      })
+      .nullable()
+      .optional(),
     trackingNumber: z.string().nullable().optional(),
     status: preorderStatusSchema,
     comment: z.string().nullable().optional(),

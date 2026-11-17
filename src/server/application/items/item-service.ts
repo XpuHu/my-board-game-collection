@@ -31,7 +31,7 @@ import {
   resolveUserItemTransition,
   wishlistTransition,
 } from "./user-item-transition";
-import { syncItemTaxonomy } from "./taxonomy-service";
+import { syncItemTaxonomy, type ItemTaxonomyDraft } from "./taxonomy-service";
 
 const createItemSchema = z
   .object({
@@ -90,6 +90,7 @@ export async function createItem(input: CreateItemInput) {
 export async function createItemInTransaction(
   tx: Prisma.TransactionClient,
   input: CreateItemInput,
+  options: { taxonomyBatch?: ItemTaxonomyDraft[] } = {},
 ) {
   const created = await tx.item.create({
     data: {
@@ -149,7 +150,9 @@ export async function createItemInTransaction(
       },
     },
   });
-  await syncItemTaxonomy(tx, created.id, input);
+  if (options.taxonomyBatch)
+    options.taxonomyBatch.push({ itemId: created.id, input });
+  else await syncItemTaxonomy(tx, created.id, input);
   return created.id;
 }
 
@@ -812,7 +815,12 @@ export async function searchLocalItems(q: string, page = 1, typeCode?: string) {
     ...(typeCode ? { type: { code: typeCode } } : {}),
     deletedAt: null,
     ...(q
-      ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { originalTitle: { contains: q, mode: "insensitive" } }] }
+      ? {
+          OR: [
+            { title: { contains: q, mode: "insensitive" } },
+            { originalTitle: { contains: q, mode: "insensitive" } },
+          ],
+        }
       : {}),
   };
   const [total, items] = await prisma.$transaction([

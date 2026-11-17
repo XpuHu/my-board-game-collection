@@ -1,4 +1,12 @@
 "use client";
+import { Dropdown } from "@/components/ui/dropdown";
+import {
+  PreorderDeliveryMethodField,
+  PreorderDeliveryCostField,
+} from "@/components/preorder-delivery-fields";
+import { PreorderUrlField } from "@/components/preorder-url-field";
+import { LotItemType } from "@/components/lot-item-type";
+import { PublisherPicker } from "@/components/publisher-picker";
 import * as React from "react";
 import { Save } from "lucide-react";
 import { Button } from "./ui/button";
@@ -41,6 +49,7 @@ export function EditPreorderDialog({
     preorderEditValues(preorder),
   );
   const [additions, setAdditions] = React.useState<ExpansionDraft[]>([]);
+  const [accessories, setAccessories] = React.useState<ExpansionDraft[]>([]);
   const command = usePendingCommand(
     `edit-preorder:${preorder.id}`,
     `/api/preorders/${encodeURIComponent(preorder.id)}`,
@@ -67,15 +76,16 @@ export function EditPreorderDialog({
       if (
         !command.pending &&
         values.pricingMode === "per_item" &&
-        additions.some((item) => !item.price.trim())
+        [...additions, ...accessories].some((item) => !item.price.trim())
       )
-        throw new Error("Укажите стоимость каждого добавляемого дополнения");
+        throw new Error("Укажите стоимость каждой добавляемой позиции");
       const patch = command.pending
         ? null
         : preorderEditRequest(
             preorder,
             values,
             expansionPayload(additions, values.pricingMode === "per_item"),
+            expansionPayload(accessories, values.pricingMode === "per_item"),
           );
       if (patch && !Object.keys(patch).length) {
         onClose();
@@ -107,7 +117,7 @@ export function EditPreorderDialog({
         if (!open && !busy.current) onClose();
       }}
     >
-      <DialogContent>
+      <DialogContent onOpenAutoFocus={(event) => event.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Редактировать предзаказ</DialogTitle>
           <DialogDescription>
@@ -129,11 +139,12 @@ export function EditPreorderDialog({
             >
               <div>
                 <Label htmlFor={`${formId}-shop`}>Магазин</Label>
-                <Input
+                <PublisherPicker
                   id={`${formId}-shop`}
-                  className="mt-2"
                   value={values.shop}
-                  onChange={(e) => set("shop", e.target.value)}
+                  onChange={(value) => set("shop", value)}
+                  multiple={false}
+                  saveWith="preorder"
                   required
                 />
               </div>
@@ -141,39 +152,62 @@ export function EditPreorderDialog({
                 <Label htmlFor={`${formId}-pricing`}>
                   Стоимость предзаказа
                 </Label>
-                <select
+                <Dropdown
                   id={`${formId}-pricing`}
                   className={selectClass}
                   value={values.pricingMode}
-                  onChange={(e) =>
+                  onValueChange={(selectedValue) =>
                     set(
                       "pricingMode",
-                      e.target.value as PreorderEditValues["pricingMode"],
+                      selectedValue as PreorderEditValues["pricingMode"],
                     )
                   }
                 >
                   <option value="lot">Цена за весь лот</option>
                   <option value="per_item">Цены по позициям</option>
-                </select>
+                </Dropdown>
               </div>
               <div>
                 <Label htmlFor={`${formId}-payment`}>Способ оплаты</Label>
-                <select
+                <Dropdown
                   id={`${formId}-payment`}
                   className={selectClass}
                   value={values.paymentType}
-                  onChange={(e) =>
+                  onValueChange={(selectedValue) =>
                     set(
                       "paymentType",
-                      e.target.value as PreorderEditValues["paymentType"],
+                      selectedValue as PreorderEditValues["paymentType"],
                     )
                   }
                 >
                   <option value="unspecified">Не указан</option>
                   <option value="one_time">Единоразовый платёж</option>
                   <option value="installments">Рассрочка</option>
-                </select>
+                </Dropdown>
               </div>
+              <PreorderUrlField
+                value={values.orderUrl}
+                onChange={(value) => set("orderUrl", value)}
+              />
+              <PreorderDeliveryMethodField
+                id={`${formId}-delivery-method`}
+                value={values.deliveryMethod}
+                onChange={(value) => set("deliveryMethod", value)}
+              />
+              <PreorderDeliveryCostField
+                id={`${formId}-delivery-cost`}
+                value={values.deliveryCost}
+                currency={values.currency}
+                onChange={(value) => set("deliveryCost", value)}
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={values.fullyPaid}
+                  onChange={(event) => set("fullyPaid", event.target.checked)}
+                />
+                Полностью оплачен — график платежей не нужен
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor={`${formId}-price`}>
@@ -207,68 +241,106 @@ export function EditPreorderDialog({
                   />
                 </div>
               </div>
-              {values.pricingMode === "per_item"
-                ? (preorder.children ?? []).map((child) => (
-                    <div key={child.id}>
-                      <Label htmlFor={`${formId}-position-${child.id}`}>
-                        Стоимость: {child.item.title}
-                      </Label>
-                      <Input
-                        id={`${formId}-position-${child.id}`}
-                        className="mt-2"
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        required
-                        value={values.positionPrices[child.id] ?? ""}
-                        onChange={(e) =>
-                          set("positionPrices", {
-                            ...values.positionPrices,
-                            [child.id]: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                  ))
-                : null}
               <section className="grid gap-3 rounded-lg border p-4">
-                <h3 className="font-semibold">Добавить дополнения</h3>
+                <h3 className="font-semibold">Состав лота</h3>
                 {preorder.children?.length ? (
+                  <ul className="divide-y">
+                    {preorder.children.map((child) => (
+                      <li
+                        key={child.id}
+                        className="grid gap-2 py-3 first:pt-0 last:pb-0"
+                      >
+                        <LotItemType code={child.item.type.code} />
+                        <span className="text-sm font-medium">
+                          {child.item.title}
+                        </span>
+                        {values.pricingMode === "per_item" ? (
+                          <div>
+                            <Label htmlFor={`${formId}-position-${child.id}`}>
+                              Стоимость: {child.item.title}
+                            </Label>
+                            <Input
+                              id={`${formId}-position-${child.id}`}
+                              className="mt-2"
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              required
+                              value={values.positionPrices[child.id] ?? ""}
+                              onChange={(e) =>
+                                set("positionPrices", {
+                                  ...values.positionPrices,
+                                  [child.id]: e.target.value,
+                                })
+                              }
+                            />
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
                   <p className="text-sm text-muted-foreground">
-                    Уже в лоте:{" "}
-                    {preorder.children
-                      .map((child) => child.item.title)
-                      .join(", ")}
+                    Дополнения и аксессуары пока не добавлены.
                   </p>
-                ) : null}
-                <ExpansionSelection
-                  value={additions}
-                  onChange={setAdditions}
-                  baseItemId={preorder.item.id}
-                  excludeIds={(preorder.children ?? []).map(
-                    (child) => child.item.id,
-                  )}
-                  prices={values.pricingMode === "per_item"}
-                  currency={values.currency}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {values.pricingMode === "lot"
-                    ? "Дополнения войдут в общую стоимость. При необходимости измените цену всего лота."
-                    : "Цена каждого нового дополнения прибавится к стоимости лота."}
-                </p>
+                )}
               </section>
+              <details className="rounded-lg border p-4">
+                <summary className="cursor-pointer font-semibold">
+                  Добавить дополнения
+                  {additions.length > 0 ? ` (${additions.length})` : ""}
+                </summary>
+                <div className="mt-3 grid gap-3">
+                  <ExpansionSelection
+                    value={additions}
+                    onChange={setAdditions}
+                    baseItemId={preorder.item.id}
+                    excludeIds={(preorder.children ?? []).map(
+                      (child) => child.item.id,
+                    )}
+                    prices={values.pricingMode === "per_item"}
+                    currency={values.currency}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {values.pricingMode === "lot"
+                      ? "Дополнения войдут в общую стоимость. При необходимости измените цену всего лота."
+                      : "Цена каждого нового дополнения прибавится к стоимости лота."}
+                  </p>
+                </div>
+              </details>
+              <details className="rounded-lg border p-4">
+                <summary className="cursor-pointer font-semibold">
+                  Добавить аксессуары
+                  {accessories.length > 0 ? ` (${accessories.length})` : ""}
+                </summary>
+                <div className="mt-3 grid gap-3">
+                  <ExpansionSelection
+                    kind="accessory"
+                    value={accessories}
+                    onChange={setAccessories}
+                    baseItemId={preorder.item.id}
+                    excludeIds={(preorder.children ?? []).map(
+                      (child) => child.item.id,
+                    )}
+                    prices={values.pricingMode === "per_item"}
+                    currency={values.currency}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {values.pricingMode === "lot"
+                      ? "Аксессуары войдут в общую стоимость. При необходимости измените цену всего лота."
+                      : "Цена каждого нового аксессуара прибавится к стоимости лота."}
+                  </p>
+                </div>
+              </details>
               <div>
                 <Label htmlFor={`${formId}-status`}>Статус</Label>
-                <select
+                <Dropdown
                   id={`${formId}-status`}
                   className={selectClass}
                   disabled={terminal}
                   value={values.status}
-                  onChange={(e) =>
-                    set(
-                      "status",
-                      e.target.value as PreorderEditValues["status"],
-                    )
+                  onValueChange={(selectedValue) =>
+                    set("status", selectedValue as PreorderEditValues["status"])
                   }
                 >
                   <option value="planned">Планируется</option>
@@ -280,7 +352,7 @@ export function EditPreorderDialog({
                       {preorder.status === "received" ? "Получен" : "Отменён"}
                     </option>
                   ) : null}
-                </select>
+                </Dropdown>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Получение, отмена и возврат в активные доступны через кнопки
                   предзаказа в списке.
@@ -296,16 +368,33 @@ export function EditPreorderDialog({
                   onChange={(e) => set("orderDate", e.target.value)}
                 />
               </div>
+              {preorder.status === "received" ? (
+                <div>
+                  <Label htmlFor={`${formId}-received-date`}>
+                    Дата получения
+                  </Label>
+                  <Input
+                    id={`${formId}-received-date`}
+                    className="mt-2"
+                    type="date"
+                    required
+                    value={values.receivedDate}
+                    onChange={(event) =>
+                      set("receivedDate", event.target.value)
+                    }
+                  />
+                </div>
+              ) : null}
               <div>
                 <Label htmlFor={`${formId}-precision`}>Ожидаемый срок</Label>
-                <select
+                <Dropdown
                   id={`${formId}-precision`}
                   className={selectClass}
                   value={values.precision}
-                  onChange={(e) =>
+                  onValueChange={(selectedValue) =>
                     set(
                       "precision",
-                      e.target.value as PreorderEditValues["precision"],
+                      selectedValue as PreorderEditValues["precision"],
                     )
                   }
                 >
@@ -313,7 +402,7 @@ export function EditPreorderDialog({
                   <option value="day">Точный день</option>
                   <option value="month">Месяц</option>
                   <option value="quarter">Квартал</option>
-                </select>
+                </Dropdown>
               </div>
               {values.precision === "day" ? (
                 <div>
@@ -358,18 +447,20 @@ export function EditPreorderDialog({
                   </div>
                   <div>
                     <Label htmlFor={`${formId}-quarter`}>Квартал</Label>
-                    <select
+                    <Dropdown
                       id={`${formId}-quarter`}
                       className={selectClass}
                       value={values.quarter}
-                      onChange={(e) => set("quarter", e.target.value)}
+                      onValueChange={(selectedValue) =>
+                        set("quarter", selectedValue)
+                      }
                     >
                       {[1, 2, 3, 4].map((q) => (
                         <option key={q} value={q}>
                           {q}-й квартал
                         </option>
                       ))}
-                    </select>
+                    </Dropdown>
                   </div>
                 </div>
               ) : null}

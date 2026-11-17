@@ -1,4 +1,5 @@
 "use client";
+import { Dropdown } from "@/components/ui/dropdown";
 
 import * as React from "react";
 import Link from "next/link";
@@ -475,7 +476,7 @@ function SelectField({
   return (
     <div>
       <Label htmlFor={`wishlist-${name}`}>{label}</Label>
-      <select
+      <Dropdown
         id={`wishlist-${name}`}
         name={name}
         defaultValue={value}
@@ -486,7 +487,7 @@ function SelectField({
             {text}
           </option>
         ))}
-      </select>
+      </Dropdown>
     </div>
   );
 }

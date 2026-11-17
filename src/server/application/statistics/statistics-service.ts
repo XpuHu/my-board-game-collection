@@ -83,7 +83,7 @@ export async function getStatisticsSummary(): Promise<StatisticsSummaryDto> {
     collectionValue: getCollectionValue(ownedItems as UserItemForList[]),
     preorderValue: sumMoney(
       activePreorders.map((preorder) => ({
-        amount: Number(preorder.price),
+        amount: Number(preorder.price) + Number(preorder.deliveryCost ?? 0),
         currency: preorder.currency,
       })),
     ),
@@ -170,13 +170,8 @@ export async function getStatisticsOverview(
   };
 }
 
-async function getPeriodTopItems(
-  plays: { itemId: string; playedAt: Date }[],
-) {
-  const aggregate = new Map<
-    string,
-    { count: number; lastPlayedAt: Date }
-  >();
+async function getPeriodTopItems(plays: { itemId: string; playedAt: Date }[]) {
+  const aggregate = new Map<string, { count: number; lastPlayedAt: Date }>();
   plays.forEach(({ itemId, playedAt }) => {
     const current = aggregate.get(itemId);
     aggregate.set(itemId, {

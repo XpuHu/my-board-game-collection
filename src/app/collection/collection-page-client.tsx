@@ -1,4 +1,5 @@
 "use client";
+import { Dropdown } from "@/components/ui/dropdown";
 import { useProductFeatures } from "@/components/product-features-provider";
 
 import * as React from "react";
@@ -7,7 +8,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Boxes,
   CalendarPlus,
-  ChevronDown,
   Clock3,
   ImageIcon,
   ListPlus,
@@ -79,10 +79,10 @@ export function CollectionPageClient() {
   }, [searchParams, features.plays]);
   const result = useAdapterQuery(collectionRestAdapter, query);
   const counts = {
-    all: useCollectionCount(query.q),
-    base_game: useCollectionCount(query.q, "base_game"),
-    expansion: useCollectionCount(query.q, "expansion"),
-    accessory: useCollectionCount(query.q, "accessory"),
+    all: useCollectionCount(query.q, undefined, query.favorite),
+    base_game: useCollectionCount(query.q, "base_game", query.favorite),
+    expansion: useCollectionCount(query.q, "expansion", query.favorite),
+    accessory: useCollectionCount(query.q, "accessory", query.favorite),
   };
   const [playCard, setPlayCard] = React.useState<CollectionCardDto | null>(
     null,
@@ -136,8 +136,8 @@ export function CollectionPageClient() {
     router.push(collectionHref(next));
   }
 
-  function changeSort(event: React.ChangeEvent<HTMLSelectElement>) {
-    const [sort, direction] = event.target.value.split(":");
+  function changeSort(value: string) {
+    const [sort, direction] = value.split(":");
     const next = new URLSearchParams(searchParams.toString());
     setOrDelete(next, "sort", sort);
     setOrDelete(next, "direction", direction === "asc" ? "asc" : "");
@@ -149,6 +149,11 @@ export function CollectionPageClient() {
     <main className={styles.page}>
       <h1 className={styles.title}>Моя коллекция</h1>
 
+      <p className="text-sm text-muted-foreground" aria-live="polite">
+        {result.data
+          ? `Найдено: ${result.data.pagination.total}`
+          : "Загрузка коллекции…"}
+      </p>
       <div className={styles.toolbar}>
         <form
           key={query.q ?? ""}
@@ -164,6 +169,9 @@ export function CollectionPageClient() {
             name="q"
             placeholder="Поиск по коллекции..."
           />
+          <Button type="submit" variant="outline">
+            Найти
+          </Button>
         </form>
 
         <nav aria-label="Тип предмета" className={styles.tabs}>
@@ -190,13 +198,37 @@ export function CollectionPageClient() {
         </nav>
 
         <div className={styles.actions}>
+          <Button
+            variant={query.favorite ? "default" : "outline"}
+            aria-pressed={Boolean(query.favorite)}
+            onClick={() => {
+              const next = new URLSearchParams(searchParams.toString());
+              setOrDelete(next, "favorite", query.favorite ? "" : "true");
+              next.delete("page");
+              router.push(collectionHref(next));
+            }}
+          >
+            Избранное
+          </Button>
+          {query.q ||
+          query.type ||
+          query.favorite ||
+          query.hasActivePreorder ||
+          query.hasExpansions ? (
+            <Button asChild variant="outline">
+              <Link href="/collection">Сбросить фильтры</Link>
+            </Button>
+          ) : null}
+          <Button asChild variant="outline">
+            <Link href="/collection/import">Импорт BGG</Link>
+          </Button>
           <label className={styles.sortControl}>
             <span className={styles.sortLabel}>Сортировка:</span>
             <span className={styles.selectWrap}>
-              <select
+              <Dropdown
                 aria-label="Сортировка"
                 className={styles.sortSelect}
-                onChange={changeSort}
+                onValueChange={changeSort}
                 value={sortSelection(query)}
               >
                 {sortOptions
@@ -211,8 +243,7 @@ export function CollectionPageClient() {
                       {option.label}
                     </option>
                   ))}
-              </select>
-              <ChevronDown aria-hidden="true" />
+              </Dropdown>
             </span>
           </label>
 
@@ -471,18 +502,23 @@ function CollectionLoading() {
   );
 }
 
-function useCollectionCount(q?: string, type?: CollectionTabType) {
+function useCollectionCount(
+  q?: string,
+  type?: CollectionTabType,
+  favorite?: boolean,
+) {
   return useAdapterQuery(
     collectionRestAdapter,
     {
       q,
       type,
+      favorite,
       page: 1,
       pageSize: 24,
       sort: "title",
       direction: "asc",
     },
-    { key: `collection-count:${q ?? ""}:${type ?? "all"}` },
+    { key: `collection-count:${q ?? ""}:${type ?? "all"}:${favorite ?? ""}` },
   );
 }
 

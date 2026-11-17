@@ -1,5 +1,6 @@
+import { paymentScheduleSchema } from "@/shared/lib/payment-schedule";
 import { ApiError } from "@/server/api/errors";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/infrastructure/database/prisma";
 import { syncItemTaxonomy } from "@/server/application/items/taxonomy-service";
@@ -177,8 +178,12 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
         updatedAt: purchase.updatedAt.toISOString(),
       })),
       preorders: preorders.map((preorder) => ({
+        fullyPaid: preorder.fullyPaid,
         parentId: preorder.parentId,
         pricingMode: preorder.pricingMode as "lot" | "per_item",
+        paymentSchedule: preorder.paymentSchedule
+          ? paymentScheduleSchema.parse(preorder.paymentSchedule)
+          : null,
         paymentType: preorder.paymentType as
           "one_time" | "installments" | "unspecified",
         priceKnown: preorder.priceKnown,
@@ -194,6 +199,10 @@ export async function exportJsonBackup(): Promise<JsonBackupDto> {
           ? preorder.expectedDatePrecision
           : "unknown") as JsonBackupDto["data"]["preorders"][number]["expectedDatePrecision"],
         receivedDate: preorder.receivedDate?.toISOString() ?? null,
+        orderUrl: preorder.orderUrl,
+        deliveryMethod:
+          preorder.deliveryMethod as JsonBackupDto["data"]["preorders"][number]["deliveryMethod"],
+        deliveryCost: decimalToNumber(preorder.deliveryCost),
         trackingNumber: preorder.trackingNumber,
         status:
           preorder.status as JsonBackupDto["data"]["preorders"][number]["status"],
@@ -809,6 +818,8 @@ async function importPreorders(
       update: {
         itemId,
         pricingMode: preorder.pricingMode,
+        paymentSchedule: preorder.paymentSchedule ?? Prisma.JsonNull,
+        fullyPaid: preorder.fullyPaid,
         paymentType: preorder.paymentType,
         priceKnown: preorder.priceKnown,
         shop: preorder.shop,
@@ -818,6 +829,9 @@ async function importPreorders(
         expectedDate,
         expectedDatePrecision,
         receivedDate: nullableDate(preorder.receivedDate),
+        orderUrl: preorder.orderUrl,
+        deliveryMethod: preorder.deliveryMethod,
+        deliveryCost: preorder.deliveryCost,
         trackingNumber: preorder.trackingNumber,
         status: preorder.status,
         comment: preorder.comment,
@@ -827,6 +841,8 @@ async function importPreorders(
         id: preorder.id,
         itemId,
         pricingMode: preorder.pricingMode,
+        paymentSchedule: preorder.paymentSchedule ?? Prisma.JsonNull,
+        fullyPaid: preorder.fullyPaid,
         paymentType: preorder.paymentType,
         priceKnown: preorder.priceKnown,
         shop: preorder.shop,
@@ -836,6 +852,9 @@ async function importPreorders(
         expectedDate,
         expectedDatePrecision,
         receivedDate: nullableDate(preorder.receivedDate),
+        orderUrl: preorder.orderUrl,
+        deliveryMethod: preorder.deliveryMethod,
+        deliveryCost: preorder.deliveryCost,
         trackingNumber: preorder.trackingNumber,
         status: preorder.status,
         comment: preorder.comment,

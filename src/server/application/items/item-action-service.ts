@@ -14,7 +14,10 @@ import {
   createItemInTransaction,
   addToCollectionInTransaction,
 } from "./item-service";
-import { createPreorderInTransaction } from "@/server/application/preorders/preorder-service";
+import {
+  createPreorderInTransaction,
+  createPreorderPositionsInTransaction,
+} from "@/server/application/preorders/preorder-service";
 import { runCommand } from "./command-receipt";
 export const itemActionSchema = z
   .object({
@@ -87,9 +90,12 @@ export async function executeItemAction(input: ItemActionInput) {
           payload.collection ?? {},
         );
       else {
-        preorderId = (
-          await createPreorderInTransaction(tx, itemId, payload.preorder!)
-        ).id;
+        const root = await createPreorderInTransaction(
+          tx,
+          itemId,
+          payload.preorder!,
+        );
+        preorderId = root.id;
         const expansions = await linkExpansionsInTransaction(
           tx,
           itemId,
@@ -112,21 +118,17 @@ export async function executeItemAction(input: ItemActionInput) {
             "DUPLICATE_POSITION",
             "Позиции лота должны отличаться",
           );
-        const expansionPreorderIds: string[] = [];
-        const accessoryPreorderIds: string[] = [];
-        for (const [index, position] of positions.entries()) {
-          const isLot = payload.preorder!.pricingMode === "lot";
-          const preorder = await createPreorderInTransaction(
-            tx,
-            position.itemId,
-            { ...payload.preorder!, price: isLot ? 0 : position.price! },
-            { parentId: preorderId, priceKnown: !isLot },
-          );
-          (index < expansions.length
-            ? expansionPreorderIds
-            : accessoryPreorderIds
-          ).push(preorder.id);
-        }
+        const children = await createPreorderPositionsInTransaction(
+          tx,
+          root,
+          positions,
+        );
+        const expansionPreorderIds = children
+          .slice(0, expansions.length)
+          .map(({ id }) => id);
+        const accessoryPreorderIds = children
+          .slice(expansions.length)
+          .map(({ id }) => id);
         return {
           itemId,
           title: item.title,

@@ -1,4 +1,6 @@
 "use client";
+import { Dropdown } from "@/components/ui/dropdown";
+import { PublisherPicker } from "@/components/publisher-picker";
 import { useProductFeatures } from "@/components/product-features-provider";
 import { usePendingCommand } from "@/shared/hooks/use-pending-command";
 
@@ -953,7 +955,7 @@ function ReferenceDataForm({
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="reference-typeId">Тип элемента</Label>
-                  <select
+                  <Dropdown
                     id="reference-typeId"
                     name="typeId"
                     defaultValue={details.item.type.id}
@@ -964,7 +966,7 @@ function ReferenceDataForm({
                         {type.name}
                       </option>
                     ))}
-                  </select>
+                  </Dropdown>
                 </div>
                 <Field
                   id="reference-originalTitle"
@@ -1217,13 +1219,21 @@ function ListField({
   return (
     <div>
       <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        name={name}
-        className="mt-2"
-        defaultValue={values.map(({ name: value }) => value).join(", ")}
-        placeholder="Значения через запятую"
-      />
+      {name === "publishers" ? (
+        <PublisherPicker
+          id={id}
+          name={name}
+          defaultValue={values.map((v) => v.name).join(", ")}
+        />
+      ) : (
+        <Input
+          id={id}
+          name={name}
+          className="mt-2"
+          defaultValue={values.map(({ name: value }) => value).join(", ")}
+          placeholder="Значения через запятую"
+        />
+      )}
     </div>
   );
 }
@@ -1318,15 +1328,15 @@ function ReferenceRelationsEditor({
               className="grid gap-3 rounded-lg border bg-background p-3"
             >
               <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto]">
-                <select
+                <Dropdown
                   aria-label={`Связанный элемент ${index + 1}`}
                   value={relation.relatedItemId}
-                  onChange={(event) => {
+                  onValueChange={(selectedValue) => {
                     const candidate = options.find(
-                      ({ item }) => item.id === event.target.value,
+                      ({ item }) => item.id === selectedValue,
                     );
                     update(index, {
-                      relatedItemId: event.target.value,
+                      relatedItemId: selectedValue,
                       relatedItemTitle:
                         candidate?.item.title ?? relation.relatedItemTitle,
                     });
@@ -1338,13 +1348,13 @@ function ReferenceRelationsEditor({
                       {item.title}
                     </option>
                   ))}
-                </select>
-                <select
+                </Dropdown>
+                <Dropdown
                   aria-label={`Тип связи ${index + 1}`}
                   value={relation.relationType}
-                  onChange={(event) =>
+                  onValueChange={(selectedValue) =>
                     update(index, {
-                      relationType: event.target.value as ItemRelationType,
+                      relationType: selectedValue as ItemRelationType,
                     })
                   }
                   className="h-10 rounded-md border bg-background px-3 text-sm"
@@ -1354,7 +1364,7 @@ function ReferenceRelationsEditor({
                       {label}
                     </option>
                   ))}
-                </select>
+                </Dropdown>
                 <Button
                   type="button"
                   variant="ghost"
@@ -1366,19 +1376,19 @@ function ReferenceRelationsEditor({
                 </Button>
               </div>
               <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
-                <select
+                <Dropdown
                   aria-label={`Направление связи ${index + 1}`}
                   value={relation.direction}
-                  onChange={(event) =>
+                  onValueChange={(selectedValue) =>
                     update(index, {
-                      direction: event.target.value as "parent" | "child",
+                      direction: selectedValue as "parent" | "child",
                     })
                   }
                   className="h-10 rounded-md border bg-background px-3 text-sm"
                 >
                   <option value="parent">Родитель</option>
                   <option value="child">Дочерний элемент</option>
-                </select>
+                </Dropdown>
                 <Input
                   aria-label={`Комментарий к связи ${index + 1}`}
                   value={relation.comment}
@@ -1532,11 +1542,11 @@ function ReferenceLinksEditor({
               onChange={(event) => update(index, { url: event.target.value })}
               placeholder="https://…"
             />
-            <select
+            <Dropdown
               aria-label={`Тип внешней ссылки ${index + 1}`}
               value={link.type}
-              onChange={(event) =>
-                update(index, { type: event.target.value as LinkType })
+              onValueChange={(selectedValue) =>
+                update(index, { type: selectedValue as LinkType })
               }
               className="h-10 rounded-md border bg-background px-3 text-sm"
             >
@@ -1545,7 +1555,7 @@ function ReferenceLinksEditor({
                   {label}
                 </option>
               ))}
-            </select>
+            </Dropdown>
             <Button
               type="button"
               variant="ghost"
@@ -1684,10 +1694,10 @@ function ProviderSelect({
   ariaLabel: string;
 }) {
   return (
-    <select
+    <Dropdown
       aria-label={ariaLabel}
       value={value}
-      onChange={(event) => onChange(event.target.value as ProviderCode)}
+      onValueChange={(selectedValue) => onChange(selectedValue as ProviderCode)}
       className="h-10 rounded-md border bg-background px-3 text-sm"
     >
       {providerOptions.map(([code, label]) => (
@@ -1695,7 +1705,7 @@ function ProviderSelect({
           {label}
         </option>
       ))}
-    </select>
+    </Dropdown>
   );
 }
 
@@ -1760,11 +1770,11 @@ function SyncEditor({
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-48 flex-1">
             <Label htmlFor="reference-sync-provider">Источник</Label>
-            <select
+            <Dropdown
               id="reference-sync-provider"
               value={provider ?? ""}
-              onChange={(event) =>
-                onProviderChange(event.target.value as ProviderCode)
+              onValueChange={(selectedValue) =>
+                onProviderChange(selectedValue as ProviderCode)
               }
               className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
             >
@@ -1773,7 +1783,7 @@ function SyncEditor({
                   {providerLabel(code)}
                 </option>
               ))}
-            </select>
+            </Dropdown>
           </div>
           <Button
             type="button"

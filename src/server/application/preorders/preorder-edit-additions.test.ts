@@ -45,6 +45,36 @@ async function extra() {
   });
 }
 describe("adding expansions while editing a preorder", () => {
+  it("adds existing and new accessories, includes per-item prices and safely replays", async () => {
+    const order = await fixture("per_item");
+    const accessoryType = await prisma.itemType.findUniqueOrThrow({
+      where: { code: "accessory" },
+    });
+    const accessory = await prisma.item.create({
+      data: { typeId: accessoryType.id, title: `Accessory ${randomUUID()}` },
+    });
+    const input = {
+      operationId: randomUUID(),
+      accessories: [
+        { itemId: accessory.id, price: 20 },
+        { title: `Sleeves ${randomUUID()}`, price: 5 },
+      ],
+    };
+    const first = await updatePreorder(order.id, input);
+    expect(await updatePreorder(order.id, input)).toEqual(first);
+    const row = (await getItemCard(order.item.id)).preorders[0];
+    expect(row.children).toHaveLength(2);
+    expect(
+      row.children!.every((child) => child.item.type.code === "accessory"),
+    ).toBe(true);
+    expect(row.price.amount).toBe(125);
+    await expect(
+      updatePreorder(order.id, {
+        operationId: randomUUID(),
+        accessories: [{ itemId: accessory.id, price: 20 }],
+      }),
+    ).rejects.toMatchObject({ code: "POSITION_ALREADY_IN_LOT" });
+  });
   it("saves changes and an existing expansion atomically, inherits common data and replays without duplicates", async () => {
     const order = await fixture();
     const item = await extra();

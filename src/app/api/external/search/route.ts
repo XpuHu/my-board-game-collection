@@ -15,6 +15,7 @@ export async function GET(request: Request) {
         q: getSearchParam(searchParams, "q"),
         provider: provider ? providerCodeSchema.parse(provider) : undefined,
         type: getSearchParam(searchParams, "type"),
+        fallbackToTesera: getSearchParam(searchParams, "fallback") !== "false",
       }),
     );
   });

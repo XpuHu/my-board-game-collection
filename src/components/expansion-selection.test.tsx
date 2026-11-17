@@ -28,7 +28,7 @@ describe("expansion inputs inside the preorder form", () => {
       </form>,
     );
     expect(markup.match(/<form/g)).toHaveLength(1);
-    expect(markup).toContain("<select");
+    expect(markup).toContain('role="combobox"');
     expect(markup).not.toContain("Поиск дополнений");
     expect(markup).toContain('type="number"');
     expect(markup).toContain('value="150.25"');

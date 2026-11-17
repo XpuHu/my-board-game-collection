@@ -1,4 +1,5 @@
 "use client";
+import { Dropdown } from "@/components/ui/dropdown";
 import { AddExpansionsDialog } from "@/components/add-expansions-dialog";
 import {
   formatExpectedDate,
@@ -428,15 +429,15 @@ export function CollectionItemPageClient({
               </StatusBadge>
             </Summary>
             <Summary label="Статус">
-              <select
+              <Dropdown
                 aria-label="Изменить статус игры"
                 className="h-8 max-w-40 rounded-md border bg-background px-2 text-xs"
                 value={quickOwner.status}
                 disabled={
                   savingActions.has("status") || !details.userItem.owned
                 }
-                onChange={(event) => {
-                  const status = event.target.value as "active" | "for_sale";
+                onValueChange={(selectedValue) => {
+                  const status = selectedValue as "active" | "for_sale";
                   void patchOwner(
                     { status },
                     status === "for_sale"
@@ -459,7 +460,7 @@ export function CollectionItemPageClient({
                     Архивирована
                   </option>
                 ) : null}
-              </select>
+              </Dropdown>
             </Summary>
             <Summary label="Добавлена">
               {formatDate(details.userItem.ownedAt)}

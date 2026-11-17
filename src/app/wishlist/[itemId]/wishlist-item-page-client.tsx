@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { PreorderDeliveryMethodField, PreorderDeliveryCostField } from "@/components/preorder-delivery-fields";
+import type { PreorderDeliveryMethod } from "@/shared/lib/preorder-delivery";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Boxes, ExternalLink, Save, ShoppingBag, Star, Trash2 } from "lucide-react";
@@ -27,6 +29,8 @@ import type { CreatePreorderRequest, ExpectedDatePrecision, PreorderStatus, Wish
 import { useAdapterQuery } from "@/shared/hooks/use-adapter-query";
 
 type PreorderForm = {
+  deliveryMethod: PreorderDeliveryMethod;
+  deliveryCost: string;
   shop: string;
   price: string;
   currency: string;
@@ -41,6 +45,7 @@ type PreorderForm = {
 };
 
 const emptyPreorder = (): PreorderForm => ({
+  deliveryMethod: "unspecified", deliveryCost: "",
   shop: "", price: "", currency: "RUB", orderDate: "", precision: "unknown",
   day: "", month: "", quarter: "1", year: String(new Date().getUTCFullYear()),
   status: "planned", comment: "",
@@ -177,6 +182,8 @@ function PreorderDialog({ open, form, saving, title, onOpenChange, onChange, onS
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Оформить предзаказ</DialogTitle><DialogDescription>{title}</DialogDescription></DialogHeader><form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
     <Field id="preorder-shop" label="Магазин"><Input id="preorder-shop" value={form.shop} onChange={(event) => update("shop", event.target.value)} required /></Field>
     <Field id="preorder-price" label="Стоимость"><Input id="preorder-price" type="number" min={0} step="0.01" value={form.price} onChange={(event) => update("price", event.target.value)} required /></Field>
+    <PreorderDeliveryMethodField id="wishlist-delivery-method" value={form.deliveryMethod} onChange={(value) => update("deliveryMethod", value)} />
+    <PreorderDeliveryCostField id="wishlist-delivery-cost" value={form.deliveryCost} currency={form.currency} onChange={(value) => update("deliveryCost", value)} />
     <Field id="preorder-currency" label="Валюта"><Input id="preorder-currency" value={form.currency} onChange={(event) => update("currency", event.target.value.toUpperCase())} maxLength={3} required /></Field>
     <Field id="preorder-status" label="Статус"><Select value={form.status} onValueChange={(value) => update("status", value as PreorderStatus)}><SelectTrigger id="preorder-status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="planned">Планируется</SelectItem><SelectItem value="ordered">Заказан</SelectItem><SelectItem value="paid">Оплачен</SelectItem><SelectItem value="shipped">Отправлен</SelectItem></SelectContent></Select></Field>
     <Field id="preorder-order-date" label="Дата заказа"><Input id="preorder-order-date" type="date" value={form.orderDate} onChange={(event) => update("orderDate", event.target.value)} /></Field>
@@ -208,6 +215,6 @@ function Field({ id, label, children }: { id: string; label: string; children: R
 function range(min?: number | null, max?: number | null, suffix = "") { if (min && max && min !== max) return `${min}–${max}${suffix}`; return min || max ? `${min ?? max}${suffix}` : "—"; }
 function nullableText(value: string) { const trimmed = value.trim(); return trimmed || null; }
 function dateIso(value: string) { return value ? new Date(`${value}T00:00:00.000Z`).toISOString() : null; }
-function preorderRequest(form: PreorderForm): CreatePreorderRequest { const expectedDate = form.precision === "unknown" ? null : form.precision === "day" ? dateIso(form.day) : form.precision === "month" ? dateIso(`${form.month}-01`) : dateIso(`${form.year}-${String((Number(form.quarter) - 1) * 3 + 1).padStart(2, "0")}-01`); return { shop: form.shop.trim(), price: Number(form.price), currency: form.currency.trim().toUpperCase(), orderDate: dateIso(form.orderDate), expectedDate, expectedDatePrecision: form.precision, status: form.status, comment: nullableText(form.comment) }; }
+function preorderRequest(form: PreorderForm): CreatePreorderRequest { const expectedDate = form.precision === "unknown" ? null : form.precision === "day" ? dateIso(form.day) : form.precision === "month" ? dateIso(`${form.month}-01`) : dateIso(`${form.year}-${String((Number(form.quarter) - 1) * 3 + 1).padStart(2, "0")}-01`); return { shop: form.shop.trim(), price: Number(form.price), currency: form.currency.trim().toUpperCase(), deliveryMethod: form.deliveryMethod, deliveryCost: form.deliveryCost.trim() ? Number(form.deliveryCost) : null, orderDate: dateIso(form.orderDate), expectedDate, expectedDatePrecision: form.precision, status: form.status, comment: nullableText(form.comment) }; }
 function providerLabel(provider: string) { return provider === "boardgamegeek" ? "BoardGameGeek" : provider === "tesera" ? "Tesera" : provider; }
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : undefined; }

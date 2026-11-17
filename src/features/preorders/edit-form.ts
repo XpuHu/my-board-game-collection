@@ -8,6 +8,9 @@ import {
 } from "@/shared/api";
 import { calendarToIso } from "@/shared/lib/calendar-date";
 export type PreorderEditValues = {
+  deliveryMethod: import("@/shared/lib/preorder-delivery").PreorderDeliveryMethod;
+  deliveryCost: string;
+  fullyPaid: boolean;
   pricingMode: "lot" | "per_item";
   paymentType: "one_time" | "installments" | "unspecified";
   positionPrices: Record<string, string>;
@@ -15,6 +18,8 @@ export type PreorderEditValues = {
   price: string;
   currency: string;
   orderDate: string;
+  receivedDate: string;
+  orderUrl: string;
   trackingNumber: string;
   comment: string;
   status: PreorderStatus;
@@ -29,6 +34,10 @@ export function preorderEditValues(
 ): PreorderEditValues {
   const expected = preorder.expectedDate;
   return {
+    deliveryMethod: preorder.deliveryMethod ?? "unspecified",
+    deliveryCost:
+      preorder.deliveryCost == null ? "" : String(preorder.deliveryCost),
+    fullyPaid: preorder.fullyPaid ?? preorder.status === "paid",
     pricingMode: preorder.pricingMode ?? "per_item",
     paymentType: preorder.paymentType ?? "unspecified",
     positionPrices: Object.fromEntries(
@@ -43,6 +52,8 @@ export function preorderEditValues(
     price: String(preorder.basePrice ?? preorder.price.amount),
     currency: preorder.price.currency,
     orderDate: preorder.orderDate?.slice(0, 10) ?? "",
+    receivedDate: preorder.receivedDate?.slice(0, 10) ?? "",
+    orderUrl: preorder.orderUrl ?? "",
     trackingNumber: preorder.trackingNumber ?? "",
     comment: preorder.comment ?? "",
     status: preorder.status,
@@ -59,17 +70,18 @@ export function preorderEditRequest(
   preorder: PreorderListItemDto,
   values: PreorderEditValues,
   additions: PreorderPositionInput[] = [],
+  accessories: PreorderPositionInput[] = [],
 ): UpdatePreorderRequest {
   if (
     values.pricingMode === "per_item" &&
-    additions.some(
+    [...additions, ...accessories].some(
       (item) =>
         item.price === undefined ||
         !Number.isFinite(item.price) ||
         item.price < 0,
     )
   )
-    throw new Error("Укажите стоимость каждого добавляемого дополнения");
+    throw new Error("Укажите стоимость каждой добавляемой позиции");
   if (!values.price.trim()) throw new Error("Укажите стоимость предзаказа");
   const date =
     values.precision === "day"
@@ -86,6 +98,12 @@ export function preorderEditRequest(
   const orderDate = values.orderDate ? calendarToIso(values.orderDate) : null;
   if (values.orderDate && !orderDate)
     throw new Error("Укажите корректную дату заказа");
+  const receivedDate =
+    values.status === "received"
+      ? calendarToIso(values.receivedDate)
+      : undefined;
+  if (values.status === "received" && !receivedDate)
+    throw new Error("Укажите корректную дату получения");
   if (
     ["received", "cancelled"].includes(preorder.status) &&
     values.status !== preorder.status
@@ -110,14 +128,21 @@ export function preorderEditRequest(
         positionPrices.push({ preorderId: child.id, price: Number(value) });
     }
   const parsed = updatePreorderRequestSchema.safeParse({
+    deliveryMethod: values.deliveryMethod,
+    deliveryCost: values.deliveryCost.trim()
+      ? Number(values.deliveryCost)
+      : null,
+    fullyPaid: values.fullyPaid,
     pricingMode: values.pricingMode,
     paymentType: values.paymentType,
     shop: values.shop,
     price: Number(values.price),
     currency: values.currency,
     orderDate,
+    receivedDate,
     expectedDate,
     expectedDatePrecision: values.precision,
+    orderUrl: values.orderUrl.trim() || null,
     trackingNumber: values.trackingNumber.trim() || null,
     comment: values.comment.trim() || null,
     status: values.status,
@@ -128,6 +153,9 @@ export function preorderEditRequest(
     );
   const candidate = parsed.data;
   const previous: UpdatePreorderRequest = {
+    deliveryMethod: preorder.deliveryMethod ?? "unspecified",
+    deliveryCost: preorder.deliveryCost ?? null,
+    fullyPaid: preorder.fullyPaid ?? preorder.status === "paid",
     pricingMode: preorder.pricingMode ?? "per_item",
     paymentType: preorder.paymentType ?? "unspecified",
     shop: preorder.shop,
@@ -136,22 +164,32 @@ export function preorderEditRequest(
     orderDate: preorder.orderDate
       ? calendarToIso(preorder.orderDate.slice(0, 10))
       : null,
+    receivedDate:
+      preorder.status === "received" && preorder.receivedDate
+        ? calendarToIso(preorder.receivedDate.slice(0, 10))
+        : undefined,
     expectedDate: preorder.expectedDate
       ? calendarToIso(preorder.expectedDate.slice(0, 10))
       : null,
     expectedDatePrecision: preorder.expectedDatePrecision,
+    orderUrl: preorder.orderUrl ?? null,
     trackingNumber: preorder.trackingNumber ?? null,
     comment: preorder.comment ?? null,
     status: preorder.status,
   };
   const patch: UpdatePreorderRequest = {};
   for (const key of [
+    "deliveryMethod",
+    "deliveryCost",
+    "fullyPaid",
     "pricingMode",
     "paymentType",
     "shop",
     "price",
     "currency",
     "orderDate",
+    "receivedDate",
+    "orderUrl",
     "trackingNumber",
     "comment",
     "status",
@@ -169,5 +207,6 @@ export function preorderEditRequest(
   if (patch.pricingMode) patch.price = candidate.price;
   if (positionPrices.length) patch.positionPrices = positionPrices;
   if (additions.length) patch.expansions = additions;
+  if (accessories.length) patch.accessories = accessories;
   return patch;
 }

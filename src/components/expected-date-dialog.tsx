@@ -1,4 +1,5 @@
 "use client";
+import { Dropdown } from "@/components/ui/dropdown";
 import { calendarToIso } from "@/shared/lib/calendar-date";
 
 import * as React from "react";
@@ -108,19 +109,19 @@ export function ExpectedDateDialog({
           <DialogBody className="grid gap-4">
             <div>
               <Label htmlFor="expected-date-precision">Точность срока</Label>
-              <select
+              <Dropdown
                 id="expected-date-precision"
                 className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={precision}
-                onChange={(event) =>
-                  setPrecision(event.target.value as ExpectedDatePrecision)
+                onValueChange={(selectedValue) =>
+                  setPrecision(selectedValue as ExpectedDatePrecision)
                 }
               >
                 <option value="day">Точный день</option>
                 <option value="month">Месяц</option>
                 <option value="quarter">Квартал</option>
                 <option value="unknown">Дата неизвестна</option>
-              </select>
+              </Dropdown>
             </div>
             {precision === "day" ? (
               <div>
@@ -162,17 +163,17 @@ export function ExpectedDateDialog({
                 </div>
                 <div>
                   <Label htmlFor="expected-quarter">Квартал</Label>
-                  <select
+                  <Dropdown
                     id="expected-quarter"
                     className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={quarter}
-                    onChange={(event) => setQuarter(event.target.value)}
+                    onValueChange={(selectedValue) => setQuarter(selectedValue)}
                   >
                     <option value="1">I квартал</option>
                     <option value="2">II квартал</option>
                     <option value="3">III квартал</option>
                     <option value="4">IV квартал</option>
-                  </select>
+                  </Dropdown>
                 </div>
               </div>
             ) : null}

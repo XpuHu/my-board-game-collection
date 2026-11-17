@@ -1,3 +1,4 @@
+import { paymentScheduleSchema } from "@/shared/lib/payment-schedule";
 import type {
   ExternalReference,
   Image,
@@ -577,6 +578,10 @@ export function mapPreorderListItem(
   now = new Date(),
 ): PreorderListItemDto {
   return {
+    deliveryMethod:
+      preorder.deliveryMethod as PreorderListItemDto["deliveryMethod"],
+    deliveryCost:
+      preorder.deliveryCost == null ? null : Number(preorder.deliveryCost),
     id: preorder.id,
     item: mapItemCompact(preorder.item),
     shop: preorder.shop,
@@ -591,6 +596,11 @@ export function mapPreorderListItem(
           : 0),
       preorder.currency,
     ),
+    paymentSchedule: preorder.paymentSchedule
+      ? paymentScheduleSchema.parse(preorder.paymentSchedule)
+      : null,
+    paymentVersion: preorder.paymentVersion,
+    fullyPaid: preorder.fullyPaid ?? preorder.status === "paid",
     basePrice: Number(preorder.price),
     priceKnown: preorder.priceKnown,
     parentId: preorder.parentId,
@@ -604,6 +614,7 @@ export function mapPreorderListItem(
     expectedDate: preorder.expectedDate?.toISOString() ?? null,
     expectedDatePrecision: expectedDatePrecision(preorder),
     receivedDate: preorder.receivedDate?.toISOString() ?? null,
+    orderUrl: preorder.orderUrl,
     trackingNumber: preorder.trackingNumber,
     status: preorder.status as PreorderStatus,
     uiStatus: getPreorderUiStatus(

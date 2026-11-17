@@ -287,6 +287,12 @@ model Preorder {
   expectedDate          DateTime? @map("expected_date")
   expectedDatePrecision String    @default("day") @map("expected_date_precision")
   receivedDate          DateTime? @map("received_date")
+  fullyPaid             Boolean?  @map("fully_paid")
+  paymentSchedule       Json?     @map("payment_schedule")
+  paymentVersion        Int       @default(0) @map("payment_version")
+  orderUrl              String?   @map("order_url")
+  deliveryMethod        String    @default("unspecified") @map("delivery_method")
+  deliveryCost          Decimal?  @map("delivery_cost")
   trackingNumber        String?   @map("tracking_number")
   status                String
   comment               String?

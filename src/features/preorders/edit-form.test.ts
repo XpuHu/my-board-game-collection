@@ -31,6 +31,33 @@ async function fixture() {
   return (await getItemCard(item.id)).preorders[0];
 }
 describe("preorder editing", () => {
+  it("prefills receipt dates, preserves unedited timestamps and allows correcting the day", async () => {
+    const order = await fixture();
+    await updatePreorder(order.id, {
+      status: "received",
+      receivedDate: "2026-11-01T18:30:00.000Z",
+    });
+    const received = (await getItemCard(order.item.id)).preorders[0];
+    const values = preorderEditValues(received);
+    expect(values.receivedDate).toBe("2026-11-01");
+    expect(preorderEditRequest(received, values)).toEqual({});
+    const patch = preorderEditRequest(received, {
+      ...values,
+      receivedDate: "2026-10-31",
+    });
+    expect(patch).toEqual({ receivedDate: "2026-10-31T00:00:00.000Z" });
+    await updatePreorder(order.id, patch);
+    expect((await getItemCard(order.item.id)).preorders[0].receivedDate).toBe(
+      "2026-10-31T00:00:00.000Z",
+    );
+    expect(() =>
+      preorderEditRequest(received, { ...values, receivedDate: "" }),
+    ).toThrow("дату получения");
+    expect(() =>
+      preorderEditRequest(received, { ...values, receivedDate: "2026-02-30" }),
+    ).toThrow("дату получения");
+  });
+
   it("prefills dates without time shifts and sends no patch when nothing changed", async () => {
     const order = await fixture();
     const values = preorderEditValues(order);

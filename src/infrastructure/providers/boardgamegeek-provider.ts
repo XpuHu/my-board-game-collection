@@ -336,7 +336,7 @@ function bggItemUrl(externalId: string, bggType?: string) {
   return `${BGG_BASE_URL}/${path}/${externalId}`;
 }
 
-function getElementBlocks(xml: string, tagName: string) {
+export function getElementBlocks(xml: string, tagName: string) {
   const regexp = new RegExp(
     `<${tagName}\\b([^>]*)>([\\s\\S]*?)<\\/${tagName}>`,
     "g",
@@ -352,7 +352,7 @@ function getSelfClosingElements(xml: string, tagName: string) {
   return [...xml.matchAll(regexp)].map((match) => parseAttrs(match[1] ?? ""));
 }
 
-function getElementAttr(
+export function getElementAttr(
   xml: string,
   tagName: string,
   attrName: string,
@@ -374,7 +374,7 @@ function getElementAttr(
   return null;
 }
 
-function getElementText(xml: string, tagName: string) {
+export function getElementText(xml: string, tagName: string) {
   const match = xml.match(
     new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`),
   );

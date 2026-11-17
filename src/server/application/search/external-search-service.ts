@@ -26,6 +26,7 @@ export type ExternalSearchQuery = {
   q?: string;
   provider?: ProviderCode;
   type?: string;
+  fallbackToTesera?: boolean;
 };
 
 export async function searchExternalItems(
@@ -61,7 +62,11 @@ export async function searchExternalItems(
       await provider.searchItems(searchQuery, filters),
     );
 
-    if (provider.code === "boardgamegeek" && data.length === 0) {
+    if (
+      provider.code === "boardgamegeek" &&
+      data.length === 0 &&
+      query.fallbackToTesera !== false
+    ) {
       return searchTeseraFallback(searchQuery, filters, {
         code: "PROVIDER_EMPTY_FALLBACK",
         message:
@@ -71,7 +76,7 @@ export async function searchExternalItems(
 
     return { data };
   } catch (error) {
-    if (provider.code !== "boardgamegeek") {
+    if (provider.code !== "boardgamegeek" || query.fallbackToTesera === false) {
       throw error;
     }
 
@@ -195,70 +200,73 @@ async function importOrReuseItem(item: ProviderItem, requestedTypeId?: string) {
   }
 
   const typeId = await resolveTypeId(requestedTypeId, item.itemTypeCode);
-  const created = await prisma.$transaction(async (tx) => {
-    const imported = await tx.item.create({
-      data: {
-        typeId,
-        title: item.title,
-        originalTitle: item.originalTitle,
-        description: item.description,
-        year: item.year,
-        minPlayers: item.minPlayers,
-        maxPlayers: item.maxPlayers,
-        minPlayTime: item.minPlayTime,
-        maxPlayTime: item.maxPlayTime,
-        minAge: item.minAge,
-        complexity: item.complexity,
-        rating: item.rating,
-        sourceMode: "imported",
-        categories: item.categories,
-        mechanics: item.mechanics,
-        designers: item.designers,
-        artists: item.artists,
-        publishers: item.publishers,
-        externalReferences: {
-          create: {
-            provider: item.provider,
-            externalId: item.externalId,
-            url: item.url,
-            lastSync: new Date(),
+  const created = await prisma.$transaction(
+    async (tx) => {
+      const imported = await tx.item.create({
+        data: {
+          typeId,
+          title: item.title,
+          originalTitle: item.originalTitle,
+          description: item.description,
+          year: item.year,
+          minPlayers: item.minPlayers,
+          maxPlayers: item.maxPlayers,
+          minPlayTime: item.minPlayTime,
+          maxPlayTime: item.maxPlayTime,
+          minAge: item.minAge,
+          complexity: item.complexity,
+          rating: item.rating,
+          sourceMode: "imported",
+          categories: item.categories,
+          mechanics: item.mechanics,
+          designers: item.designers,
+          artists: item.artists,
+          publishers: item.publishers,
+          externalReferences: {
+            create: {
+              provider: item.provider,
+              externalId: item.externalId,
+              url: item.url,
+              lastSync: new Date(),
+            },
+          },
+          images: item.imageUrl
+            ? {
+                create: {
+                  type: "reference",
+                  provider: item.provider,
+                  url: item.imageUrl,
+                  caption: providerLabel(item.provider),
+                  sortOrder: 0,
+                },
+              }
+            : undefined,
+          links: item.url
+            ? {
+                create: {
+                  type: "other",
+                  url: item.url,
+                  title: providerLabel(item.provider),
+                },
+              }
+            : undefined,
+          userItem: {
+            create: {
+              owned: false,
+              wishlist: false,
+              status: "wishlist",
+            },
           },
         },
-        images: item.imageUrl
-          ? {
-              create: {
-                type: "reference",
-                provider: item.provider,
-                url: item.imageUrl,
-                caption: providerLabel(item.provider),
-                sortOrder: 0,
-              },
-            }
-          : undefined,
-        links: item.url
-          ? {
-              create: {
-                type: "other",
-                url: item.url,
-                title: providerLabel(item.provider),
-              },
-            }
-          : undefined,
-        userItem: {
-          create: {
-            owned: false,
-            wishlist: false,
-            status: "wishlist",
-          },
+        select: {
+          id: true,
         },
-      },
-      select: {
-        id: true,
-      },
-    });
-    await syncItemTaxonomy(tx, imported.id, item);
-    return imported;
-  });
+      });
+      await syncItemTaxonomy(tx, imported.id, item);
+      return imported;
+    },
+    { timeout: 30_000 },
+  );
 
   return created.id;
 }

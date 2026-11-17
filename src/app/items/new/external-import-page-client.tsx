@@ -1,4 +1,12 @@
 "use client";
+import { Dropdown } from "@/components/ui/dropdown";
+import {
+  PreorderDeliveryMethodField,
+  PreorderDeliveryCostField,
+} from "@/components/preorder-delivery-fields";
+import type { PreorderDeliveryMethod } from "@/shared/lib/preorder-delivery";
+import { PreorderUrlField } from "@/components/preorder-url-field";
+import { PublisherPicker } from "@/components/publisher-picker";
 import {
   ExpansionSelection,
   expansionPayload,
@@ -7,6 +15,7 @@ import {
 import { calendarToIso } from "@/shared/lib/calendar-date";
 import { useProductFeatures } from "@/components/product-features-provider";
 import { LocalItemPicker } from "@/components/local-item-picker";
+import { PreorderGameSearch } from "@/components/preorder-game-search";
 import { usePendingCommand } from "@/shared/hooks/use-pending-command";
 import { apiRequest } from "@/shared/api/client";
 
@@ -175,6 +184,9 @@ export function ExternalImportPageClient({
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [externalWarnings, setExternalWarnings] = React.useState<string[]>([]);
+  const [manualPreorderQuery, setManualPreorderQuery] = React.useState<
+    string | null
+  >(null);
 
   React.useEffect(() => {
     listItemTypes()
@@ -370,6 +382,7 @@ export function ExternalImportPageClient({
   }
 
   function reset() {
+    setManualPreorderQuery(null);
     setQuery("");
     setType(ANY_VALUE);
     setProvider("boardgamegeek");
@@ -384,7 +397,11 @@ export function ExternalImportPageClient({
   if (command.pending && !saving)
     return (
       <main className="mx-auto grid max-w-3xl gap-4 p-6">
-        <h1>Подтвердить сохранение</h1>
+        <h1>
+          {target === "preorder"
+            ? "Подтвердить оформление предзаказа"
+            : "Подтвердить сохранение"}
+        </h1>
         <p>
           Результат предыдущего запроса ещё не подтверждён. Повтор безопасно
           завершит именно его, не создавая дубли.
@@ -400,17 +417,26 @@ export function ExternalImportPageClient({
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-normal">
-          Добавить игру
+          {target === "preorder" ? "Новый предзаказ" : "Добавить игру"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Выберите сохранённую игру, создайте новую вручную или воспользуйтесь
-          внешним каталогом.
+          {target === "preorder"
+            ? completedItem
+              ? "Предзаказ сохранён. Его можно открыть в списке предзаказов."
+              : selectedItem
+                ? "Укажите магазин, стоимость и ожидаемый срок получения."
+                : "Найдите игру по названию, чтобы оформить предзаказ."
+            : "Выберите сохранённую игру, создайте новую вручную или воспользуйтесь внешним каталогом."}
         </p>
       </div>
 
-      <WizardProgress
-        step={completedItem ? 4 : selectedItem ? 3 : results.length > 0 ? 2 : 1}
-      />
+      {target !== "preorder" ? (
+        <WizardProgress
+          step={
+            completedItem ? 4 : selectedItem ? 3 : results.length > 0 ? 2 : 1
+          }
+        />
+      ) : null}
 
       {error ? <ErrorState description={error} /> : null}
 
@@ -418,9 +444,13 @@ export function ExternalImportPageClient({
         <section className="grid justify-items-center gap-4 rounded-xl border bg-card p-8 text-center">
           <CheckCircle2 className="h-12 w-12 text-green-600" />
           <div>
-            <h2 className="text-xl font-semibold">Готово</h2>
+            <h2 className="text-xl font-semibold">
+              {target === "preorder" ? "Предзаказ оформлен" : "Готово"}
+            </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              «{completedItem.title}» сохранена.
+              {target === "preorder"
+                ? `Предзаказ на «${completedItem.title}» сохранён.`
+                : `«${completedItem.title}» сохранена.`}
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-2">
@@ -434,7 +464,24 @@ export function ExternalImportPageClient({
         </section>
       ) : null}
 
-      {!selectedItem && !completedItem ? (
+      {!completedItem && target === "preorder" ? (
+        <div hidden={Boolean(selectedItem)}>
+          <PreorderGameSearch
+            onSelectExisting={(item) => {
+              setSelectedItem({
+                kind: "existing",
+                itemId: item.id,
+                title: item.title,
+              });
+              setError(null);
+            }}
+            onSelectExternal={selectExternalItem}
+            onManualQueryChange={setManualPreorderQuery}
+          />
+        </div>
+      ) : null}
+
+      {!selectedItem && !completedItem && target !== "preorder" ? (
         <LocalItemPicker
           onSelect={(item) => {
             setSelectedItem({
@@ -447,7 +494,7 @@ export function ExternalImportPageClient({
         />
       ) : null}
 
-      {!selectedItem && !completedItem ? (
+      {!selectedItem && !completedItem && target !== "preorder" ? (
         <section className="grid gap-4 rounded-lg border bg-card p-4">
           <div>
             <h2 className="text-base font-semibold tracking-normal">
@@ -578,6 +625,7 @@ export function ExternalImportPageClient({
 
       {!selectedItem &&
       !completedItem &&
+      target !== "preorder" &&
       searched &&
       !loading &&
       results.length === 0 &&
@@ -589,7 +637,10 @@ export function ExternalImportPageClient({
         />
       ) : null}
 
-      {!selectedItem && !completedItem && results.length > 0 ? (
+      {!selectedItem &&
+      !completedItem &&
+      target !== "preorder" &&
+      results.length > 0 ? (
         <section className="grid gap-3" aria-labelledby="search-results-title">
           <h2 id="search-results-title" className="text-base font-semibold">
             2. Выбрать найденную игру
@@ -606,18 +657,28 @@ export function ExternalImportPageClient({
         </section>
       ) : null}
 
-      {!selectedItem && !completedItem ? (
+      {!selectedItem &&
+      !completedItem &&
+      (target !== "preorder" || manualPreorderQuery !== null) ? (
         <section className="grid gap-4">
           <div>
             <h2 className="text-base font-semibold tracking-normal">
-              3. Ввести данные вручную
+              {target === "preorder"
+                ? "Добавление игры вручную"
+                : "3. Ввести данные вручную"}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Можно создать игру сразу, без поиска и подключения внешних
-              источников.
+              {target === "preorder"
+                ? "Игра не найдена. Введите её данные, затем заполните предзаказ."
+                : "Можно создать игру сразу, без поиска и подключения внешних источников."}
             </p>
           </div>
           <ManualItemForm
+            key={target === "preorder" ? manualPreorderQuery : "manual"}
+            initialTitle={
+              target === "preorder" ? (manualPreorderQuery ?? "") : ""
+            }
+            lockTarget={target === "preorder"}
             itemTypes={itemTypes}
             selectedType={type}
             target={target}
@@ -714,7 +775,12 @@ function PersonalDataStep({
   const [purchaseDate, setPurchaseDate] = React.useState("");
   const [interestLevel, setInterestLevel] = React.useState("");
   const [decisionNotes, setDecisionNotes] = React.useState("");
+  const [fullyPaid, setFullyPaid] = React.useState(false);
+  const [orderUrl, setOrderUrl] = React.useState("");
   const [preorderShop, setPreorderShop] = React.useState("");
+  const [deliveryMethod, setDeliveryMethod] =
+    React.useState<PreorderDeliveryMethod>("unspecified");
+  const [deliveryCost, setDeliveryCost] = React.useState("");
   const [pricingMode, setPricingMode] = React.useState<"lot" | "per_item">(
     "lot",
   );
@@ -781,8 +847,12 @@ function PersonalDataStep({
           pricingMode === "per_item",
         ),
         preorder: {
+          deliveryMethod,
+          deliveryCost: deliveryCost.trim() ? Number(deliveryCost) : null,
           pricingMode,
           paymentType,
+          fullyPaid: fullyPaid || preorderStatus === "paid",
+          orderUrl: orderUrl.trim() || null,
           shop: preorderShop.trim(),
           price: Number(preorderPrice),
           currency: preorderCurrency.trim().toUpperCase(),
@@ -808,10 +878,18 @@ function PersonalDataStep({
     <section className="grid gap-4 rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">3. Личные данные</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {title} · {targetLabel(target)}
-          </p>
+          <h2 className="text-lg font-semibold">
+            {target === "preorder" ? "Данные предзаказа" : "3. Личные данные"}
+          </h2>
+          {target === "preorder" ? (
+            <p className="mt-2 break-words text-2xl font-bold leading-tight text-foreground sm:text-3xl">
+              {title}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {title} · {targetLabel(target)}
+            </p>
+          )}
         </div>
         <Button type="button" variant="ghost" onClick={onBack}>
           <ArrowLeft className="h-4 w-4" /> Назад к результатам
@@ -951,239 +1029,381 @@ function PersonalDataStep({
           ) : null}
 
           {target === "preorder" ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="wizard-preorder-shop">Магазин</Label>
-                <Input
-                  id="wizard-preorder-shop"
-                  value={preorderShop}
-                  onChange={(event) => setPreorderShop(event.target.value)}
-                  className="mt-2"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="wizard-pricing-mode">
-                  Стоимость предзаказа
-                </Label>
-                <select
-                  id="wizard-pricing-mode"
-                  className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  value={pricingMode}
-                  onChange={(e) =>
-                    setPricingMode(e.target.value as "lot" | "per_item")
-                  }
+            <div className="grid gap-6">
+              <section
+                className="grid gap-4 rounded-xl border bg-muted/10 p-4 sm:p-5"
+                aria-labelledby="preorder-lot-heading"
+              >
+                <h3
+                  id="preorder-lot-heading"
+                  className="text-base font-semibold"
                 >
-                  <option value="lot">Цена за весь лот</option>
-                  <option value="per_item">Цены по позициям</option>
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="wizard-payment-type">Способ оплаты</Label>
-                <select
-                  id="wizard-payment-type"
-                  className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  value={paymentType}
-                  onChange={(e) =>
-                    setPaymentType(
-                      e.target.value as "one_time" | "installments",
-                    )
-                  }
-                >
-                  <option value="one_time">Единоразовый платёж</option>
-                  <option value="installments">Рассрочка</option>
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="wizard-preorder-price">
-                  {pricingMode === "lot"
-                    ? "Стоимость всего лота"
-                    : "Стоимость основной игры"}
-                </Label>
-                <Input
-                  id="wizard-preorder-price"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={preorderPrice}
-                  onChange={(event) => setPreorderPrice(event.target.value)}
-                  className="mt-2"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="wizard-preorder-currency">Валюта</Label>
-                <Input
-                  id="wizard-preorder-currency"
-                  value={preorderCurrency}
-                  onChange={(event) =>
-                    setPreorderCurrency(event.target.value.toUpperCase())
-                  }
-                  maxLength={3}
-                  className="mt-2"
-                  required
-                />
-              </div>
-              <div>
-                <Label>Статус</Label>
-                <Select
-                  value={preorderStatus}
-                  onValueChange={(value) =>
-                    setPreorderStatus(value as CreatePreorderRequest["status"])
-                  }
-                >
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="planned">Планируется</SelectItem>
-                    <SelectItem value="ordered">Заказан</SelectItem>
-                    <SelectItem value="paid">Оплачен</SelectItem>
-                    <SelectItem value="shipped">Отправлен</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="wizard-order-date">Дата заказа</Label>
-                <Input
-                  id="wizard-order-date"
-                  type="date"
-                  value={orderDate}
-                  onChange={(event) => setOrderDate(event.target.value)}
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label>Точность срока</Label>
-                <Select
-                  value={precision}
-                  onValueChange={(value) =>
-                    setPrecision(value as ExpectedDatePrecision)
-                  }
-                >
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="day">Точный день</SelectItem>
-                    <SelectItem value="month">Месяц</SelectItem>
-                    <SelectItem value="quarter">Квартал</SelectItem>
-                    <SelectItem value="unknown">Неизвестно</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {precision === "day" ? (
-                <div>
-                  <Label htmlFor="wizard-expected-day">Ожидаемая дата</Label>
-                  <Input
-                    id="wizard-expected-day"
-                    type="date"
-                    value={expectedDay}
-                    onChange={(event) => setExpectedDay(event.target.value)}
-                    className="mt-2"
-                    required
-                  />
-                </div>
-              ) : null}
-              {precision === "month" ? (
-                <div>
-                  <Label htmlFor="wizard-expected-month">Ожидаемый месяц</Label>
-                  <Input
-                    id="wizard-expected-month"
-                    type="month"
-                    value={expectedMonth}
-                    onChange={(event) => setExpectedMonth(event.target.value)}
-                    className="mt-2"
-                    required
-                  />
-                </div>
-              ) : null}
-              {precision === "quarter" ? (
-                <div className="grid grid-cols-2 gap-3">
+                  Состав лота
+                </h3>
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <Label htmlFor="wizard-expected-year">Год</Label>
-                    <Input
-                      id="wizard-expected-year"
-                      type="number"
-                      min={1900}
-                      max={2200}
-                      value={expectedYear}
-                      onChange={(event) => setExpectedYear(event.target.value)}
-                      className="mt-2"
+                    <Label htmlFor="wizard-preorder-shop">Магазин</Label>
+                    <PublisherPicker
+                      id="wizard-preorder-shop"
+                      value={preorderShop}
+                      onChange={setPreorderShop}
+                      multiple={false}
+                      saveWith="preorder"
                       required
                     />
                   </div>
+                  <PreorderDeliveryMethodField
+                    id="wizard-delivery-method"
+                    value={deliveryMethod}
+                    onChange={setDeliveryMethod}
+                  />
+
                   <div>
-                    <Label>Квартал</Label>
+                    <PreorderUrlField value={orderUrl} onChange={setOrderUrl} />
+                  </div>
+                  <div>
+                    <Label>Статус</Label>
                     <Select
-                      value={expectedQuarter}
-                      onValueChange={setExpectedQuarter}
+                      value={preorderStatus}
+                      onValueChange={(value) =>
+                        setPreorderStatus(
+                          value as CreatePreorderRequest["status"],
+                        )
+                      }
                     >
                       <SelectTrigger className="mt-2">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {[1, 2, 3, 4].map((value) => (
-                          <SelectItem key={value} value={String(value)}>
-                            {value}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="planned">Планируется</SelectItem>
+                        <SelectItem value="ordered">Заказан</SelectItem>
+                        <SelectItem value="paid">Оплачен</SelectItem>
+                        <SelectItem value="shipped">Отправлен</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
-              ) : null}
-              <div className="sm:col-span-2 grid gap-3 rounded-lg border p-4">
-                <h3 className="font-semibold">Дополнения к игре</h3>
+                <p className="text-sm text-muted-foreground">
+                  Основная игра:{" "}
+                  <strong className="text-foreground">{title}</strong>.
+                  Получение и отмена применяются ко всему лоту.
+                </p>
+                <details className="rounded-lg border p-4">
+                  <summary className="cursor-pointer font-semibold">
+                    Добавить дополнения
+                    {expansionItems.length > 0
+                      ? ` (${expansionItems.length})`
+                      : ""}
+                  </summary>
+                  <div className="mt-3">
+                    <ExpansionSelection
+                      value={expansionItems}
+                      onChange={setExpansionItems}
+                      currency={preorderCurrency}
+                      baseItemId={baseItemId}
+                      externalBase={externalBase}
+                    />
+                  </div>
+                </details>
+                <details className="rounded-lg border p-4">
+                  <summary className="cursor-pointer font-semibold">
+                    Добавить аксессуары
+                    {accessoryItems.length > 0
+                      ? ` (${accessoryItems.length})`
+                      : ""}
+                  </summary>
+                  <div className="mt-3">
+                    <ExpansionSelection
+                      kind="accessory"
+                      value={accessoryItems}
+                      onChange={setAccessoryItems}
+                      currency={preorderCurrency}
+                      baseItemId={baseItemId}
+                      externalBase={externalBase}
+                    />
+                  </div>
+                </details>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="wizard-preorder-comment">Комментарий</Label>
+                  <Textarea
+                    id="wizard-preorder-comment"
+                    value={preorderComment}
+                    onChange={(event) => setPreorderComment(event.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </section>
+              <section
+                className="grid gap-4 rounded-xl border bg-muted/10 p-4 sm:p-5"
+                aria-labelledby="preorder-payment-heading"
+              >
+                <h3
+                  id="preorder-payment-heading"
+                  className="text-base font-semibold"
+                >
+                  Стоимость и оплата
+                </h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="wizard-pricing-mode">
+                      Стоимость предзаказа
+                    </Label>
+                    <Dropdown
+                      id="wizard-pricing-mode"
+                      className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={pricingMode}
+                      onValueChange={(selectedValue) =>
+                        setPricingMode(selectedValue as "lot" | "per_item")
+                      }
+                    >
+                      <option value="lot">Цена за весь лот</option>
+                      <option value="per_item">Цены по позициям</option>
+                    </Dropdown>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="wizard-preorder-price">
+                      {pricingMode === "lot"
+                        ? "Стоимость всего лота"
+                        : "Стоимость основной игры"}
+                    </Label>
+                    <Input
+                      id="wizard-preorder-price"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={preorderPrice}
+                      onChange={(event) => setPreorderPrice(event.target.value)}
+                      className="mt-2"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="wizard-preorder-currency">Валюта</Label>
+                    <Input
+                      id="wizard-preorder-currency"
+                      value={preorderCurrency}
+                      onChange={(event) =>
+                        setPreorderCurrency(event.target.value.toUpperCase())
+                      }
+                      maxLength={3}
+                      className="mt-2"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="wizard-payment-type">Способ оплаты</Label>
+                    <Dropdown
+                      id="wizard-payment-type"
+                      className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={paymentType}
+                      onValueChange={(selectedValue) =>
+                        setPaymentType(
+                          selectedValue as "one_time" | "installments",
+                        )
+                      }
+                    >
+                      <option value="one_time">Единоразовый платёж</option>
+                      <option value="installments">Рассрочка</option>
+                    </Dropdown>
+                  </div>
+                  <PreorderDeliveryCostField
+                    id="wizard-delivery-cost"
+                    value={deliveryCost}
+                    currency={preorderCurrency}
+                    onChange={setDeliveryCost}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={fullyPaid || preorderStatus === "paid"}
+                    onChange={(event) => setFullyPaid(event.target.checked)}
+                  />
+                  Полностью оплачен
+                </label>
                 <p className="text-sm text-muted-foreground">
                   {pricingMode === "lot"
                     ? "Укажите общую стоимость лота с учётом скидки. Цены отдельных позиций не обязательны."
-                    : "Укажите цену базы и каждой выбранной позиции. Итоговая стоимость складывается автоматически."}{" "}
-                  Получение и отмена применяются ко всему лоту.
+                    : "Укажите цену основной игры и каждой выбранной позиции. Итоговая стоимость складывается автоматически."}
                 </p>
-                <ExpansionSelection
-                  value={expansionItems}
-                  onChange={setExpansionItems}
-                  prices={pricingMode === "per_item"}
-                  currency={preorderCurrency}
-                  baseItemId={baseItemId}
-                  externalBase={externalBase}
-                />
-                <h3 className="mt-3 font-semibold">Аксессуары к игре</h3>
-                <ExpansionSelection
-                  kind="accessory"
-                  value={accessoryItems}
-                  onChange={setAccessoryItems}
-                  prices={pricingMode === "per_item"}
-                  currency={preorderCurrency}
-                  baseItemId={baseItemId}
-                  externalBase={externalBase}
-                />
-                <p className="font-medium">
-                  Итого:{" "}
-                  {new Intl.NumberFormat("ru-RU", {
-                    maximumFractionDigits: 2,
-                  }).format(
-                    Number(preorderPrice || 0) +
-                      (pricingMode === "per_item"
-                        ? [...expansionItems, ...accessoryItems].reduce(
-                            (sum, item) => sum + Number(item.price || 0),
-                            0,
-                          )
-                        : 0),
-                  )}{" "}
-                  {preorderCurrency}
-                </p>
-              </div>
-              <div className="sm:col-span-2">
-                <Label htmlFor="wizard-preorder-comment">Комментарий</Label>
-                <Textarea
-                  id="wizard-preorder-comment"
-                  value={preorderComment}
-                  onChange={(event) => setPreorderComment(event.target.value)}
-                  className="mt-2"
-                />
-              </div>
+
+                {pricingMode === "per_item" ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {[
+                      {
+                        kind: "Дополнение",
+                        items: expansionItems,
+                        setItems: setExpansionItems,
+                      },
+                      {
+                        kind: "Аксессуар",
+                        items: accessoryItems,
+                        setItems: setAccessoryItems,
+                      },
+                    ].flatMap(({ kind, items, setItems }) =>
+                      items.map((item) => (
+                        <div key={item.key}>
+                          <Label htmlFor={"wizard-position-price-" + item.key}>
+                            {kind}: {item.title} ({preorderCurrency})
+                          </Label>
+                          <Input
+                            id={"wizard-position-price-" + item.key}
+                            className="mt-2"
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            required
+                            value={item.price}
+                            onChange={(event) =>
+                              setItems((previous) =>
+                                previous.map((row) =>
+                                  row.key === item.key
+                                    ? { ...row, price: event.target.value }
+                                    : row,
+                                ),
+                              )
+                            }
+                          />
+                        </div>
+                      )),
+                    )}
+                  </div>
+                ) : null}
+
+                <div className="rounded-lg bg-primary/10 p-4">
+                  <p className="font-medium">
+                    Итого:{" "}
+                    {new Intl.NumberFormat("ru-RU", {
+                      maximumFractionDigits: 2,
+                    }).format(
+                      Number(preorderPrice || 0) +
+                        Number(deliveryCost || 0) +
+                        (pricingMode === "per_item"
+                          ? [...expansionItems, ...accessoryItems].reduce(
+                              (sum, item) => sum + Number(item.price || 0),
+                              0,
+                            )
+                          : 0),
+                    )}{" "}
+                    {preorderCurrency}
+                  </p>
+                </div>
+              </section>
+              <section
+                className="grid gap-4 rounded-xl border bg-muted/10 p-4 sm:p-5"
+                aria-labelledby="preorder-dates-heading"
+              >
+                <h3
+                  id="preorder-dates-heading"
+                  className="text-base font-semibold"
+                >
+                  Даты и сроки
+                </h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="wizard-order-date">Дата заказа</Label>
+                    <Input
+                      id="wizard-order-date"
+                      type="date"
+                      value={orderDate}
+                      onChange={(event) => setOrderDate(event.target.value)}
+                      className="mt-2"
+                    />
+                  </div>
+                  <div>
+                    <Label>Точность срока</Label>
+                    <Select
+                      value={precision}
+                      onValueChange={(value) =>
+                        setPrecision(value as ExpectedDatePrecision)
+                      }
+                    >
+                      <SelectTrigger className="mt-2">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="day">Точный день</SelectItem>
+                        <SelectItem value="month">Месяц</SelectItem>
+                        <SelectItem value="quarter">Квартал</SelectItem>
+                        <SelectItem value="unknown">Неизвестно</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {precision === "day" ? (
+                    <div>
+                      <Label htmlFor="wizard-expected-day">
+                        Ожидаемая дата
+                      </Label>
+                      <Input
+                        id="wizard-expected-day"
+                        type="date"
+                        value={expectedDay}
+                        onChange={(event) => setExpectedDay(event.target.value)}
+                        className="mt-2"
+                        required
+                      />
+                    </div>
+                  ) : null}
+                  {precision === "month" ? (
+                    <div>
+                      <Label htmlFor="wizard-expected-month">
+                        Ожидаемый месяц
+                      </Label>
+                      <Input
+                        id="wizard-expected-month"
+                        type="month"
+                        value={expectedMonth}
+                        onChange={(event) =>
+                          setExpectedMonth(event.target.value)
+                        }
+                        className="mt-2"
+                        required
+                      />
+                    </div>
+                  ) : null}
+                  {precision === "quarter" ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="wizard-expected-year">Год</Label>
+                        <Input
+                          id="wizard-expected-year"
+                          type="number"
+                          min={1900}
+                          max={2200}
+                          value={expectedYear}
+                          onChange={(event) =>
+                            setExpectedYear(event.target.value)
+                          }
+                          className="mt-2"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label>Квартал</Label>
+                        <Select
+                          value={expectedQuarter}
+                          onValueChange={setExpectedQuarter}
+                        >
+                          <SelectTrigger className="mt-2">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[1, 2, 3, 4].map((value) => (
+                              <SelectItem key={value} value={String(value)}>
+                                {value}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
             </div>
           ) : null}
 
@@ -1315,6 +1535,8 @@ function ManualItemForm({
   onTargetChange,
   onError,
   onCreated,
+  initialTitle = "",
+  lockTarget = false,
 }: {
   itemTypes: ItemTypeDto[];
   selectedType: string;
@@ -1322,10 +1544,12 @@ function ManualItemForm({
   onTargetChange: (target: ManualQuickAction) => void;
   onError: (message: string | null) => void;
   onCreated: (request: CreateManualItemRequest) => void;
+  initialTitle?: string;
+  lockTarget?: boolean;
 }) {
   const features = useProductFeatures();
   const [saving, setSaving] = React.useState(false);
-  const [title, setTitle] = React.useState("");
+  const [title, setTitle] = React.useState(initialTitle);
   const [typeId, setTypeId] = React.useState("");
   const [originalTitle, setOriginalTitle] = React.useState("");
   const [year, setYear] = React.useState("");
@@ -1415,50 +1639,56 @@ function ManualItemForm({
       onSubmit={saveManualItem}
       className="grid gap-4 rounded-lg border bg-card p-4"
     >
-      <div>
-        <h2 className="text-base font-semibold tracking-normal">
-          Быстрый ручной сценарий
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Выберите, что сделать после создания локальной карточки.
-        </p>
-      </div>
+      {!lockTarget ? (
+        <>
+          <div>
+            <h2 className="text-base font-semibold tracking-normal">
+              Быстрый ручной сценарий
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Выберите, что сделать после создания локальной карточки.
+            </p>
+          </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {quickActionOptions
-          .filter(
-            (option) =>
-              features.mode === "full" ||
-              ["collection", "preorder"].includes(option.value),
-          )
-          .map((option) => {
-            const Icon = option.icon;
-            const selected = target === option.value;
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {quickActionOptions
+              .filter(
+                (option) =>
+                  features.mode === "full" ||
+                  ["collection", "preorder"].includes(option.value),
+              )
+              .map((option) => {
+                const Icon = option.icon;
+                const selected = target === option.value;
 
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => onTargetChange(option.value)}
-                className={[
-                  "flex min-h-28 flex-col gap-2 rounded-lg border p-3 text-left transition-colors",
-                  selected
-                    ? "border-primary bg-primary/5 text-foreground"
-                    : "bg-background hover:bg-secondary",
-                ].join(" ")}
-                aria-pressed={selected}
-              >
-                <Icon className="h-5 w-5" />
-                <span className="text-sm font-medium">{option.label}</span>
-                <span className="text-xs leading-5 text-muted-foreground">
-                  {option.description}
-                </span>
-              </button>
-            );
-          })}
-      </div>
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => onTargetChange(option.value)}
+                    className={[
+                      "flex min-h-28 flex-col gap-2 rounded-lg border p-3 text-left transition-colors",
+                      selected
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "bg-background hover:bg-secondary",
+                    ].join(" ")}
+                    aria-pressed={selected}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="text-sm font-medium">{option.label}</span>
+                    <span className="text-xs leading-5 text-muted-foreground">
+                      {option.description}
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+        </>
+      ) : null}
 
-      <div className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_14rem_8rem_13rem]">
+      <div
+        className={`grid gap-3 ${lockTarget ? "md:grid-cols-[minmax(0,1fr)_14rem_8rem]" : "md:grid-cols-[minmax(16rem,1fr)_14rem_8rem_13rem]"}`}
+      >
         <div>
           <Label htmlFor="manual-title">Название</Label>
           <Input
@@ -1499,32 +1729,34 @@ function ManualItemForm({
           />
         </div>
 
-        <div>
-          <Label>Сценарий</Label>
-          <Select
-            value={target}
-            onValueChange={(value) =>
-              onTargetChange(value as ManualQuickAction)
-            }
-          >
-            <SelectTrigger className="mt-2">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {quickActionOptions
-                .filter(
-                  (option) =>
-                    features.mode === "full" ||
-                    ["collection", "preorder"].includes(option.value),
-                )
-                .map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {!lockTarget ? (
+          <div>
+            <Label>Сценарий</Label>
+            <Select
+              value={target}
+              onValueChange={(value) =>
+                onTargetChange(value as ManualQuickAction)
+              }
+            >
+              <SelectTrigger className="mt-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {quickActionOptions
+                  .filter(
+                    (option) =>
+                      features.mode === "full" ||
+                      ["collection", "preorder"].includes(option.value),
+                  )
+                  .map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
       </div>
 
       <div>
@@ -1593,10 +1825,10 @@ function ManualItemForm({
         </div>
         <div>
           <Label htmlFor="manual-publishers">Издатели</Label>
-          <Input
+          <PublisherPicker
             id="manual-publishers"
             value={publishers}
-            onChange={(event) => setPublishers(event.target.value)}
+            onChange={setPublishers}
             className="mt-2"
             placeholder="Через запятую"
           />
@@ -1697,8 +1929,10 @@ function ManualItemForm({
           ) : (
             <PlusCircle className="h-4 w-4" />
           )}
-          {quickActionOptions.find((option) => option.value === target)
-            ?.label ?? "Сохранить"}
+          {lockTarget
+            ? "Продолжить"
+            : (quickActionOptions.find((option) => option.value === target)
+                ?.label ?? "Сохранить")}
         </Button>
       </div>
     </form>

@@ -38,6 +38,7 @@ export type ExternalItemSearchQuery = {
   q: string;
   provider?: ProviderCode;
   type?: string;
+  fallbackToTesera?: boolean;
 };
 
 export function listItemTypes() {
@@ -49,6 +50,7 @@ export function searchExternalItems(query: ExternalItemSearchQuery) {
   params.set("q", query.q);
   if (query.provider) params.set("provider", query.provider);
   if (query.type) params.set("type", query.type);
+  if (query.fallbackToTesera === false) params.set("fallback", "false");
   return apiRequest<ExternalSearchResponse>(`/api/external/search?${params}`);
 }
 
@@ -83,14 +85,20 @@ export function addItemToWishlist(itemId: string) {
   );
 }
 
-export function updateItemUserData(itemId: string, body: UpdateUserItemRequest) {
+export function updateItemUserData(
+  itemId: string,
+  body: UpdateUserItemRequest,
+) {
   return apiRequest<UserItemDto>(
     `/api/items/${encodeURIComponent(itemId)}/user-item`,
     { method: "PATCH", body: JSON.stringify(body) },
   );
 }
 
-export function createItemPreorder(itemId: string, body: CreatePreorderRequest) {
+export function createItemPreorder(
+  itemId: string,
+  body: CreatePreorderRequest,
+) {
   return apiRequest<unknown>(
     `/api/items/${encodeURIComponent(itemId)}/preorders`,
     { method: "POST", body: JSON.stringify(body) },

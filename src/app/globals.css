@@ -83,6 +83,27 @@ html {
   scrollbar-gutter: stable;
 }
 
+@supports (scrollbar-gutter: stable) {
+  /* The root gutter already reserves the scrollbar width while Radix locks
+     scrolling. RemoveScroll's body margin would reserve that space twice.
+     The extra html specificity also overrides its dynamically injected rule. */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+  }
+}
+
+/* Select's RemoveScroll also hides the scrollbar through overflow:hidden.
+   Keep the document scrollbar when a Select is open on the page; wheel/touch
+   isolation still comes from RemoveScroll. A dialog owns its scroll lock and
+   scroll area, including when it contains a Select. */
+html
+  body[data-scroll-locked]:has([data-radix-select-viewport]):not(
+    :has([role="dialog"][data-state="open"])
+  ) {
+  overflow: visible !important;
+  margin-right: 0 !important;
+}
+
 body {
   min-height: 100vh;
   background: var(--bg-app);

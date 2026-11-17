@@ -9,6 +9,8 @@ import {
   vi,
 } from "vitest";
 import { prisma } from "@/infrastructure/database/prisma";
+import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { boardGameGeekProvider } from "@/infrastructure/providers/boardgamegeek-provider";
 import { getGameExpansionOptions } from "./expansion-options-service";
 import { attachExpansions, attachExpansionsSchema } from "./expansion-service";
@@ -60,6 +62,115 @@ const metadata = (externalId: string) => ({
   publishers: [],
 });
 describe("expansion catalogue and import", () => {
+  it("saves a twelve-position imported preorder lot without repeating taxonomy queries for every position", async () => {
+    const measured = new PrismaClient({
+      adapter: new PrismaPg({
+        connectionString: process.env.DATABASE_URL,
+        max: 1,
+      }),
+      log: [{ emit: "event", level: "query" }],
+    });
+    const cache = globalThis as unknown as { prisma?: PrismaClient };
+    const previous = cache.prisma;
+    cache.prisma = measured;
+    let queries = 0;
+    measured.$on("query", () => {
+      queries += 1;
+    });
+    try {
+      const game = await base();
+      const prefix = randomUUID();
+      const shop = `Shop ${prefix}`;
+      await measured.publisher.create({
+        data: { name: shop, normalizedName: shop.toLowerCase() },
+      });
+      const ids = Array.from(
+        { length: 12 },
+        (_, index) => `${Date.now()}${index}`,
+      );
+      const values = (name: string, count: number) =>
+        Array.from(
+          { length: count },
+          (_, index) => `${prefix} ${name} ${index}`,
+        );
+      const getItem = vi
+        .spyOn(boardGameGeekProvider, "getItem")
+        .mockImplementation(async (externalId) => ({
+          ...metadata(externalId),
+          itemTypeCode:
+            ids.indexOf(externalId) < 10 ? "expansion" : "accessory",
+          mechanics: [
+            ...values("Mechanic", 5),
+            `${prefix} unique ${externalId}`,
+          ],
+          categories: values("Category", 2),
+          artists: values("Artist", 2),
+          publishers: values("Publisher", 4),
+          imageUrl: "https://example.com/cover.jpg",
+          url: "https://example.com/game",
+        }));
+      const selection = (externalId: string) => ({
+        external: { provider: "boardgamegeek", externalId },
+      });
+      const input = itemActionSchema.parse({
+        operationId: randomUUID(),
+        target: "preorder",
+        itemId: game.id,
+        preorder: {
+          shop: `  ${shop.toUpperCase()}  `,
+          price: 50000,
+          currency: "RUB",
+          status: "ordered",
+          pricingMode: "lot",
+        },
+        expansions: ids.slice(0, 10).map(selection),
+        accessories: ids.slice(10).map(selection),
+      });
+      queries = 0;
+      const result = await executeItemAction(input);
+      // The reported failure exceeded 30 seconds after 413 queries, before it
+      // had even finished importing the lot. Bound the complete save instead.
+      expect(queries).toBeLessThan(220);
+      const children = await measured.preorder.findMany({
+        where: { parentId: result.preorderId },
+        include: {
+          item: {
+            include: {
+              itemMechanics: true,
+              itemPublishers: true,
+              images: true,
+            },
+          },
+        },
+      });
+      expect(children).toHaveLength(12);
+      expect(children.every((child) => child.shop === shop)).toBe(true);
+      expect(
+        children.every(
+          ({ item }) =>
+            item.itemMechanics.length === 6 && item.itemPublishers.length === 4,
+        ),
+      ).toBe(true);
+      expect(
+        children.every(({ item }) => item.images[0]?.type === "reference"),
+      ).toBe(true);
+      expect(
+        await measured.itemRelation.count({ where: { parentItemId: game.id } }),
+      ).toBe(12);
+      getItem.mockRejectedValue(new Error("Provider now unavailable"));
+      expect(await executeItemAction(input)).toEqual(result);
+      expect(getItem).toHaveBeenCalledTimes(12);
+      expect(
+        await measured.preorder.count({
+          where: { parentId: result.preorderId },
+        }),
+      ).toBe(12);
+    } finally {
+      cache.prisma = previous;
+      await measured.$disconnect();
+    }
+  });
+
   it("combines remote options with existing links without importing the catalogue or duplicating known items", async () => {
     const game = await base();
     const external = source();

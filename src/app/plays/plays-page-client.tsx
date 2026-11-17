@@ -1,4 +1,5 @@
 "use client";
+import { Dropdown } from "@/components/ui/dropdown";
 
 import * as React from "react";
 import Link from "next/link";
@@ -393,14 +394,14 @@ function SelectFilter({
   return (
     <div>
       <Label htmlFor={`plays-${name}`}>{label}</Label>
-      <select
+      <Dropdown
         id={`plays-${name}`}
         name={name}
         defaultValue={defaultValue}
         className="mt-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
       >
         {children}
-      </select>
+      </Dropdown>
     </div>
   );
 }

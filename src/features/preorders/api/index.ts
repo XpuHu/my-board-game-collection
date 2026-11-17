@@ -51,6 +51,7 @@ export function updatePreorderExpectedDate(
 export function updatePreorderStatus(
   preorderId: string,
   status: "received" | "cancelled",
+  receivedDate?: string,
 ) {
   return apiRequest<unknown>(
     `/api/preorders/${encodeURIComponent(preorderId)}`,
@@ -58,6 +59,7 @@ export function updatePreorderStatus(
       method: "PATCH",
       body: JSON.stringify({
         status,
+        ...(status === "received" && receivedDate ? { receivedDate } : {}),
       }),
     },
   );

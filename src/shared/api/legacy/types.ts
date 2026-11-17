@@ -144,6 +144,8 @@ export type LegacyPreorderEventDto = {
 };
 
 export type LegacyPreorderDto = {
+  deliveryMethod?: import("@/shared/lib/preorder-delivery").PreorderDeliveryMethod;
+  deliveryCost?: number | null;
   id: string;
   itemId: string;
   itemTitle: string;

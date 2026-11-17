@@ -23,8 +23,17 @@
 
 .searchForm {
   position: relative;
-  width: clamp(260px, 24vw, 332px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: clamp(300px, 28vw, 416px);
+  min-width: 0;
   flex: none;
+}
+
+.searchForm > button {
+  flex: none;
+  height: 44px;
 }
 
 .searchIcon {
@@ -40,6 +49,8 @@
 }
 
 .searchInput {
+  min-width: 0;
+  flex: 1;
   height: 44px;
   border-color: var(--border-default);
   background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
@@ -154,33 +165,9 @@
   align-items: center;
 }
 
-.selectWrap svg {
-  position: absolute;
-  right: 1px;
-  width: 14px;
-  height: 14px;
-  color: var(--text-secondary);
-  pointer-events: none;
-}
-
 .sortSelect {
-  width: 142px;
-  height: 40px;
-  appearance: none;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  padding: 0 18px 0 3px;
-  color: var(--text-primary);
-  cursor: pointer;
+  width: 170px;
   font-size: 12px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-}
-
-.sortSelect option {
-  background: var(--bg-surface-elevated);
-  color: var(--text-primary);
 }
 
 .addButton {
@@ -305,7 +292,11 @@
   line-height: 1.25;
   text-overflow: ellipsis;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
-  white-space: nowrap;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
 }
 
 .rating {

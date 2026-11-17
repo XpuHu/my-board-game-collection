@@ -40,15 +40,20 @@ export async function runCommand<T>(
     await prepare();
   }
   try {
-    return await prisma.$transaction(async (tx) => {
-      const previous = await tx.commandReceipt.findUnique({ where: { id } });
-      if (previous) return replay(previous);
-      const result = await execute(tx);
-      await tx.commandReceipt.create({
-        data: { id, kind, fingerprint, result: JSON.stringify(result) },
-      });
-      return result;
-    });
+    return await prisma.$transaction(
+      async (tx) => {
+        const previous = await tx.commandReceipt.findUnique({ where: { id } });
+        if (previous) return replay(previous);
+        const result = await execute(tx);
+        await tx.commandReceipt.create({
+          data: { id, kind, fingerprint, result: JSON.stringify(result) },
+        });
+        return result;
+      },
+      // A preorder lot can import several positions and their taxonomy. The
+      // whole command, including its receipt, must fit in the same transaction.
+      { timeout: 30_000 },
+    );
   } catch (error) {
     // Concurrent requests can race on the unique receipt. Only replay committed work.
     const committed = await prisma.commandReceipt.findUnique({ where: { id } });

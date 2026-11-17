@@ -1,4 +1,9 @@
-import type { PlaySession, Preorder, PreorderEvent, Purchase } from "@prisma/client";
+import type {
+  PlaySession,
+  Preorder,
+  PreorderEvent,
+  Purchase,
+} from "@prisma/client";
 
 import type {
   LegacyPlaySessionDto,
@@ -29,6 +34,9 @@ export function mapLegacyPreorder(
   itemTitle: string,
 ): LegacyPreorderDto {
   return {
+    deliveryMethod:
+      preorder.deliveryMethod as LegacyPreorderDto["deliveryMethod"],
+    deliveryCost: nullableNumber(preorder.deliveryCost),
     id: preorder.id,
     itemId: preorder.itemId,
     itemTitle,
